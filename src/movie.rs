@@ -1,9 +1,5 @@
-use chunk::*;
-
 use byteorder::{BigEndian, LittleEndian};
-use chunk::Chunk;
-use io::value::*;
-use io::chunk::*;
+use crate::{chunk::{Chunk, ChunkVariant}, io::value::*, io::chunk::*};
 
 use std::collections::HashMap;
 use std::fmt;

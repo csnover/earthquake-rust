@@ -1,12 +1,8 @@
-extern crate byteorder;
-
 use byteorder::ReadBytesExt;
-use io::value::*;
-use chunk::*;
+use crate::{chunk::*, io::value::*};
 
 use std::{self, fmt};
-use std::io::{Cursor, SeekFrom};
-use std::io::prelude::*;
+use std::io::{Cursor, SeekFrom, prelude::*};
 
 // ReadChunks
 

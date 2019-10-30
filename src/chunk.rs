@@ -1,5 +1,3 @@
-extern crate byteorder;
-
 // Chunk
 
 pub struct Chunk {

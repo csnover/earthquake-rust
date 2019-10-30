@@ -1,11 +1,8 @@
-extern crate byteorder;
-
 use byteorder::{BigEndian, LittleEndian};
 
 use std::fmt;
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, prelude::*};
 use std::string::FromUtf8Error;
-use std::io::prelude::*;
 
 // ReadDirectorValues
 

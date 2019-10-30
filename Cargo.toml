@@ -7,7 +7,7 @@ homepage = "https://github.com/Earthquake-Project/earthquake-rust"
 repository = "https://github.com/Earthquake-Project/earthquake-rust"
 readme = "README.md"
 license = "Apache-2.0"
+edition = "2018"
 
 [dependencies]
 byteorder = "1.2.1"
-serde = "1.0.25"
