@@ -1,9 +1,6 @@
 use byteorder::{BigEndian, LittleEndian};
 use crate::{chunk::{Chunk, ChunkVariant}, io::value::*, io::chunk::*};
-
-use std::collections::HashMap;
-use std::fmt;
-use std::io::Cursor;
+use std::{collections::HashMap, fmt, io::Cursor};
 
 // Movie
 

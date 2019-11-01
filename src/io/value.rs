@@ -1,8 +1,5 @@
 use byteorder::{BigEndian, LittleEndian};
-
-use std::fmt;
-use std::io::{self, Cursor, prelude::*};
-use std::string::FromUtf8Error;
+use std::{fmt, io::{self, Cursor, prelude::*}, string::FromUtf8Error};
 
 // ReadDirectorValues
 

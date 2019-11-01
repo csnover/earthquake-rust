@@ -1,8 +1,6 @@
 use byteorder::ReadBytesExt;
 use crate::{chunk::*, io::value::*};
-
-use std::{self, fmt};
-use std::io::{Cursor, SeekFrom, prelude::*};
+use std::{self, fmt, io::{Cursor, SeekFrom, prelude::*}};
 
 // ReadChunks
 
