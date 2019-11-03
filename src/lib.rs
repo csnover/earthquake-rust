@@ -9,4 +9,4 @@ pub(crate) mod resources;
 pub(crate) mod string;
 
 pub trait Reader: Read + Seek {}
-impl<T: Read + ?Sized + Seek> Reader for T {}
+impl<T: Read + Seek + ?Sized> Reader for T {}

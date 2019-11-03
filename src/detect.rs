@@ -40,7 +40,7 @@ pub enum ProjectorVersion {
 #[derive(Debug)]
 pub enum FileType {
     Projector {
-        name: String,
+        name: Option<String>,
         endianness: Endianness,
         platform: Platform,
         version: ProjectorVersion,
@@ -146,7 +146,7 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
     };
 
     Some(FileType::Projector {
-        name: String::from("TODO"),
+        name: Some(String::from("TODO")),
         endianness,
         platform: Platform::Windows,
         version,
@@ -155,12 +155,8 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
     })
 }
 
-fn detect_mac(reader: &mut dyn Reader) -> Option<FileType> {
-    // TODO: Maybe do not parse the entire thing into memory to do this…
-    reader.seek(SeekFrom::Start(0)).ok()?;
-    let mut rom_data = Vec::new();
-    reader.read_to_end(&mut rom_data).ok()?;
-    let rom = MacResourceFile::new(rom_data).ok()?;
+fn detect_mac<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
+    let mut rom = MacResourceFile::new(reader).ok()?;
 
     let version = if rom.get_resource("PJ95", 0).is_some() {
         ProjectorVersion::D5
@@ -188,11 +184,8 @@ fn detect_mac(reader: &mut dyn Reader) -> Option<FileType> {
         });
     }
 
-    reader.seek(SeekFrom::Start(0x30)).ok()?;
-    let name = reader.read_pascal_str().ok()?;
-
     Some(FileType::Projector {
-        name,
+        name: rom.get_name(),
         endianness: Endianness::Big,
         platform: Platform::Mac,
         version: version,
@@ -201,7 +194,7 @@ fn detect_mac(reader: &mut dyn Reader) -> Option<FileType> {
     })
 }
 
-fn detect_projector(reader: &mut dyn Reader) -> Option<FileType> {
+fn detect_projector<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
     if let Some(file_type) = detect_win(reader) {
         return Some(file_type);
     }
@@ -213,7 +206,7 @@ fn detect_projector(reader: &mut dyn Reader) -> Option<FileType> {
     None
 }
 
-pub fn detect_type(reader: &mut dyn Reader) -> Option<FileType> {
+pub fn detect_type<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
     if let Some(file_type) = detect_movie(reader) {
         return Some(file_type);
     }

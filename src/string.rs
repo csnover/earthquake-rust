@@ -1,15 +1,15 @@
 // TODO: Director did not support Unicode, so relying on utf8 validity here will
 // explode eventually. Use encoding_rs.
 
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use byteorder::{ByteOrder};
 use std::{io, io::Read, str::{from_utf8, Utf8Error}, string::FromUtf8Error};
 
 type ReadExtResult = io::Result<String>;
 
 fn read_pascal_int<T: Read + ?Sized>(reader: &mut T, size: usize) -> ReadExtResult {
-    let mut result = String::with_capacity(size);
-    match reader.take(size as u64).read_to_string(&mut result) {
-        Ok(_) => Ok(result),
+    let mut result = Vec::with_capacity(size);
+    match reader.take(size as u64).read_to_end(&mut result) {
+        Ok(_) => Ok(String::from_utf8_lossy(&result).to_string()),
         Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
@@ -17,16 +17,16 @@ fn read_pascal_int<T: Read + ?Sized>(reader: &mut T, size: usize) -> ReadExtResu
 pub(crate) trait StringReadExt: Read {
     #[inline]
     fn read_c_str(&mut self) -> ReadExtResult {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(16);
         for value in self.bytes() {
             match value {
-                Ok(0) => break,
+                Ok(0) => return Ok(String::from_utf8_lossy(&result).to_string()),
                 Ok(byte) => result.push(byte),
                 Err(e) => return Err(e),
             }
         }
 
-        String::from_utf8(result).or_else(|e| Err(io::Error::new(io::ErrorKind::InvalidData, e)))
+        Err(io::Error::from(io::ErrorKind::UnexpectedEof))
     }
 
     #[inline]
@@ -67,6 +67,7 @@ impl PascalStr for str {}
 
 #[cfg(test)]
 mod tests {
+    use byteorder::{BigEndian, LittleEndian};
     use super::*;
 
     #[test]

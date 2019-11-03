@@ -1,128 +1,113 @@
 use byteorder::{ByteOrder, BigEndian, ReadBytesExt};
-use std::{collections::HashMap, io::{Cursor, Seek, SeekFrom}, mem::size_of};
+use crate::{Reader, string::StringReadExt};
+use std::{collections::HashMap, io::{Result as IoResult, Read, SeekFrom}};
 
+type Offset = u32;
 pub(crate) type OSType = u32;
-pub(crate) type ResourcesOfType = HashMap<u16, Resource>;
-pub(crate) type Resources = HashMap<OSType, ResourcesOfType>;
 
-// TODO: Maybe this should just store the offsets and the raw data is kept
-// all together in the M68k struct. Or just don’t even bother to make a map
-// since the number of entries is so tiny.
 #[derive(Debug)]
 pub(crate) struct Resource {
-    pub name: String,
+    pub name: Option<String>,
     pub data: Vec<u8>,
     pub flags: u8,
 }
 
 #[derive(Debug)]
-pub(crate) struct MacResourceFile {
-    pub extra_data: Vec<u8>,
-    resources: Resources,
+pub struct OffsetCount {
+    offset: Offset,
+    count: u16,
 }
 
-fn build_resource(data_section: &[u8], resource_entry: &[u8], name_list: &[u8]) -> Resource {
-    const NO_NAME: usize = 0xffff;
-
-    let name_offset = BigEndian::read_u16(&resource_entry[2..]) as usize;
-
-    let (data, flags) = {
-        const OFFSET_BITS: u8 = 24;
-        const OFFSET_MASK: u32 = (1 << OFFSET_BITS) - 1;
-        const FLAGS_MASK: u32 = !OFFSET_MASK;
-        let e = BigEndian::read_u32(&resource_entry[4..]);
-
-        let offset = (e & OFFSET_MASK) as usize;
-        let flags = ((e & FLAGS_MASK) >> OFFSET_BITS) as u8;
-
-        let size = BigEndian::read_u32(&data_section[offset..]) as usize;
-        let offset = offset + size_of::<u32>();
-        (data_section[offset..offset + size].to_vec(), flags)
-    };
-
-    let name = if name_offset == NO_NAME {
-        String::new()
-    } else {
-        let size = name_list[name_offset] as usize;
-        let offset = name_offset + size_of::<u8>();
-        String::from_utf8_lossy(&name_list[offset..offset + size]).into_owned()
-    };
-
-    Resource {
-        name,
-        data,
-        flags,
-    }
+#[derive(Debug)]
+pub(crate) struct MacResourceFile<'a, T: Reader> {
+    input: &'a mut T,
+    data_offset: Offset,
+    names_offset: Offset,
+    resource_tables: HashMap<OSType, OffsetCount>,
 }
 
-fn build_resource_list(data: &[u8], num_types: usize, type_list: &[u8], name_list: &[u8]) -> Resources {
-    const TYPE_ENTRY_SIZE: usize = 8;
-    const RESOURCE_ENTRY_SIZE: usize = 12;
+impl<'a, T: Reader> MacResourceFile<'a, T> {
+    pub fn new(data: &'a mut T) -> IoResult<Self> {
+        data.seek(SeekFrom::Start(0))?;
+        let data_offset = data.read_u32::<BigEndian>()?;
+        let map_offset = data.read_u32::<BigEndian>()?;
 
-    let mut resources = HashMap::with_capacity(num_types.into());
+        data.seek(SeekFrom::Start(map_offset as u64 + 24))?;
+        let types_offset = map_offset + data.read_u16::<BigEndian>()? as u32;
+        let names_offset = map_offset + data.read_u16::<BigEndian>()? as u32;
+        let num_types = data.read_u16::<BigEndian>()?;
 
-    let mut type_entry = type_list;
-    for _ in 0..num_types {
-        let os_type: OSType = BigEndian::read_u32(&type_entry);
-        let num_resources = BigEndian::read_u16(&type_entry[4..]) as usize + 1;
-
-        let mut resources_of_type = ResourcesOfType::with_capacity(num_resources);
-
-        let mut resource_entry = {
-            let offset = BigEndian::read_u16(&type_entry[6..]) as usize - 2;
-            &type_list[offset..]
-        };
-
-        for _ in 0..num_resources {
-            let id = BigEndian::read_u16(&resource_entry);
-            resources_of_type.insert(id, build_resource(data, resource_entry, name_list));
-            resource_entry = &resource_entry[RESOURCE_ENTRY_SIZE..];
+        let mut resource_tables = HashMap::with_capacity(num_types as usize);
+        for _ in 0..=num_types {
+            let os_type = data.read_u32::<BigEndian>()? as OSType;
+            let count = data.read_u16::<BigEndian>()?;
+            let offset = types_offset + data.read_u16::<BigEndian>()? as Offset;
+            resource_tables.insert(os_type, OffsetCount { offset, count });
         }
 
-        resources.insert(os_type, resources_of_type);
-
-        type_entry = &type_entry[TYPE_ENTRY_SIZE..];
-    }
-
-    resources
-}
-
-impl MacResourceFile {
-    pub fn new(data: Vec<u8>) -> std::io::Result<MacResourceFile> {
-        const ROM_HEADER_SIZE: usize = 16;
-
-        let mut reader = Cursor::new(&data);
-        let data_offset = reader.read_u32::<BigEndian>()? as usize;
-        let map_offset = reader.read_u32::<BigEndian>()? as usize;
-        let data_end = data_offset + reader.read_u32::<BigEndian>()? as usize;
-        let map_end = map_offset + reader.read_u32::<BigEndian>()? as usize;
-
-        reader.seek(SeekFrom::Start(map_offset as u64 + 24))?;
-        let type_list_offset = reader.read_u16::<BigEndian>()? as usize + 2;
-        let name_list_offset = reader.read_u16::<BigEndian>()? as usize;
-        let num_types = reader.read_u16::<BigEndian>()? as usize;
-
-        let resources = {
-            let data_section = &data[data_offset..data_end];
-            let type_list = &data[map_offset + type_list_offset..map_end];
-            let name_list = &data[map_offset + name_list_offset..map_end];
-            build_resource_list(&data_section, num_types, type_list, name_list)
-        };
-
-        let extra_data = if data_offset != ROM_HEADER_SIZE {
-            data[ROM_HEADER_SIZE..data_offset].to_vec()
-        } else {
-            Vec::new()
-        };
-
-        Ok(MacResourceFile {
-            extra_data,
-            resources,
+        Ok(Self {
+            input: data,
+            data_offset,
+            names_offset,
+            resource_tables,
         })
     }
 
-    pub fn get_resource(&self, os_type: &str, id: u16) -> Option<&Resource> {
-        self.resources.get(&BigEndian::read_u32(os_type.as_bytes()))?.get(&id)
+    fn build_resource(&mut self) -> Option<Resource> {
+        const NO_NAME: u16 = 0xffff;
+
+        let name_offset = self.input.read_u16::<BigEndian>().ok()?;
+        let data_offset = self.input.read_u32::<BigEndian>().ok()?;
+
+        let name = if name_offset == NO_NAME {
+            None
+        } else {
+            self.input.seek(SeekFrom::Start((self.names_offset + name_offset as u32) as u64)).and_then(|_| {
+                self.input.read_pascal_str()
+            }).ok()
+        };
+
+        let (data, flags) = {
+            const OFFSET_BITS: u8 = 24;
+            const OFFSET_MASK: u32 = (1 << OFFSET_BITS) - 1;
+            const FLAGS_MASK: u32 = !OFFSET_MASK;
+
+            let offset = data_offset & OFFSET_MASK;
+            let flags = ((data_offset & FLAGS_MASK) >> OFFSET_BITS) as u8;
+
+            self.input.seek(SeekFrom::Start((self.data_offset + offset) as u64)).ok()?;
+            let size = self.input.read_u32::<BigEndian>().ok()?;
+            let mut data = Vec::with_capacity(size as usize);
+            self.input.take(size as u64).read_to_end(&mut data).ok()?;
+            (data, flags)
+        };
+
+        Some(Resource {
+            name,
+            data,
+            flags,
+        })
+    }
+
+    pub fn get_name(&mut self) -> Option<String> {
+        self.input.seek(SeekFrom::Start(0x30)).ok()?;
+        self.input.read_pascal_str().ok()
+    }
+
+    pub fn get_resource(&mut self, os_type: &str, id: u16) -> Option<Resource> {
+        let resource_table = self.resource_tables.get(&BigEndian::read_u32(os_type.as_bytes()))?;
+
+        self.input.seek(SeekFrom::Start(resource_table.offset as u64)).ok()?;
+        for _ in 0..=resource_table.count {
+            let found_id = self.input.read_u16::<BigEndian>().ok()?;
+            if id != found_id {
+                self.input.seek(SeekFrom::Current(10)).ok()?;
+            } else {
+                return self.build_resource();
+            }
+        }
+
+        None
     }
 }
 

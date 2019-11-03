@@ -10,8 +10,8 @@ struct ApplicationVise {
 impl ApplicationVise {
     /// Creates a new Application VISE decompressor using the given shared data
     /// dictionary.
-    fn new(shared_data: Vec<u8>) -> ApplicationVise {
-        ApplicationVise { shared_data }
+    fn new(shared_data: Vec<u8>) -> Self {
+        Self { shared_data }
     }
 
     /// Finds the shared data dictionary in `data`. `data` should contain the
@@ -63,7 +63,7 @@ impl ApplicationVise {
     fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
         const USE_SHARED_DICT: u32 = 0x8000_0000;
 
-        ApplicationVise::validate(data)?;
+        Self::validate(data)?;
 
         let decompressed_size = BigEndian::read_u32(&data[8..]) as usize;
         let odd_sized_output = decompressed_size & 1 == 1;
