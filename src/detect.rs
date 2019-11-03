@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use crate::{m68k::M68k, Reader, string::StringReadExt};
+use crate::{resources::mac_resource_file::MacResourceFile, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
 #[derive(Debug)]
@@ -160,13 +160,13 @@ fn detect_mac(reader: &mut dyn Reader) -> Option<FileType> {
     reader.seek(SeekFrom::Start(0)).ok()?;
     let mut rom_data = Vec::new();
     reader.read_to_end(&mut rom_data).ok()?;
-    let rom = M68k::new(rom_data).ok()?;
+    let rom = MacResourceFile::new(rom_data).ok()?;
 
     let version = if rom.get_resource("PJ95", 0).is_some() {
         ProjectorVersion::D5
     } else if rom.get_resource("PJ93", 0).is_some() {
         ProjectorVersion::D4
-    } else if rom.get_resource("VWst", 0).is_some() {
+    } else if rom.get_resource("MMPB", 0).is_some() {
         ProjectorVersion::D3
     } else {
         return None;

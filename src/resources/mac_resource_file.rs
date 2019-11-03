@@ -16,15 +16,9 @@ pub(crate) struct Resource {
 }
 
 #[derive(Debug)]
-pub(crate) struct M68k {
+pub(crate) struct MacResourceFile {
     pub extra_data: Vec<u8>,
     resources: Resources,
-}
-
-impl M68k {
-    pub fn get_resource(&self, os_type: &str, id: u16) -> Option<&Resource> {
-        self.resources.get(&BigEndian::read_u32(os_type.as_bytes()))?.get(&id)
-    }
 }
 
 fn build_resource(data_section: &[u8], resource_entry: &[u8], name_list: &[u8]) -> Resource {
@@ -93,8 +87,8 @@ fn build_resource_list(data: &[u8], num_types: usize, type_list: &[u8], name_lis
     resources
 }
 
-impl M68k {
-    pub fn new(data: Vec<u8>) -> std::io::Result<M68k> {
+impl MacResourceFile {
+    pub fn new(data: Vec<u8>) -> std::io::Result<MacResourceFile> {
         const ROM_HEADER_SIZE: usize = 16;
 
         let mut reader = Cursor::new(&data);
@@ -121,10 +115,14 @@ impl M68k {
             Vec::new()
         };
 
-        Ok(M68k {
+        Ok(MacResourceFile {
             extra_data,
             resources,
         })
+    }
+
+    pub fn get_resource(&self, os_type: &str, id: u16) -> Option<&Resource> {
+        self.resources.get(&BigEndian::read_u32(os_type.as_bytes()))?.get(&id)
     }
 }
 
