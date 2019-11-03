@@ -1,6 +1,7 @@
 use std::io::{Read, Seek};
 
 mod chunk;
+pub(crate) mod compression;
 pub mod detect;
 mod io;
 pub mod movie;
