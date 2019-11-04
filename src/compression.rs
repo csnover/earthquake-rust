@@ -23,7 +23,7 @@ impl ApplicationVise {
             None
         } else {
             let offset = BigEndian::read_u16(&data.get(62..)?);
-            data.get(offset as usize..)
+            data.get(62 + offset as usize..)
         }
     }
 
@@ -275,6 +275,6 @@ mod tests {
     #[test]
     fn find_shared_data() {
         const DATA: &'static [u8] = include!("tests/data/compression/code.in");
-        assert_eq!(ApplicationVise::find_shared_data(&DATA).unwrap(), &DATA[60..]);
+        assert_eq!(ApplicationVise::find_shared_data(&DATA).unwrap(), &DATA[62..]);
     }
 }
