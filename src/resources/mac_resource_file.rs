@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
 use crate::{Reader, compression::ApplicationVise, string::StringReadExt};
@@ -8,11 +9,24 @@ const RES_TABLE_ENTRY_SIZE: u16 = 12;
 type Offset = u32;
 pub(crate) type OSType = u32;
 
+bitflags! {
+    pub struct ResourceFlags: u8 {
+        const RESERVED            = 0x80;
+        const LOAD_TO_SYSTEM_HEAP = 0x40;
+        const PURGEABLE           = 0x20;
+        const LOCKED              = 0x10;
+        const READ_ONLY           = 0x08;
+        const PRELOAD             = 0x04;
+        const CHANGED             = 0x02;
+        const COMPRESSED          = 0x01;
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Resource {
     pub name: Option<String>,
     pub data: Vec<u8>,
-    pub flags: u8,
+    pub flags: ResourceFlags,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -100,7 +114,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
                 data = self.decompress(&data)?;
             }
 
-            (data, flags)
+            (data, ResourceFlags::from_bits_truncate(flags))
         };
 
         Ok(Resource {
