@@ -1,4 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
+use encoding::all::MAC_ROMAN;
 use crate::{resources::mac_resource_file::MacResourceFile, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
@@ -129,7 +130,7 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
                 // TODO: Read flag for whether or not we are doing embedded RIFF;
                 // this is for non-embedded only
                 let movie_size = reader.read_u32::<LittleEndian>().ok()?;
-                let movie_filename = reader.read_pascal_str().ok()?;
+                let movie_filename = reader.read_pascal_str(MAC_ROMAN).ok()?;
 
                 movies.push(Movie::External {
                     filename: movie_filename,
@@ -137,7 +138,7 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
                 });
             }
 
-            (reader.read_pascal_str().ok()?, movies)
+            (reader.read_pascal_str(MAC_ROMAN).ok()?, movies)
         },
         _ => {
             // TODO

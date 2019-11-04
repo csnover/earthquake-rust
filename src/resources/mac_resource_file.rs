@@ -1,4 +1,5 @@
 use byteorder::{ByteOrder, BigEndian, ReadBytesExt};
+use encoding::all::MAC_ROMAN;
 use crate::{Reader, compression::ApplicationVise, string::StringReadExt};
 use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, SeekFrom}};
 
@@ -78,7 +79,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
             None
         } else {
             self.input.seek(SeekFrom::Start((self.names_offset + entry.name_offset as u32) as u64)).and_then(|_| {
-                self.input.read_pascal_str()
+                self.input.read_pascal_str(MAC_ROMAN)
             }).ok()
         };
 
@@ -111,7 +112,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
 
     pub fn get_name(&mut self) -> Option<String> {
         self.input.seek(SeekFrom::Start(0x30)).ok()?;
-        self.input.read_pascal_str().ok()
+        self.input.read_pascal_str(MAC_ROMAN).ok()
     }
 
     fn get_resource_table(&self, os_type: &str) -> Option<OffsetCount> {
