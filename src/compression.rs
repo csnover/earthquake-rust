@@ -15,51 +15,6 @@ impl ApplicationVise {
         Self { shared_data }
     }
 
-    /// Finds the shared data dictionary in `data`. `data` should contain the
-    /// CODE resource of the VISE decompressor within a compressed executable.
-    pub fn find_shared_data(data: &[u8]) -> Option<&[u8]> {
-        if data.get(18..22)? != b"VISE" {
-            None
-        } else if data.get(60..62)? != b"\x47\xfa" {
-            None
-        } else {
-            let offset = BigEndian::read_u16(&data.get(62..)?);
-            data.get(62 + offset as usize..)
-        }
-    }
-
-    /// Determines whether the given data is compressed by Application VISE.
-    pub fn is_compressed(data: &[u8]) -> bool {
-        data.len() > 4 && &data[0..4] == b"\xa8\x9f\x00\x0c"
-    }
-
-    /// Checks whether the given data is valid according to the embedded
-    /// checksum.
-    pub fn validate(data: &[u8]) -> IoResult<()> {
-        let expected = BigEndian::read_u32(data.get(4..).ok_or(ErrorKind::UnexpectedEof)?);
-
-        let mut actual = 0xAAAA_AAAAu32;
-        let mut index = 8;
-        let size = data.len() - index;
-        for _ in 0..size / 4 {
-            actual ^= BigEndian::read_u32(data.get(index..).ok_or(ErrorKind::UnexpectedEof)?);
-            index += 4;
-        }
-        for _ in 0..size & 3 {
-            actual ^= *data.get(index).ok_or(ErrorKind::UnexpectedEof)? as u32;
-            index += 1;
-        }
-
-        if expected == actual {
-            Ok(())
-        } else {
-            Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("Checksum mismatch: 0x{:08x} != 0x{:08x}", actual, expected)
-            ))
-        }
-    }
-
     /// Decompresses the given data.
     pub fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
         const USE_SHARED_DICT: u32 = 0x8000_0000;
@@ -144,6 +99,51 @@ impl ApplicationVise {
             Ok(output)
         } else {
             Err(Error::new(ErrorKind::UnexpectedEof, format!("Incomplete data (expected {}, got {})", output.len(), decompressed_size)))
+        }
+    }
+
+    /// Finds the shared data dictionary in `data`. `data` should contain the
+    /// CODE resource of the VISE decompressor within a compressed executable.
+    pub fn find_shared_data(data: &[u8]) -> Option<&[u8]> {
+        if data.get(18..22)? != b"VISE" {
+            None
+        } else if data.get(60..62)? != b"\x47\xfa" {
+            None
+        } else {
+            let offset = BigEndian::read_u16(&data.get(62..)?);
+            data.get(62 + offset as usize..)
+        }
+    }
+
+    /// Determines whether the given data is compressed by Application VISE.
+    pub fn is_compressed(data: &[u8]) -> bool {
+        data.len() > 4 && &data[0..4] == b"\xa8\x9f\x00\x0c"
+    }
+
+    /// Checks whether the given data is valid according to the embedded
+    /// checksum.
+    pub fn validate(data: &[u8]) -> IoResult<()> {
+        let expected = BigEndian::read_u32(data.get(4..).ok_or(ErrorKind::UnexpectedEof)?);
+
+        let mut actual = 0xAAAA_AAAAu32;
+        let mut index = 8;
+        let size = data.len() - index;
+        for _ in 0..size / 4 {
+            actual ^= BigEndian::read_u32(data.get(index..).ok_or(ErrorKind::UnexpectedEof)?);
+            index += 4;
+        }
+        for _ in 0..size & 3 {
+            actual ^= *data.get(index).ok_or(ErrorKind::UnexpectedEof)? as u32;
+            index += 1;
+        }
+
+        if expected == actual {
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Checksum mismatch: 0x{:08x} != 0x{:08x}", actual, expected)
+            ))
         }
     }
 }
@@ -244,20 +244,6 @@ mod tests {
     const SHARED: &'static [u8] = include!("tests/data/compression/shared.in");
 
     #[test]
-    fn validate() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
-        ApplicationVise::validate(&DATA).unwrap();
-    }
-
-    #[test]
-    fn decompress_empty() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
-        let expected = [0u8; 68].to_vec();
-        let vise = ApplicationVise::new(SHARED.to_vec());
-        assert_eq!(vise.decompress(&DATA).unwrap(), expected);
-    }
-
-    #[test]
     fn decompress_data1() {
         const DATA: &'static [u8] = include!("tests/data/compression/data1.in");
         const EXPECTED: &'static [u8] = include!("tests/data/compression/data1.expected.in");
@@ -274,8 +260,22 @@ mod tests {
     }
 
     #[test]
+    fn decompress_empty() {
+        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
+        let expected = [0u8; 68].to_vec();
+        let vise = ApplicationVise::new(SHARED.to_vec());
+        assert_eq!(vise.decompress(&DATA).unwrap(), expected);
+    }
+
+    #[test]
     fn find_shared_data() {
         const DATA: &'static [u8] = include!("tests/data/compression/code.in");
         assert_eq!(ApplicationVise::find_shared_data(&DATA).unwrap(), &DATA[62..]);
+    }
+
+    #[test]
+    fn validate() {
+        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
+        ApplicationVise::validate(&DATA).unwrap();
     }
 }

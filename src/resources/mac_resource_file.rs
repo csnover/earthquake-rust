@@ -4,39 +4,48 @@ use encoding::all::MAC_ROMAN;
 use crate::{Reader, compression::ApplicationVise, string::StringReadExt};
 use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, SeekFrom}};
 
-const RES_TABLE_ENTRY_SIZE: u16 = 12;
-
-type Offset = u32;
-pub(crate) type OSType = u32;
-
 bitflags! {
+    /// Flags set on a resource.
     pub struct ResourceFlags: u8 {
+        /// Reserved; unused.
         const RESERVED            = 0x80;
+
+        /// The resource should be loaded in the system heap instead of the
+        /// application heap.
         const LOAD_TO_SYSTEM_HEAP = 0x40;
+
+        /// The resource may be paged out of memory.
         const PURGEABLE           = 0x20;
+
+        /// The resource may not be moved in memory.
         const LOCKED              = 0x10;
+
+        /// The resource is read-only.
         const READ_ONLY           = 0x08;
+
+        /// The resource should be loaded as soon as the file is opened.
         const PRELOAD             = 0x04;
+
+        /// Internal flag used by the Resource Manager.
         const CHANGED             = 0x02;
+
+        /// The resource data is compressed.
         const COMPRESSED          = 0x01;
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct Resource {
+/// A resource from a Resource File.
+pub struct Resource {
     pub name: Option<String>,
     pub data: Vec<u8>,
     pub flags: ResourceFlags,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct OffsetCount {
-    offset: Offset,
-    count: u16,
-}
-
 #[derive(Debug)]
-pub(crate) struct MacResourceFile<'a, T: Reader> {
+/// MacResourceFile is used to read Macintosh Resource File Format files.
+/// These are the resource forks of all Mac OS Classic executables.
+pub struct MacResourceFile<'a, T: Reader> {
     input: &'a mut T,
     decompressor: Option<ApplicationVise>,
     data_offset: Offset,
@@ -45,6 +54,7 @@ pub(crate) struct MacResourceFile<'a, T: Reader> {
 }
 
 impl<'a, T: Reader> MacResourceFile<'a, T> {
+    /// Creates a new MacResourceFile from a readable data stream.
     pub fn new(data: &'a mut T) -> IoResult<Self> {
         data.seek(SeekFrom::Start(0))?;
         let data_offset = data.read_u32::<BigEndian>()?;
@@ -72,18 +82,22 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         })
     }
 
-    fn decompress(&mut self, data: &[u8]) -> IoResult<Vec<u8>> {
-        if self.decompressor.is_none() {
-            let iter = self.iter_by_type("CODE").expect("Missing CODE table");
-            // It is impossible to not get an item from this iterator, since
-            // there is no way to have a zero-element resource table
-            let last_code = iter.last().unwrap();
-            let resource = self.build_resource(&last_code)?;
-            let data = ApplicationVise::find_shared_data(&resource.data).ok_or(ErrorKind::InvalidData)?;
-            self.decompressor = Some(ApplicationVise::new(data.to_vec()));
+    /// Gets the name of the Resource File itself, if one exists. For Mac
+    /// applications, this is the original name of the application.
+    pub fn get_name(&mut self) -> Option<String> {
+        self.input.seek(SeekFrom::Start(0x30)).ok()?;
+        self.input.read_pascal_str(MAC_ROMAN).ok()
+    }
+
+    /// Gets a resource from the file.
+    pub fn get_resource(&mut self, os_type: &str, id: u16) -> Option<Resource> {
+        for entry in self.iter_by_type(os_type)? {
+            if entry.id == id {
+                return Some(self.build_resource(&entry).expect("Error building resource"));
+            }
         }
 
-        self.decompressor.as_ref().unwrap().decompress(&data)
+        None
     }
 
     fn build_resource(&mut self, entry: &ResourceEntry) -> IoResult<Resource> {
@@ -124,9 +138,18 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         })
     }
 
-    pub fn get_name(&mut self) -> Option<String> {
-        self.input.seek(SeekFrom::Start(0x30)).ok()?;
-        self.input.read_pascal_str(MAC_ROMAN).ok()
+    fn decompress(&mut self, data: &[u8]) -> IoResult<Vec<u8>> {
+        if self.decompressor.is_none() {
+            let iter = self.iter_by_type("CODE").expect("Missing CODE table");
+            // It is impossible to not get an item from this iterator, since
+            // there is no way to have a zero-element resource table
+            let last_code = iter.last().unwrap();
+            let resource = self.build_resource(&last_code)?;
+            let data = ApplicationVise::find_shared_data(&resource.data).ok_or(ErrorKind::InvalidData)?;
+            self.decompressor = Some(ApplicationVise::new(data.to_vec()));
+        }
+
+        self.decompressor.as_ref().unwrap().decompress(&data)
     }
 
     fn get_resource_table(&self, os_type: &str) -> Option<OffsetCount> {
@@ -141,25 +164,26 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         self.input.take(table_size as u64).read_to_end(&mut table).ok()?;
         Some(ResourceTableIter { table, offset: 0 })
     }
-
-    pub fn get_resource(&mut self, os_type: &str, id: u16) -> Option<Resource> {
-        for entry in self.iter_by_type(os_type)? {
-            if entry.id == id {
-                return Some(self.build_resource(&entry).expect("Error building resource"));
-            }
-        }
-
-        None
-    }
 }
 
-pub struct ResourceEntry {
+const RES_TABLE_ENTRY_SIZE: u16 = 12;
+
+type Offset = u32;
+type OSType = u32;
+
+#[derive(Debug, Copy, Clone)]
+struct OffsetCount {
+    offset: Offset,
+    count: u16,
+}
+
+struct ResourceEntry {
     id: u16,
     name_offset: u16,
     data_offset: u32,
 }
 
-pub struct ResourceTableIter {
+struct ResourceTableIter {
     table: Vec<u8>,
     offset: usize,
 }
