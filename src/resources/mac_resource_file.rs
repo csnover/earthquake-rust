@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
-use crate::{Reader, compression::ApplicationVise, string::StringReadExt};
+use crate::{OSType, OSTypeReadExt, Reader, compression::ApplicationVise, string::StringReadExt};
 use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, SeekFrom}};
 
 bitflags! {
@@ -67,7 +67,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
 
         let mut resource_tables = HashMap::with_capacity(num_types as usize);
         for _ in 0..=num_types {
-            let os_type = data.read_u32::<BigEndian>()? as OSType;
+            let os_type = data.read_os_type()?;
             let count = data.read_u16::<BigEndian>()?;
             let offset = types_offset + data.read_u16::<BigEndian>()? as Offset;
             resource_tables.insert(os_type, OffsetCount { offset, count });
@@ -82,15 +82,21 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         })
     }
 
-    /// Gets the name of the Resource File itself, if one exists. For Mac
-    /// applications, this is the original name of the application.
-    pub fn get_name(&mut self) -> Option<String> {
-        self.input.seek(SeekFrom::Start(0x30)).ok()?;
-        self.input.read_pascal_str(MAC_ROMAN).ok()
+    /// Tests whether the given resource exists in the file.
+    pub fn contains(&mut self, os_type: &[u8; 4], id: u16) -> bool {
+        if let Some(iter) = self.iter_by_type(os_type) {
+            for entry in iter {
+                if entry.id == id {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Gets a resource from the file.
-    pub fn get_resource(&mut self, os_type: &str, id: u16) -> Option<Resource> {
+    pub fn get(&mut self, os_type: &[u8; 4], id: u16) -> Option<Resource> {
         for entry in self.iter_by_type(os_type)? {
             if entry.id == id {
                 return Some(self.build_resource(&entry).expect("Error building resource"));
@@ -98,6 +104,13 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         }
 
         None
+    }
+
+    /// Gets the name of the Resource File itself, if one exists. For Mac
+    /// applications, this is the original name of the application.
+    pub fn get_name(&mut self) -> Option<String> {
+        self.input.seek(SeekFrom::Start(0x30)).ok()?;
+        self.input.read_pascal_str(MAC_ROMAN).ok()
     }
 
     fn build_resource(&mut self, entry: &ResourceEntry) -> IoResult<Resource> {
@@ -140,7 +153,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
 
     fn decompress(&mut self, data: &[u8]) -> IoResult<Vec<u8>> {
         if self.decompressor.is_none() {
-            let iter = self.iter_by_type("CODE").expect("Missing CODE table");
+            let iter = self.iter_by_type(b"CODE").expect("Missing CODE table");
             // It is impossible to not get an item from this iterator, since
             // there is no way to have a zero-element resource table
             let last_code = iter.last().unwrap();
@@ -152,11 +165,11 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         self.decompressor.as_ref().unwrap().decompress(&data)
     }
 
-    fn get_resource_table(&self, os_type: &str) -> Option<OffsetCount> {
-        self.resource_tables.get(&BigEndian::read_u32(os_type.as_bytes())).copied()
+    fn get_resource_table(&self, os_type: &[u8; 4]) -> Option<OffsetCount> {
+        self.resource_tables.get(&OSType(*os_type)).copied()
     }
 
-    fn iter_by_type(&mut self, os_type: &str) -> Option<ResourceTableIter> {
+    fn iter_by_type(&mut self, os_type: &[u8; 4]) -> Option<ResourceTableIter> {
         let resource_table = self.get_resource_table(os_type)?;
         self.input.seek(SeekFrom::Start(resource_table.offset as u64)).ok()?;
         let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
@@ -169,7 +182,6 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
 const RES_TABLE_ENTRY_SIZE: u16 = 12;
 
 type Offset = u32;
-type OSType = u32;
 
 #[derive(Debug, Copy, Clone)]
 struct OffsetCount {

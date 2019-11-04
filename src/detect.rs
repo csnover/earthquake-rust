@@ -1,16 +1,9 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
-use crate::{resources::mac_resource_file::MacResourceFile, Reader, string::StringReadExt};
+use crate::{Endianness, resources::{mac_resource_file::MacResourceFile, riff::{DetectionInfo as RiffDetectionInfo, Riff}}, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
-#[derive(Debug)]
-pub enum Endianness {
-    Little,
-    Big,
-    Unknown,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Platform {
     Windows,
     Mac,
@@ -22,14 +15,20 @@ pub enum Movie {
     External { filename: String, size: u32 },
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum MovieType {
+    Normal,
+    Cast,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum MovieVersion {
     Unknown,
     D3,
     D4,
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ProjectorVersion {
     Unknown,
     D3,
@@ -48,43 +47,7 @@ pub enum FileType {
         data_dirname: String,
         movies: Vec<Movie>,
     },
-    Movie {
-        os_type_endianness: Endianness,
-        data_endianness: Endianness,
-        version: MovieVersion,
-    }
-}
-
-fn detect_movie(reader: &mut dyn Reader) -> Option<FileType> {
-    reader.seek(SeekFrom::Start(0)).ok()?;
-    let mut buffer = [0u8; 8];
-    reader.read_exact(&mut buffer).ok()?;
-    let size = reader.seek(SeekFrom::End(0)).ok()?;
-
-    match &buffer[0..4] {
-        b"RIFX" | b"RIFF" => {
-            const RIFF_HEADER_SIZE: u64 = 8;
-            let riff_size = LittleEndian::read_u32(&buffer[4..]) as u64;
-
-            // Only D3Win includes the RIFF header in the RIFF length.
-            let has_le_data = size == riff_size + RIFF_HEADER_SIZE || size == riff_size;
-
-            Some(FileType::Movie {
-                os_type_endianness: Endianness::Big,
-                data_endianness: if has_le_data { Endianness::Little } else { Endianness::Big },
-                version: if buffer[3] == b'X' { MovieVersion::D4 } else { MovieVersion::D3 },
-            })
-        },
-        b"XFIR" => Some(FileType::Movie {
-            os_type_endianness: Endianness::Little,
-            // LE data here is an assumption, since the only reason why OSType
-            // would be LE is because it is generated on Windows
-            data_endianness: Endianness::Little,
-            version: if buffer[0] == b'X' { MovieVersion::D4 } else { MovieVersion::D3 },
-        }),
-        b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
-        _ => None,
-    }
+    Movie(RiffDetectionInfo)
 }
 
 fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
@@ -160,19 +123,19 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
 fn detect_mac<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
     let mut rom = MacResourceFile::new(reader).ok()?;
 
-    let version = if rom.get_resource("PJ95", 0).is_some() {
+    let version = if rom.contains(b"PJ95", 0) {
         ProjectorVersion::D5
-    } else if rom.get_resource("PJ93", 0).is_some() {
+    } else if rom.contains(b"PJ93", 0) {
         ProjectorVersion::D4
-    } else if rom.get_resource("MMPB", 0).is_some() {
+    } else if rom.contains(b"MMPB", 0) {
         ProjectorVersion::D3
     } else {
         return None;
     };
 
     let has_external_data = {
-        let os_type = if version == ProjectorVersion::D3 { "VWst" } else { "PJst" };
-        rom.get_resource(os_type, 0)?.data[4] != 0
+        let os_type = if version == ProjectorVersion::D3 { b"VWst" } else { b"PJst" };
+        rom.get(os_type, 0)?.data[4] != 0
     };
 
     let mut movies = Vec::new();
@@ -197,20 +160,12 @@ fn detect_mac<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
 }
 
 fn detect_projector<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
-    if let Some(file_type) = detect_win(reader) {
-        return Some(file_type);
-    }
-
-    if let Some(file_type) = detect_mac(reader) {
-        return Some(file_type);
-    }
-
-    None
+    detect_win(reader).or_else(|| detect_mac(reader))
 }
 
 pub fn detect_type<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
-    if let Some(file_type) = detect_movie(reader) {
-        return Some(file_type);
+    if let Some(file_type) = Riff::detect(reader) {
+        return Some(FileType::Movie(file_type));
     }
 
     if let Some(file_type) = detect_projector(reader) {
