@@ -3,20 +3,21 @@ use std::io::{Error, ErrorKind, Result as IoResult};
 
 /// A decompressor for the Application VISE runtime executable compression
 /// format.
-struct ApplicationVise {
+#[derive(Debug)]
+pub struct ApplicationVise {
     shared_data: Vec<u8>,
 }
 
 impl ApplicationVise {
     /// Creates a new Application VISE decompressor using the given shared data
     /// dictionary.
-    fn new(shared_data: Vec<u8>) -> Self {
+    pub fn new(shared_data: Vec<u8>) -> Self {
         Self { shared_data }
     }
 
     /// Finds the shared data dictionary in `data`. `data` should contain the
     /// CODE resource of the VISE decompressor within a compressed executable.
-    fn find_shared_data(data: &[u8]) -> Option<&[u8]> {
+    pub fn find_shared_data(data: &[u8]) -> Option<&[u8]> {
         if data.get(18..22)? != b"VISE" {
             None
         } else if data.get(60..62)? != b"\x47\xfa" {
@@ -28,13 +29,13 @@ impl ApplicationVise {
     }
 
     /// Determines whether the given data is compressed by Application VISE.
-    fn is_compressed(data: &[u8]) -> bool {
+    pub fn is_compressed(data: &[u8]) -> bool {
         data.len() > 4 && &data[0..4] == b"\xa8\x9f\x00\x0c"
     }
 
     /// Checks whether the given data is valid according to the embedded
     /// checksum.
-    fn validate(data: &[u8]) -> IoResult<()> {
+    pub fn validate(data: &[u8]) -> IoResult<()> {
         let expected = BigEndian::read_u32(data.get(4..).ok_or(ErrorKind::UnexpectedEof)?);
 
         let mut actual = 0xAAAA_AAAAu32;
@@ -60,7 +61,7 @@ impl ApplicationVise {
     }
 
     /// Decompresses the given data.
-    fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
+    pub fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
         const USE_SHARED_DICT: u32 = 0x8000_0000;
 
         Self::validate(data)?;
