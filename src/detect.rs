@@ -56,6 +56,7 @@ pub enum FileType {
 }
 
 fn detect_movie(reader: &mut dyn Reader) -> Option<FileType> {
+    reader.seek(SeekFrom::Start(0)).ok()?;
     let mut buffer = [0u8; 8];
     reader.read_exact(&mut buffer).ok()?;
     let size = reader.seek(SeekFrom::End(0)).ok()?;
