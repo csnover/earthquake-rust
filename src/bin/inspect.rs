@@ -18,16 +18,31 @@ fn open_apple_double(filename: &str) -> IoResult<File> {
     File::open(path)
 }
 
-fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
-    let mut file = open_named_fork(&filename)
+fn open_resource_fork(filename: &str) -> IoResult<File> {
+    open_named_fork(&filename)
         .or_else(|_| File::open(format!("{}.rsrc", filename)))
         .or_else(|_| open_apple_double(&filename))
-        .or_else(|_| File::open(filename))?;
+}
 
+fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
+    // Files from Macs have both data and resource forks; in the case of
+    // projectors, we want to prefer the resource fork (to detect the projector
+    // instead of movie data in the data fork), but in the case of standalone
+    // dir/dxr files, we get a mostly empty resource fork which fails detection,
+    // and then need to go read the data fork to detect the movie
+    if let Ok(mut file) = open_resource_fork(&filename) {
+        if let Some(file_type) = detect_type(&mut file) {
+            println!("{:?}", file_type);
+            return Ok(());
+        }
+    }
+
+    let mut file = File::open(filename)?;
     match detect_type(&mut file) {
         Some(file_type) => { println!("{:?}", file_type); },
         None => { println!("{}: Invalid or unknown Director projector or movie.", filename); }
     }
+
     Ok(())
 }
 
