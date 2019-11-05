@@ -1,6 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
-use crate::{Endianness, resources::{mac_resource_file::MacResourceFile, riff::{DetectionInfo as RiffDetectionInfo, Riff}}, Reader, string::StringReadExt};
+use crate::{Endianness, OSType, os, resources::{mac_resource_file::MacResourceFile, riff::{DetectionInfo as RiffDetectionInfo, Riff}}, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -120,21 +120,21 @@ fn detect_win(reader: &mut dyn Reader) -> Option<FileType> {
     })
 }
 
-fn detect_mac<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
+fn detect_mac<T: Reader>(reader: &mut T) -> Option<FileType> {
     let mut rom = MacResourceFile::new(reader).ok()?;
 
-    let version = if rom.contains(b"PJ95", 0) {
+    let version = if rom.contains(os!(b"PJ95"), 0) {
         ProjectorVersion::D5
-    } else if rom.contains(b"PJ93", 0) {
+    } else if rom.contains(os!(b"PJ95"), 0) {
         ProjectorVersion::D4
-    } else if rom.contains(b"MMPB", 0) {
+    } else if rom.contains(os!(b"PJ95"), 0) {
         ProjectorVersion::D3
     } else {
         return None;
     };
 
     let has_external_data = {
-        let os_type = if version == ProjectorVersion::D3 { b"VWst" } else { b"PJst" };
+        let os_type = if version == ProjectorVersion::D3 { os!(b"VWst") } else { os!(b"PJst") };
         rom.get(os_type, 0)?.data[4] != 0
     };
 
@@ -153,17 +153,17 @@ fn detect_mac<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
         name: rom.get_name(),
         endianness: Endianness::Big,
         platform: Platform::Mac,
-        version: version,
+        version,
         data_dirname: String::new(),
         movies,
     })
 }
 
-fn detect_projector<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
+fn detect_projector<T: Reader>(reader: &mut T) -> Option<FileType> {
     detect_win(reader).or_else(|| detect_mac(reader))
 }
 
-pub fn detect_type<'a, T: Reader>(reader: &'a mut T) -> Option<FileType> {
+pub fn detect_type<T: Reader>(reader: &mut T) -> Option<FileType> {
     if let Some(file_type) = Riff::detect(reader) {
         return Some(FileType::Movie(file_type));
     }

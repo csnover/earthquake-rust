@@ -56,7 +56,7 @@ impl ApplicationVise {
                     for _ in 0..(count + 1) * 2 {
                         output.push(output[output.len() - offset as usize]);
                     }
-                    op_count = op_count - 1;
+                    op_count -= 1;
                 },
 
                 Op::SharedAndLocal { offset, add_local } => {
@@ -64,7 +64,7 @@ impl ApplicationVise {
                         copy_consume_u16(&mut local_data, &mut output);
                     }
                     copy_u16(&shared_data[offset as usize..], &mut output);
-                    op_count = op_count - 1;
+                    op_count -= 1;
                 },
 
                 Op::DecompressedStart { offset, count, add_local } => {
@@ -74,7 +74,7 @@ impl ApplicationVise {
                     for i in 0..(count + 1) * 2 {
                         output.push(output[offset as usize + i as usize]);
                     }
-                    op_count = op_count - 2;
+                    op_count -= 2;
                 },
 
                 Op::Local { count } => {
@@ -88,7 +88,7 @@ impl ApplicationVise {
                 break;
             }
 
-            op_count = op_count - 1;
+            op_count -= 1;
         }
 
         if odd_sized_output {
@@ -105,9 +105,7 @@ impl ApplicationVise {
     /// Finds the shared data dictionary in `data`. `data` should contain the
     /// CODE resource of the VISE decompressor within a compressed executable.
     pub fn find_shared_data(data: &[u8]) -> Option<&[u8]> {
-        if data.get(18..22)? != b"VISE" {
-            None
-        } else if data.get(60..62)? != b"\x47\xfa" {
+        if data.get(18..22)? != b"VISE" || data.get(60..62)? != b"\x47\xfa" {
             None
         } else {
             let offset = BigEndian::read_u16(&data.get(62..)?);
@@ -133,7 +131,7 @@ impl ApplicationVise {
             index += 4;
         }
         for _ in 0..size & 3 {
-            actual ^= *data.get(index).ok_or(ErrorKind::UnexpectedEof)? as u32;
+            actual ^= u32::from(*data.get(index).ok_or(ErrorKind::UnexpectedEof)?);
             index += 1;
         }
 
@@ -215,7 +213,7 @@ fn consume_op(op_stream: &mut &[u8]) -> Op {
 fn consume_u8(data: &mut &[u8]) -> u16 {
     let value = data[0];
     *data = &data[1..];
-    value as u16
+    u16::from(value)
 }
 
 #[inline]

@@ -24,7 +24,7 @@ pub struct Riff<'a, T: Reader> {
     info: DetectionInfo,
 }
 
-fn get_riff_attributes(os_type: &OSType, raw_size: &[u8]) -> (Endianness, u32) {
+fn get_riff_attributes(os_type: OSType, raw_size: &[u8]) -> (Endianness, u32) {
     let endianness = if os_type.as_bytes()[0] == b'M' {
         Endianness::Big
     } else {
@@ -59,7 +59,7 @@ fn detect_subtype(reader: &mut dyn Reader) -> Option<DetectionInfo> {
             size: LittleEndian::read_u32(&chunk_size_raw) - 8,
         }),
         b"MV93" | b"39VM" => {
-            let (endianness, size) = get_riff_attributes(&sub_type, &chunk_size_raw);
+            let (endianness, size) = get_riff_attributes(sub_type, &chunk_size_raw);
             Some(DetectionInfo {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
@@ -69,7 +69,7 @@ fn detect_subtype(reader: &mut dyn Reader) -> Option<DetectionInfo> {
             })
         },
         b"MC95" | b"59CM" => {
-            let (endianness, size) = get_riff_attributes(&sub_type, &chunk_size_raw);
+            let (endianness, size) = get_riff_attributes(sub_type, &chunk_size_raw);
             Some(DetectionInfo {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
@@ -116,14 +116,14 @@ impl<'a, 'b, T: Reader> Riff<'a, T> {
 
             bytes_read += 8;
 
-            chunk_map.entry(chunk_os_type).or_insert(Vec::new()).push(OffsetSize {
+            chunk_map.entry(chunk_os_type).or_insert_with(Vec::new).push(OffsetSize {
                 offset: bytes_read,
                 size: chunk_size
             });
 
             // RIFF chunks are always word-aligned (+1 & !1)
             bytes_read = (bytes_read + chunk_size + 1) & !1;
-            input.seek(SeekFrom::Start(bytes_read as u64))?;
+            input.seek(SeekFrom::Start(u64::from(bytes_read)))?;
         }
 
         Ok(Self { input, chunk_map, info })

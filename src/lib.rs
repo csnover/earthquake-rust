@@ -1,10 +1,7 @@
 use std::io::{Read, Seek};
 
-mod chunk;
 pub(crate) mod compression;
 pub mod detect;
-mod io;
-pub mod movie;
 pub(crate) mod resources;
 pub(crate) mod string;
 
@@ -21,13 +18,19 @@ pub enum Endianness {
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OSType([u8; 4]);
 
+// TODO: Find a better way to do this. User-defined literals would be nice.
+#[macro_export]
+macro_rules! os {
+    ($os_type:literal) => (OSType(*$os_type));
+}
+
 impl OSType {
     #[inline]
-    fn fmt_write(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_write(self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: Find a less incredibly stupid way to do this
         use std::char;
         for b in self.0.iter() {
-            write!(f, "{}", char::from_u32(*b as u32).unwrap_or(char::REPLACEMENT_CHARACTER))?;
+            write!(f, "{}", char::from_u32(u32::from(*b)).unwrap_or(char::REPLACEMENT_CHARACTER))?;
         }
         Ok(())
     }
@@ -81,6 +84,12 @@ impl<T: Read + ?Sized> OSTypeReadExt for T {}
 mod tests {
     use std::io::Cursor;
     use super::*;
+
+    #[test]
+    fn os_type_macro() {
+        let os_type = os!(b"HeLO");
+        assert_eq!(os_type, OSType(b"HeLO"));
+    }
 
     #[test]
     fn os_type_primitive() {
