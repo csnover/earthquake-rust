@@ -1,6 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
-use crate::{Endianness, OSType, os, resources::{mac_resource_file::MacResourceFile, riff::{DetectionInfo as RiffDetectionInfo, Riff}}, Reader, string::StringReadExt};
+use crate::{Endianness, OSType, os, resources::{mac_resource_file::MacResourceFile, riff::{detect as detect_riff, DetectionInfo as RiffDetectionInfo}}, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -164,7 +164,7 @@ fn detect_projector<T: Reader>(reader: &mut T) -> Option<FileType> {
 }
 
 pub fn detect_type<T: Reader>(reader: &mut T) -> Option<FileType> {
-    if let Some(file_type) = Riff::detect(reader) {
+    if let Some(file_type) = detect_riff(reader) {
         return Some(FileType::Movie(file_type));
     }
 

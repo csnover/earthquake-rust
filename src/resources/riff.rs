@@ -1,4 +1,5 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
+use byteordered::ByteOrdered;
 use crate::{Endianness, OSType, OSTypeReadExt, Reader, detect::*};
 use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, SeekFrom}};
 
@@ -17,62 +18,77 @@ struct OffsetSize {
     size: u32,
 }
 
+type ChunkMap = HashMap<OSType, Vec<OffsetSize>>;
+
 #[derive(Debug)]
-pub struct Riff<'a, T: Reader> {
-    input: &'a mut T,
-    chunk_map: HashMap<OSType, Vec<OffsetSize>>,
+pub struct Riff<T: Reader> {
+    input: ByteOrdered<T, byteordered::Endianness>,
+    chunk_map: ChunkMap,
     info: DetectionInfo,
 }
 
-impl<'a, 'b, T: Reader> Riff<'a, T> {
-    pub fn detect(reader: &mut T) -> Option<DetectionInfo> {
-        reader.seek(SeekFrom::Start(0)).ok()?;
-        let os_type = reader.read_os_type().ok()?;
-        match os_type.as_bytes() {
-            b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
-            b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
-            _ => None,
-        }
-    }
-
-    pub fn new(input: &'a mut T) -> IoResult<Self> {
-        const RIFF_HEADER_SIZE: u32 = 4;
-
-        let info = Self::detect(input).ok_or(ErrorKind::InvalidData)?;
-
-        let mut chunk_map = HashMap::new();
-        let mut bytes_read = input.seek(SeekFrom::Current(0))? as u32;
-        let bytes_to_read = bytes_read + info.size - RIFF_HEADER_SIZE;
-        while bytes_read != bytes_to_read {
-            let chunk_os_type = if info.os_type_endianness == Endianness::Little {
-                input.read_le_os_type()
-            } else {
-                input.read_os_type()
-            }?;
-
-            let chunk_size = if info.data_endianness == Endianness::Little {
-                input.read_u32::<LittleEndian>()
-            } else {
-                input.read_u32::<BigEndian>()
-            }?;
-
-            bytes_read += 8;
-
-            chunk_map.entry(chunk_os_type).or_insert_with(Vec::new).push(OffsetSize {
-                offset: bytes_read,
-                size: chunk_size
-            });
-
-            // RIFF chunks are always word-aligned (+1 & !1)
-            bytes_read = (bytes_read + chunk_size + 1) & !1;
-            input.seek(SeekFrom::Start(u64::from(bytes_read)))?;
-        }
-
-        Ok(Self { input, chunk_map, info })
+pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
+    reader.seek(SeekFrom::Start(0)).ok()?;
+    let os_type = reader.read_os_type().ok()?;
+    match os_type.as_bytes() {
+        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
+        b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
+        _ => None,
     }
 }
 
-fn detect_subtype(reader: &mut dyn Reader) -> Option<DetectionInfo> {
+impl<T: Reader> Riff<T> {
+    pub fn new(mut input: T) -> IoResult<Self> {
+        let info = detect(&mut input).ok_or(ErrorKind::InvalidData)?;
+
+        Ok(if info.data_endianness == Endianness::Little {
+            let chunk_map = build_chunk_map::<T, LittleEndian>(&mut input, info.os_type_endianness, info.size)?;
+            Self {
+                input: ByteOrdered::runtime(input, byteordered::Endianness::Little),
+                chunk_map,
+                info
+            }
+        } else {
+            let chunk_map = build_chunk_map::<T, BigEndian>(&mut input, info.os_type_endianness, info.size)?;
+            Self {
+                input: ByteOrdered::runtime(input, byteordered::Endianness::Big),
+                chunk_map,
+                info
+            }
+        })
+    }
+}
+
+fn build_chunk_map<T: Reader, DE: ByteOrder>(input: &mut T, os_type_endianness: Endianness, size: u32) -> IoResult<ChunkMap> {
+    const RIFF_HEADER_SIZE: u32 = 4;
+    let mut chunk_map = HashMap::new();
+    let mut bytes_read = input.seek(SeekFrom::Current(0))? as u32;
+    let bytes_to_read = bytes_read + size - RIFF_HEADER_SIZE;
+    while bytes_read != bytes_to_read {
+        let chunk_os_type = if os_type_endianness == Endianness::Little {
+            input.read_le_os_type()
+        } else {
+            input.read_os_type()
+        }?;
+
+        let chunk_size = input.read_u32::<DE>()?;
+
+        bytes_read += 8;
+
+        chunk_map.entry(chunk_os_type).or_insert_with(Vec::new).push(OffsetSize {
+            offset: bytes_read,
+            size: chunk_size
+        });
+
+        // RIFF chunks are always word-aligned (+1 & !1)
+        bytes_read = (bytes_read + chunk_size + 1) & !1;
+        input.seek(SeekFrom::Start(u64::from(bytes_read)))?;
+    }
+
+    Ok(chunk_map)
+}
+
+fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     let mut chunk_size_raw = [0; 4];
     reader.read_exact(&mut chunk_size_raw).ok()?;
 

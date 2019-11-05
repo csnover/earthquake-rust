@@ -1,8 +1,9 @@
 use bitflags::bitflags;
-use byteorder::{ByteOrder, BigEndian, ReadBytesExt};
+use byteorder::{ByteOrder, BigEndian};
+use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
 use crate::{os, OSType, OSTypeReadExt, Reader, compression::ApplicationVise, string::StringReadExt};
-use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, SeekFrom}};
+use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, Seek, SeekFrom}};
 
 bitflags! {
     /// Flags set on a resource.
@@ -45,36 +46,38 @@ pub struct Resource {
 #[derive(Debug)]
 /// MacResourceFile is used to read Macintosh Resource File Format files.
 /// These are the resource forks of all Mac OS Classic executables.
-pub struct MacResourceFile<'a, T: Reader> {
-    input: &'a mut T,
+pub struct MacResourceFile<T: Reader> {
+    input: ByteOrdered<T, StaticEndianness<BigEndian>>,
     decompressor: Option<ApplicationVise>,
     data_offset: Offset,
     names_offset: Offset,
     resource_tables: HashMap<OSType, OffsetCount>,
 }
 
-impl<'a, T: Reader> MacResourceFile<'a, T> {
+impl<T: Reader> MacResourceFile<T> {
     /// Creates a new MacResourceFile from a readable data stream.
-    pub fn new(data: &'a mut T) -> IoResult<Self> {
-        data.seek(SeekFrom::Start(0))?;
-        let data_offset = data.read_u32::<BigEndian>()?;
-        let map_offset = data.read_u32::<BigEndian>()?;
+    pub fn new(data: T) -> IoResult<Self> {
+        let mut input = ByteOrdered::be(data);
 
-        data.seek(SeekFrom::Start(u64::from(map_offset) + 24))?;
-        let types_offset = map_offset + u32::from(data.read_u16::<BigEndian>()?);
-        let names_offset = map_offset + u32::from(data.read_u16::<BigEndian>()?);
-        let num_types = data.read_u16::<BigEndian>()?;
+        input.seek(SeekFrom::Start(0))?;
+        let data_offset = input.read_u32()?;
+        let map_offset = input.read_u32()?;
+
+        input.seek(SeekFrom::Start(u64::from(map_offset) + 24))?;
+        let types_offset = map_offset + u32::from(input.read_u16()?);
+        let names_offset = map_offset + u32::from(input.read_u16()?);
+        let num_types = input.read_u16()?;
 
         let mut resource_tables = HashMap::with_capacity(num_types as usize);
         for _ in 0..=num_types {
-            let os_type = data.read_os_type()?;
-            let count = data.read_u16::<BigEndian>()?;
-            let offset = types_offset + Offset::from(data.read_u16::<BigEndian>()?);
+            let os_type = input.read_os_type()?;
+            let count = input.read_u16()?;
+            let offset = types_offset + Offset::from(input.read_u16()?);
             resource_tables.insert(os_type, OffsetCount { offset, count });
         }
 
         Ok(Self {
-            input: data,
+            input,
             decompressor: None,
             data_offset,
             names_offset,
@@ -133,9 +136,9 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
             let flags = ((entry.data_offset & FLAGS_MASK) >> OFFSET_BITS) as u8;
 
             self.input.seek(SeekFrom::Start(u64::from(self.data_offset + offset)))?;
-            let size = self.input.read_u32::<BigEndian>()?;
+            let size = self.input.read_u32()?;
             let mut data = Vec::with_capacity(size as usize);
-            self.input.take(u64::from(size)).read_to_end(&mut data)?;
+            self.input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
 
             if ApplicationVise::is_compressed(&data) {
                 data = self.decompress(&data)?;
@@ -174,7 +177,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         self.input.seek(SeekFrom::Start(u64::from(resource_table.offset))).ok()?;
         let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
         let mut table = Vec::with_capacity(table_size as usize);
-        self.input.take(u64::from(table_size)).read_to_end(&mut table).ok()?;
+        self.input.as_mut().take(u64::from(table_size)).read_to_end(&mut table).ok()?;
         Some(ResourceTableIter { table, offset: 0 })
     }
 }
