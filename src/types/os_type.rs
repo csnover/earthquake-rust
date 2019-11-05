@@ -28,6 +28,12 @@ impl OSType {
     }
 }
 
+impl Default for OSType {
+    fn default() -> Self {
+        OSType::new([0; 4])
+    }
+}
+
 impl fmt::Display for OSType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_write(f)

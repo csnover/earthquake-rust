@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
 use crate::{Endianness, OSType, OSTypeReadExt, Reader};
-use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, SeekFrom}};
+use std::{cell::{RefCell, RefMut}, collections::{HashMap, hash_map}, io::{ErrorKind, Result as IoResult, Read, Seek, SeekFrom}};
 
 #[derive(Debug)]
 pub struct DetectionInfo {
@@ -25,7 +25,7 @@ pub enum MovieVersion {
 }
 
 #[derive(Debug)]
-struct OffsetSize {
+pub struct OffsetSize {
     offset: u32,
     size: u32,
 }
@@ -34,7 +34,7 @@ type ChunkMap = HashMap<OSType, Vec<OffsetSize>>;
 
 #[derive(Debug)]
 pub struct Riff<T: Reader> {
-    input: ByteOrdered<T, byteordered::Endianness>,
+    input: RefCell<ByteOrdered<T, byteordered::Endianness>>,
     chunk_map: ChunkMap,
     info: DetectionInfo,
 }
@@ -56,18 +56,101 @@ impl<T: Reader> Riff<T> {
         Ok(if info.data_endianness == Endianness::Little {
             let chunk_map = build_chunk_map::<T, LittleEndian>(&mut input, info.os_type_endianness, info.size)?;
             Self {
-                input: ByteOrdered::runtime(input, byteordered::Endianness::Little),
+                input: RefCell::new(ByteOrdered::runtime(input, byteordered::Endianness::Little)),
                 chunk_map,
                 info
             }
         } else {
             let chunk_map = build_chunk_map::<T, BigEndian>(&mut input, info.os_type_endianness, info.size)?;
             Self {
-                input: ByteOrdered::runtime(input, byteordered::Endianness::Big),
+                input: RefCell::new(ByteOrdered::runtime(input, byteordered::Endianness::Big)),
                 chunk_map,
                 info
             }
         })
+    }
+
+    pub fn iter(&self) -> RiffIter<T> {
+        let chunk_iter = self.iter_chunks();
+
+        RiffIter {
+            input: self.input.borrow_mut(),
+            chunk_iter,
+        }
+    }
+
+    pub fn iter_chunks(&self) -> RiffChunkMapIter {
+        RiffChunkMapIter {
+            hash_iter: self.chunk_map.iter(),
+            vec_iter: None,
+            os_type: Default::default(),
+        }
+    }
+}
+
+fn parse_resource<T: Read>(os_type: OSType, mut input: T) -> IoResult<(OSType, Vec::<u8>)> {
+    let mut data = Vec::new();
+    input.read_to_end(&mut data)?;
+    Ok((os_type, data))
+}
+
+pub struct RiffIter<'a, T> {
+    input: RefMut<'a, ByteOrdered<T, byteordered::Endianness>>,
+    chunk_iter: RiffChunkMapIter<'a>,
+}
+
+impl<'a, T: Reader> Iterator for RiffIter<'a, T> {
+    type Item = IoResult<(OSType, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(chunk) = self.chunk_iter.next() {
+            Some(match self.input.as_mut().seek(SeekFrom::Start(u64::from(chunk.1.offset))) {
+                Ok(_) => parse_resource(chunk.0, self.input.as_mut().take(u64::from(chunk.1.size))),
+                Err(e) => Err(e)
+            })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct RiffChunkMapIter<'a> {
+    hash_iter: hash_map::Iter<'a, OSType, Vec<OffsetSize>>,
+    vec_iter: Option<std::slice::Iter<'a, OffsetSize>>,
+    os_type: OSType,
+}
+
+impl<'a> RiffChunkMapIter<'a> {
+    fn next_vec(&mut self) -> Option<&'a OffsetSize> {
+        if let Some(vec_iter) = &mut self.vec_iter {
+            vec_iter.next()
+        } else {
+            None
+        }
+    }
+
+    fn populate(&mut self) -> bool {
+        if let Some(hash_item) = self.hash_iter.next() {
+            self.os_type = *hash_item.0;
+            self.vec_iter = Some(hash_item.1.iter());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<'a> Iterator for RiffChunkMapIter<'a> {
+    type Item = (OSType, &'a OffsetSize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(item) = self.next_vec() {
+            Some((self.os_type, item))
+        } else if self.populate() {
+            self.next()
+        } else {
+            None
+        }
     }
 }
 
