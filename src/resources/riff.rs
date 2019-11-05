@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, OSTypeReadExt, Reader, detect::*};
+use crate::{Endianness, OSType, OSTypeReadExt, Reader};
 use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, SeekFrom}};
 
 #[derive(Debug)]
@@ -10,6 +10,18 @@ pub struct DetectionInfo {
     version: MovieVersion,
     kind: MovieType,
     size: u32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum MovieType {
+    Normal,
+    Cast,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub enum MovieVersion {
+    D3,
+    D4,
 }
 
 #[derive(Debug)]
