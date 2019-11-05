@@ -1,28 +1,5 @@
-use earthquake::detect::detect_type;
-use std::{env, error::Error, fs::File, io::{Error as IoError, ErrorKind, Result as IoResult}, path::PathBuf, process::exit};
-
-fn open_named_fork(filename: &str) -> IoResult<File> {
-    let path = format!("{}/..namedfork/rsrc", filename);
-    let metadata = std::fs::metadata(&path)?;
-    if metadata.len() > 0 {
-        File::open(&path)
-    } else {
-        Err(IoError::from(ErrorKind::NotFound))
-    }
-}
-
-fn open_apple_double(filename: &str) -> IoResult<File> {
-    let mut path = PathBuf::from(filename);
-    let filename = format!("._{}", path.file_name().unwrap().to_str().unwrap());
-    path.set_file_name(filename);
-    File::open(path)
-}
-
-fn open_resource_fork(filename: &str) -> IoResult<File> {
-    open_named_fork(&filename)
-        .or_else(|_| File::open(format!("{}.rsrc", filename)))
-        .or_else(|_| open_apple_double(&filename))
-}
+use earthquake::{detect::detect_type, io::open_resource_fork};
+use std::{env, error::Error, fs::File, process::exit};
 
 fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
     // Files from Macs have both data and resource forks; in the case of
