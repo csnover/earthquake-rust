@@ -108,7 +108,7 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
 
     /// Gets the name of the Resource File itself, if one exists. For Mac
     /// applications, this is the original name of the application.
-    pub fn get_name(&mut self) -> Option<String> {
+    pub fn name(&mut self) -> Option<String> {
         self.input.seek(SeekFrom::Start(0x30)).ok()?;
         self.input.read_pascal_str(MAC_ROMAN).ok()
     }
@@ -165,12 +165,12 @@ impl<'a, T: Reader> MacResourceFile<'a, T> {
         self.decompressor.as_ref().unwrap().decompress(&data)
     }
 
-    fn get_resource_table(&self, os_type: OSType) -> Option<OffsetCount> {
+    fn resource_table(&self, os_type: OSType) -> Option<OffsetCount> {
         self.resource_tables.get(&os_type).copied()
     }
 
     fn iter_by_type(&mut self, os_type: OSType) -> Option<ResourceTableIter> {
-        let resource_table = self.get_resource_table(os_type)?;
+        let resource_table = self.resource_table(os_type)?;
         self.input.seek(SeekFrom::Start(u64::from(resource_table.offset))).ok()?;
         let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
         let mut table = Vec::with_capacity(table_size as usize);

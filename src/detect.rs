@@ -150,7 +150,7 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<FileType> {
     }
 
     Some(FileType::Projector {
-        name: rom.get_name(),
+        name: rom.name(),
         endianness: Endianness::Big,
         platform: Platform::Mac,
         version,

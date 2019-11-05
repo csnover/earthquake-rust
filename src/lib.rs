@@ -40,12 +40,6 @@ impl OSType {
     }
 }
 
-impl From<u32> for OSType {
-    fn from(number: u32) -> Self {
-        OSType(number.to_be_bytes())
-    }
-}
-
 impl std::fmt::Display for OSType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.fmt_write(f)
@@ -88,25 +82,19 @@ mod tests {
     #[test]
     fn os_type_macro() {
         let os_type = os!(b"HeLO");
-        assert_eq!(os_type, OSType(b"HeLO"));
+        assert_eq!(os_type, OSType(*b"HeLO"));
     }
 
     #[test]
     fn os_type_primitive() {
-        let os_type = OSType(b"HeLO");
+        let os_type = OSType(*b"HeLO");
         assert_eq!(format!("{}", os_type), "HeLO");
         assert_eq!(format!("{:?}", os_type), "OSType(HeLO)");
     }
 
     #[test]
-    fn os_type_from_u32() {
-        let os_type = OSType::from(0x54647461);
-        assert_eq!(os_type, OSType(b"Tdta"));
-    }
-
-    #[test]
     fn os_type_read() {
-        let c = Cursor::new(b"HeLO");
-        assert_eq!(c.read_os_type(), OSType(b"HeLO"));
+        let mut c = Cursor::new(b"HeLO");
+        assert_eq!(c.read_os_type().unwrap(), OSType(*b"HeLO"));
     }
 }
