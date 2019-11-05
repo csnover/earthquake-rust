@@ -3,7 +3,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
 use crate::{os, OSType, OSTypeReadExt, Reader, compression::ApplicationVise, string::StringReadExt};
-use std::{collections::HashMap, io::{ErrorKind, Result as IoResult, Read, Seek, SeekFrom}};
+use std::{cell::RefCell, collections::HashMap, io::{ErrorKind, Result as IoResult, Read, Seek, SeekFrom}};
 
 bitflags! {
     /// Flags set on a resource.
@@ -47,8 +47,8 @@ pub struct Resource {
 /// MacResourceFile is used to read Macintosh Resource File Format files.
 /// These are the resource forks of all Mac OS Classic executables.
 pub struct MacResourceFile<T: Reader> {
-    input: ByteOrdered<T, StaticEndianness<BigEndian>>,
-    decompressor: Option<ApplicationVise>,
+    input: RefCell<ByteOrdered<T, StaticEndianness<BigEndian>>>,
+    decompressor: RefCell<Option<ApplicationVise>>,
     data_offset: Offset,
     names_offset: Offset,
     resource_tables: HashMap<OSType, OffsetCount>,
@@ -77,8 +77,8 @@ impl<T: Reader> MacResourceFile<T> {
         }
 
         Ok(Self {
-            input,
-            decompressor: None,
+            input: RefCell::new(input),
+            decompressor: RefCell::new(None),
             data_offset,
             names_offset,
             resource_tables,
@@ -86,7 +86,7 @@ impl<T: Reader> MacResourceFile<T> {
     }
 
     /// Tests whether the given resource exists in the file.
-    pub fn contains(&mut self, os_type: OSType, id: u16) -> bool {
+    pub fn contains(&self, os_type: OSType, id: u16) -> bool {
         if let Some(iter) = self.iter_by_type(os_type) {
             for entry in iter {
                 if entry.id == id {
@@ -99,7 +99,7 @@ impl<T: Reader> MacResourceFile<T> {
     }
 
     /// Gets a resource from the file.
-    pub fn get(&mut self, os_type: OSType, id: u16) -> Option<Resource> {
+    pub fn get(&self, os_type: OSType, id: u16) -> Option<Resource> {
         for entry in self.iter_by_type(os_type)? {
             if entry.id == id {
                 return Some(self.build_resource(&entry).expect("Error building resource"));
@@ -111,19 +111,22 @@ impl<T: Reader> MacResourceFile<T> {
 
     /// Gets the name of the Resource File itself, if one exists. For Mac
     /// applications, this is the original name of the application.
-    pub fn name(&mut self) -> Option<String> {
-        self.input.seek(SeekFrom::Start(0x30)).ok()?;
-        self.input.read_pascal_str(MAC_ROMAN).ok()
+    pub fn name(&self) -> Option<String> {
+        let mut input = self.input.borrow_mut();
+        input.seek(SeekFrom::Start(0x30)).ok()?;
+        input.read_pascal_str(MAC_ROMAN).ok()
     }
 
-    fn build_resource(&mut self, entry: &ResourceEntry) -> IoResult<Resource> {
+    fn build_resource(&self, entry: &ResourceEntry) -> IoResult<Resource> {
         const NO_NAME: u16 = 0xffff;
+
+        let mut input = self.input.borrow_mut();
 
         let name = if entry.name_offset == NO_NAME {
             None
         } else {
-            self.input.seek(SeekFrom::Start(u64::from(self.names_offset + u32::from(entry.name_offset)))).and_then(|_| {
-                self.input.read_pascal_str(MAC_ROMAN)
+            input.seek(SeekFrom::Start(u64::from(self.names_offset + u32::from(entry.name_offset)))).and_then(|_| {
+                input.read_pascal_str(MAC_ROMAN)
             }).ok()
         };
 
@@ -135,10 +138,10 @@ impl<T: Reader> MacResourceFile<T> {
             let offset = entry.data_offset & OFFSET_MASK;
             let flags = ((entry.data_offset & FLAGS_MASK) >> OFFSET_BITS) as u8;
 
-            self.input.seek(SeekFrom::Start(u64::from(self.data_offset + offset)))?;
-            let size = self.input.read_u32()?;
+            input.seek(SeekFrom::Start(u64::from(self.data_offset + offset)))?;
+            let size = input.read_u32()?;
             let mut data = Vec::with_capacity(size as usize);
-            self.input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
+            input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
 
             if ApplicationVise::is_compressed(&data) {
                 data = self.decompress(&data)?;
@@ -154,30 +157,31 @@ impl<T: Reader> MacResourceFile<T> {
         })
     }
 
-    fn decompress(&mut self, data: &[u8]) -> IoResult<Vec<u8>> {
-        if self.decompressor.is_none() {
+    fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
+        if self.decompressor.borrow().is_none() {
             let iter = self.iter_by_type(os!(b"CODE")).expect("Missing CODE table");
             // It is impossible to not get an item from this iterator, since
             // there is no way to have a zero-element resource table
             let last_code = iter.last().unwrap();
             let resource = self.build_resource(&last_code)?;
             let data = ApplicationVise::find_shared_data(&resource.data).ok_or(ErrorKind::InvalidData)?;
-            self.decompressor = Some(ApplicationVise::new(data.to_vec()));
+            self.decompressor.replace(Some(ApplicationVise::new(data.to_vec())));
         }
 
-        self.decompressor.as_ref().unwrap().decompress(&data)
+        self.decompressor.borrow().as_ref().unwrap().decompress(&data)
     }
 
     fn resource_table(&self, os_type: OSType) -> Option<OffsetCount> {
         self.resource_tables.get(&os_type).copied()
     }
 
-    fn iter_by_type(&mut self, os_type: OSType) -> Option<ResourceTableIter> {
+    fn iter_by_type(&self, os_type: OSType) -> Option<ResourceTableIter> {
+        let mut input = self.input.borrow_mut();
         let resource_table = self.resource_table(os_type)?;
-        self.input.seek(SeekFrom::Start(u64::from(resource_table.offset))).ok()?;
+        input.seek(SeekFrom::Start(u64::from(resource_table.offset))).ok()?;
         let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
         let mut table = Vec::with_capacity(table_size as usize);
-        self.input.as_mut().take(u64::from(table_size)).read_to_end(&mut table).ok()?;
+        input.as_mut().take(u64::from(table_size)).read_to_end(&mut table).ok()?;
         Some(ResourceTableIter { table, offset: 0 })
     }
 }

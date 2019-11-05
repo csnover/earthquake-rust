@@ -38,7 +38,7 @@ pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 }
 
 fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
-    let mut rom = MacResourceFile::new(reader).ok()?;
+    let rom = MacResourceFile::new(reader).ok()?;
 
     let version = if rom.contains(os!(b"PJ95"), 0) {
         ProjectorVersion::D5
