@@ -42,9 +42,9 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     let version = if rom.contains(os!(b"PJ95"), 0) {
         ProjectorVersion::D5
-    } else if rom.contains(os!(b"PJ95"), 0) {
+    } else if rom.contains(os!(b"PJ93"), 0) {
         ProjectorVersion::D4
-    } else if rom.contains(os!(b"PJ95"), 0) {
+    } else if rom.contains(os!(b"VWst"), 0) {
         ProjectorVersion::D3
     } else {
         return None;
