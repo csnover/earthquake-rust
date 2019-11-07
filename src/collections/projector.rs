@@ -1,6 +1,6 @@
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use encoding::all::MAC_ROMAN;
-use crate::{Endianness, OSType, os, collections::rsrc::MacResourceFile, Reader, string::StringReadExt};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
+use encoding::all::WINDOWS_1252;
+use crate::{Endianness, OSType, os, collections::{riff, rsrc::MacResourceFile}, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
 #[derive(Debug)]
@@ -9,14 +9,20 @@ pub struct DetectionInfo {
     endianness: Endianness,
     platform: Platform,
     version: ProjectorVersion,
-    data_dirname: String,
     movies: Vec<Movie>,
 }
 
 #[derive(Debug)]
 pub enum Movie {
-    Internal { offset: u32, size: u32 },
-    External { filename: String, size: u32 },
+    Internal {
+        offset: u32,
+        size: u32
+    },
+    External {
+        filename: String,
+        path: String,
+        size: u32
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -71,7 +77,6 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         endianness: Endianness::Big,
         platform: Platform::Mac,
         version,
-        data_dirname: String::new(),
         movies,
     })
 }
@@ -81,7 +86,7 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     let offset = reader.read_u32::<LittleEndian>().ok()?;
     reader.seek(SeekFrom::Start(offset.into())).ok()?;
 
-    let mut buffer = [0u8; 7];
+    let mut buffer = [0u8; 8];
     reader.read_exact(&mut buffer).ok()?;
 
     let version = match &buffer[0..4] {
@@ -105,34 +110,55 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         },
     };
 
-    let endianness = if buffer[0] == b'P' {
-        Endianness::Big
-    } else {
-        Endianness::Little
-    };
+    // TODO: Turns out that this is a big lie and the data offsets in this file
+    // are still little-endian even when the OSType is not.
+    // let endianness = if buffer[0] == b'P' {
+    //     Endianness::Big
+    // } else {
+    //     Endianness::Little
+    // };
+    let endianness = Endianness::Little;
 
-    let (data_dirname, movies) = match version {
+    let movies = match version {
         ProjectorVersion::D3 => {
             let num_movies = LittleEndian::read_u16(&buffer);
 
+            // TODO: Somewhere in the projector header is probably a flag to
+            // read movies internally; find it and then set the movie list
+            // appropriately. For now the only corpus available has a single
+            // external movie.
             let mut movies: Vec<Movie> = Vec::new();
             for _ in 0..num_movies {
-                // TODO: Read flag for whether or not we are doing embedded RIFF;
-                // this is for non-embedded only
-                let movie_size = reader.read_u32::<LittleEndian>().ok()?;
-                let movie_filename = reader.read_pascal_str(MAC_ROMAN).ok()?;
+                let size = reader.read_u32::<LittleEndian>().ok()?;
+                // TODO: Probably need to try to use CHARDET for this
+                let filename = reader.read_pascal_str(WINDOWS_1252).ok()?;
+                let path = reader.read_pascal_str(WINDOWS_1252).ok()?;
 
                 movies.push(Movie::External {
-                    filename: movie_filename,
-                    size: movie_size,
+                    filename,
+                    path,
+                    size,
                 });
             }
 
-            (reader.read_pascal_str(MAC_ROMAN).ok()?, movies)
+            movies
         },
         _ => {
-            // TODO
-            (String::new(), Vec::new())
+            let offset = if endianness == Endianness::Big {
+                BigEndian::read_u32(&buffer[4..])
+            } else {
+                LittleEndian::read_u32(&buffer[4..])
+            };
+
+            reader.seek(SeekFrom::Start(u64::from(offset))).ok()?;
+            let info = riff::detect(reader).unwrap_or_else(|| panic!("Could not parse embedded RIFF at {}", offset));
+
+            let mut movies = Vec::new();
+            movies.push(Movie::Internal {
+                offset,
+                size: info.size
+            });
+            movies
         }
     };
 
@@ -141,7 +167,6 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         endianness,
         platform: Platform::Windows,
         version,
-        data_dirname,
         movies,
     })
 }

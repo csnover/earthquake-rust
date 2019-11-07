@@ -10,11 +10,12 @@ pub struct DetectionInfo {
     data_endianness: Endianness,
     version: MovieVersion,
     kind: MovieType,
-    size: u32,
+    pub size: u32,
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq)]
 pub enum MovieType {
+    Embedded,
     Movie,
     Cast,
 }
@@ -122,7 +123,6 @@ impl<'a, T: Reader> RiffData<'a, T> {
 }
 
 pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
-    reader.seek(SeekFrom::Start(0)).ok()?;
     let os_type = reader.read_os_type::<BigEndian>().ok()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
@@ -228,15 +228,24 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
                 size,
             })
         },
+        b"APPL" | b"LPPA" => {
+            let (endianness, size) = get_riff_attributes(sub_type, &chunk_size_raw);
+            Some(DetectionInfo {
+                os_type_endianness: endianness,
+                data_endianness: endianness,
+                version: MovieVersion::D4,
+                kind: MovieType::Embedded,
+                size,
+            })
+        },
         _ => None
     }
 }
 
 fn get_riff_attributes(os_type: OSType, raw_size: &[u8]) -> (Endianness, u32) {
-    let endianness = if os_type.as_bytes()[0] == b'M' {
-        Endianness::Big
-    } else {
-        Endianness::Little
+    let endianness = match os_type.as_bytes()[0] {
+        b'M' | b'A' => Endianness::Big,
+        _ => Endianness::Little
     };
 
     let size = {
