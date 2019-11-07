@@ -43,11 +43,13 @@ pub struct Resource {
     pub flags: ResourceFlags,
 }
 
+type Input<T> = ByteOrdered<T, StaticEndianness<BigEndian>>;
+
 #[derive(Debug)]
 /// MacResourceFile is used to read Macintosh Resource File Format files.
 /// These are the resource forks of all Mac OS Classic executables.
 pub struct MacResourceFile<T: Reader> {
-    input: RefCell<ByteOrdered<T, StaticEndianness<BigEndian>>>,
+    input: RefCell<Input<T>>,
     decompressor: RefCell<Option<ApplicationVise>>,
     data_offset: Offset,
     names_offset: Offset,
@@ -87,11 +89,9 @@ impl<T: Reader> MacResourceFile<T> {
 
     /// Tests whether the given resource exists in the file.
     pub fn contains(&self, os_type: OSType, id: u16) -> bool {
-        if let Some(iter) = self.iter_by_type(os_type) {
-            for entry in iter {
-                if entry.id == id {
-                    return true;
-                }
+        for entry in self.iter_by_type(os_type) {
+            if entry.id == id {
+                return true;
             }
         }
 
@@ -100,7 +100,7 @@ impl<T: Reader> MacResourceFile<T> {
 
     /// Gets a resource from the file.
     pub fn get(&self, os_type: OSType, id: u16) -> Option<Resource> {
-        for entry in self.iter_by_type(os_type)? {
+        for entry in self.iter_by_type(os_type) {
             if entry.id == id {
                 return Some(self.build_resource(&entry).expect("Error building resource"));
             }
@@ -159,10 +159,8 @@ impl<T: Reader> MacResourceFile<T> {
 
     fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
         if self.decompressor.borrow().is_none() {
-            let iter = self.iter_by_type(os!(b"CODE")).expect("Missing CODE table");
-            // It is impossible to not get an item from this iterator, since
-            // there is no way to have a zero-element resource table
-            let last_code = iter.last().unwrap();
+            let iter = self.iter_by_type(os!(b"CODE"));
+            let last_code = iter.last().expect("Missing CODE table");
             let resource = self.build_resource(&last_code)?;
             let data = ApplicationVise::find_shared_data(&resource.data).ok_or(ErrorKind::InvalidData)?;
             self.decompressor.replace(Some(ApplicationVise::new(data.to_vec())));
@@ -175,15 +173,23 @@ impl<T: Reader> MacResourceFile<T> {
         self.resource_tables.get(&os_type).copied()
     }
 
-    fn iter_by_type(&self, os_type: OSType) -> Option<ResourceTableIter> {
-        let mut input = self.input.borrow_mut();
-        let resource_table = self.resource_table(os_type)?;
-        input.seek(SeekFrom::Start(u64::from(resource_table.offset))).ok()?;
-        let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
-        let mut table = Vec::with_capacity(table_size as usize);
-        input.as_mut().take(u64::from(table_size)).read_to_end(&mut table).ok()?;
-        Some(ResourceTableIter { table, offset: 0 })
+    fn iter_by_type(&self, os_type: OSType) -> ResourceTableIter {
+        let table = if let Some(resource_table) = self.resource_table(os_type) {
+            read_raw_resource_table(self.input.borrow_mut().as_mut(), resource_table).unwrap_or_else(|_| Vec::new())
+        } else {
+            Vec::new()
+        };
+
+        ResourceTableIter { table, offset: 0 }
     }
+}
+
+fn read_raw_resource_table<T: Reader>(mut input: T, resource_table: OffsetCount) -> IoResult<Vec<u8>> {
+    input.seek(SeekFrom::Start(u64::from(resource_table.offset)))?;
+    let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
+    let mut table = Vec::with_capacity(table_size as usize);
+    input.take(u64::from(table_size)).read_to_end(&mut table)?;
+    Ok(table)
 }
 
 const RES_TABLE_ENTRY_SIZE: u16 = 12;
