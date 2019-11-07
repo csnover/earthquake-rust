@@ -109,12 +109,11 @@ for authoring and not playback.
 | 'Tdta' |        | 'Tdta' |        | 'Tdta' | 'Tdta' |
 |        | 'mcnm' |        |        |        |        |
 |        | 'mftx' |        |        |        |        |
-|        | 'cftc' |        |        |        |        |
 |        | 'ver.' |        |        |        |        |
 |        | 'RMMP' |        | 'RMMP' |        |        |
 |        | 'stxt' |        | 'STXT' | 'STXT' |        |
 |        | 'clut' | 'clut' | 'clut' | 'clut' | 'clut' |
-|        | 'dib ' |        | 'DIB ' | 'DIB ' |        |
+| See [1]| 'dib ' |        | 'DIB ' | 'DIB ' |        |
 |        | 'scvw' |        | 'SCVW' | 'SCVW' |        |
 |        | 'moov' |        | 'moov' | 'moov' |        |
 |        | 'RIFF' |        | 'RIFF' | 'RIFF'‡|        |
@@ -138,7 +137,7 @@ for authoring and not playback.
 |        |        |        | 'crsr' | 'crsr' |        |
 |        |        |        | 'RIFX' | 'RIFX' |        |
 |        |        |        | 'junk' | 'junk' |        |
-|        |        |        | 'mmap' | 'mmap' |        |
+|        | 'cftc' |        | 'mmap' | 'mmap' |        |
 |        |        |        | 'PICR' | 'PICR' |        |
 |        |        |        | 'RGPT' | 'RGPT' |        |
 |        |        |        | 'imap' | 'imap' |        |
@@ -255,3 +254,5 @@ for authoring and not playback.
 
 † - Incomplete  
 ‡ - .WAV RIFF, not .DXR RIFF
+
+[1] - Mac 3 BITDs were converted to 'DIB ' on Windows
