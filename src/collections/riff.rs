@@ -41,16 +41,6 @@ pub struct Riff<T: Reader> {
     info: DetectionInfo,
 }
 
-pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
-    reader.seek(SeekFrom::Start(0)).ok()?;
-    let os_type = reader.read_os_type::<BigEndian>().ok()?;
-    match os_type.as_bytes() {
-        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
-        b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
-        _ => None,
-    }
-}
-
 impl<T: Reader> Riff<T> {
     pub fn new(mut input: T) -> IoResult<Self> {
         let info = detect(&mut input).ok_or(ErrorKind::InvalidData)?;
@@ -99,6 +89,23 @@ pub struct RiffIterator<'a, T: Reader> {
     map_iter: std::collections::hash_map::Iter<'a, (OSType, u16), OffsetSize>,
 }
 
+impl<'a, T: Reader> Iterator for RiffIterator<'a, T> {
+    type Item = RiffData<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.map_iter.next() {
+            Some(item) => {
+                Some(RiffData {
+                    id: *item.0,
+                    input: self.input,
+                    offset_size: *item.1,
+                })
+            },
+            None => None
+        }
+    }
+}
+
 pub struct RiffData<'a, T: Reader> {
     pub id: (OSType, u16),
     input: &'a Input<T>,
@@ -114,20 +121,13 @@ impl<'a, T: Reader> RiffData<'a, T> {
     }
 }
 
-impl<'a, T: Reader> Iterator for RiffIterator<'a, T> {
-    type Item = RiffData<'a, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.map_iter.next() {
-            Some(item) => {
-                Some(RiffData {
-                    id: *item.0,
-                    input: self.input,
-                    offset_size: *item.1,
-                })
-            },
-            None => None
-        }
+pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
+    reader.seek(SeekFrom::Start(0)).ok()?;
+    let os_type = reader.read_os_type::<BigEndian>().ok()?;
+    match os_type.as_bytes() {
+        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
+        b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
+        _ => None,
     }
 }
 

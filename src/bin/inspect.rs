@@ -1,4 +1,4 @@
-use earthquake::{detect::detect_type, io::open_resource_fork, riff::Riff};
+use earthquake::{collections::riff::Riff, detect, io};
 use std::{env, error::Error, fs::File, process::exit};
 
 fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
@@ -9,8 +9,8 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
     // and then need to go read the data fork to detect the movie
 
     // TODO: Create a projector instead of just the detected type info
-    if let Ok(mut file) = open_resource_fork(&filename) {
-        if let Some(projector) = detect_type(&mut file) {
+    if let Ok(mut file) = io::open_resource_fork(&filename) {
+        if let Some(projector) = detect::detect_type(&mut file) {
             println!("{:?}", projector);
             return Ok(());
         }
@@ -25,7 +25,7 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
         for resource in movie.iter() {
             println!("{:?}", resource.id);
         }
-    } else if let Some(file_info) = detect_type(&mut file) {
+    } else if let Some(file_info) = detect::detect_type(&mut file) {
         println!("{:?}", file_info);
     } else {
         println!("{}: Invalid or unknown Director projector or movie.", filename);

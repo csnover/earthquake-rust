@@ -3,7 +3,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
 use crate::{os, OSType, OSTypeReadExt, Reader, compression::ApplicationVise, string::StringReadExt};
-use std::{cell::RefCell, collections::HashMap, io::{ErrorKind, Result as IoResult, Read, Seek, SeekFrom}};
+use std::{cell::RefCell, collections::HashMap, io::{self, ErrorKind, Read, Seek, SeekFrom}};
 
 bitflags! {
     /// Flags set on a resource.
@@ -58,7 +58,7 @@ pub struct MacResourceFile<T: Reader> {
 
 impl<T: Reader> MacResourceFile<T> {
     /// Creates a new MacResourceFile from a readable data stream.
-    pub fn new(data: T) -> IoResult<Self> {
+    pub fn new(data: T) -> io::Result<Self> {
         let mut input = ByteOrdered::be(data);
 
         input.seek(SeekFrom::Start(0))?;
@@ -117,7 +117,7 @@ impl<T: Reader> MacResourceFile<T> {
         input.read_pascal_str(MAC_ROMAN).ok()
     }
 
-    fn build_resource(&self, entry: &ResourceEntry) -> IoResult<Resource> {
+    fn build_resource(&self, entry: &ResourceEntry) -> io::Result<Resource> {
         const NO_NAME: u16 = 0xffff;
 
         let mut input = self.input.borrow_mut();
@@ -157,7 +157,7 @@ impl<T: Reader> MacResourceFile<T> {
         })
     }
 
-    fn decompress(&self, data: &[u8]) -> IoResult<Vec<u8>> {
+    fn decompress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         if self.decompressor.borrow().is_none() {
             let iter = self.iter_by_type(os!(b"CODE"));
             let last_code = iter.last().expect("Missing CODE table");
@@ -184,7 +184,7 @@ impl<T: Reader> MacResourceFile<T> {
     }
 }
 
-fn read_raw_resource_table<T: Reader>(mut input: T, resource_table: OffsetCount) -> IoResult<Vec<u8>> {
+fn read_raw_resource_table<T: Reader>(mut input: T, resource_table: OffsetCount) -> io::Result<Vec<u8>> {
     input.seek(SeekFrom::Start(u64::from(resource_table.offset)))?;
     let table_size = (resource_table.count + 1) * RES_TABLE_ENTRY_SIZE;
     let mut table = Vec::with_capacity(table_size as usize);

@@ -1,6 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use encoding::all::MAC_ROMAN;
-use crate::{Endianness, OSType, os, resources::mac_resource_file::MacResourceFile, Reader, string::StringReadExt};
+use crate::{Endianness, OSType, os, collections::rsrc::MacResourceFile, Reader, string::StringReadExt};
 use std::io::SeekFrom;
 
 #[derive(Debug)]

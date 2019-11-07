@@ -1,10 +1,4 @@
-use crate::{
-    Reader,
-    resources::{
-        projector::{detect as detect_projector, DetectionInfo as ProjectorDetectionInfo},
-        riff::{detect as detect_riff, DetectionInfo as RiffDetectionInfo}
-    }
-};
+use crate::{Reader, collections::{projector::{self, DetectionInfo as ProjectorDetectionInfo}, riff::{self, DetectionInfo as RiffDetectionInfo}}};
 
 #[derive(Debug)]
 pub enum FileType {
@@ -13,11 +7,11 @@ pub enum FileType {
 }
 
 pub fn detect_type<T: Reader>(reader: &mut T) -> Option<FileType> {
-    if let Some(file_type) = detect_riff(reader) {
+    if let Some(file_type) = riff::detect(reader) {
         return Some(FileType::Movie(file_type));
     }
 
-    if let Some(file_type) = detect_projector(reader) {
+    if let Some(file_type) = projector::detect(reader) {
         return Some(FileType::Projector(file_type));
     }
 
