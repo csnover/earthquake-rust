@@ -20,7 +20,11 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
     let mut file = File::open(filename)?;
 
     if let Ok(movie) = Riff::new(&mut file) {
-        println!("{:?}", movie);
+        println!("{}: Version {} {}", filename, movie.version(), movie.kind());
+
+        for resource in movie.iter() {
+            println!("{:?}", resource.id);
+        }
     } else if let Some(file_info) = detect_type(&mut file) {
         println!("{:?}", file_info);
     } else {
