@@ -1,15 +1,17 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use encoding::all::WINDOWS_1252;
-use crate::{Endianness, OSType, os, collections::{riff, rsrc::MacResourceFile}, Reader, string::StringReadExt};
-use std::io::SeekFrom;
+use byteordered::{ByteOrdered, StaticEndianness};
+use encoding::all::{MAC_ROMAN, WINDOWS_1252};
+use crate::{Endianness, OSType, os, collections::{riff, rsrc::MacResourceFile}, Reader, resources::resource, string::StringReadExt};
+use std::io::{Cursor, SeekFrom};
 
+// TODO: Create an actual Projector type and do not expost this any more
 #[derive(Debug)]
 pub struct DetectionInfo {
-    name: Option<String>,
+    pub name: Option<String>,
     endianness: Endianness,
-    platform: Platform,
-    version: ProjectorVersion,
-    movies: Vec<Movie>,
+    pub platform: Platform,
+    pub version: ProjectorVersion,
+    pub movies: Vec<Movie>,
 }
 
 #[derive(Debug)]
@@ -44,6 +46,7 @@ pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 }
 
 fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
+    reader.seek(SeekFrom::Start(0)).ok()?;
     let rom = MacResourceFile::new(reader).ok()?;
 
     let version = if rom.contains(os!(b"PJ95"), 0) {
@@ -58,12 +61,22 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     let has_external_data = {
         let os_type = if version == ProjectorVersion::D3 { os!(b"VWst") } else { os!(b"PJst") };
-        rom.get(os_type, 0)?.data[4] != 0
+        rom.get(os_type, 0)?.data().ok()?[4] != 0
     };
 
     let mut movies = Vec::new();
     if has_external_data {
-        // TODO
+        // TODO: Should parse this in Resource instead of pulling it from
+        // the ROM and then pushing it into Resource?
+        let external_files = rom.get(os!(b"STR#"), 0)?;
+        let cursor = ByteOrdered::be(Cursor::new(external_files.data().ok()?));
+        for filename in resource::parse_string_list(cursor, MAC_ROMAN).ok()? {
+            movies.push(Movie::External {
+                filename,
+                path: String::from("TODO"),
+                size: 0,
+            });
+        }
     } else {
         // TODO
         movies.push(Movie::Internal {

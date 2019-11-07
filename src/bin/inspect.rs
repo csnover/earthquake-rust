@@ -1,5 +1,5 @@
-use earthquake::{collections::riff::Riff, detect, io};
-use std::{env, error::Error, fs::File, process::exit};
+use earthquake::{collections::{projector::{DetectionInfo as Projector, Movie as MovieInfo}, riff::Riff}, detect::{self, FileType}, io};
+use std::{env, error::Error, fs::File, io::{Seek, SeekFrom}, process::exit};
 
 fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
     // Files from Macs have both data and resource forks; in the case of
@@ -10,9 +10,10 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
 
     // TODO: Create a projector instead of just the detected type info
     if let Ok(mut file) = io::open_resource_fork(&filename) {
-        if let Some(projector) = detect::detect_type(&mut file) {
-            println!("{:?}", projector);
-            return Ok(());
+        match detect::detect_type(&mut file) {
+            Some(FileType::Projector(projector)) => read_projector(&mut file, &projector)?,
+            Some(FileType::Movie(_)) => panic!("Got a movie instead of a projector from the resource fork"),
+            None => return Ok(())
         }
     }
 
@@ -25,10 +26,34 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
         for resource in movie.iter() {
             println!("{:?}", resource.id);
         }
-    } else if let Some(file_info) = detect::detect_type(&mut file) {
-        println!("{:?}", file_info);
     } else {
-        println!("{}: Invalid or unknown Director projector or movie.", filename);
+        match detect::detect_type(&mut file) {
+            Some(FileType::Projector(projector)) => read_projector(&mut file, &projector)?,
+            Some(FileType::Movie(_)) => panic!("Got a movie instead of a projector after trying to detect a movie"),
+            None => println!("{}: Invalid or unknown Director projector or movie.", filename)
+        }
+    }
+
+    Ok(())
+}
+
+fn read_projector(mut file: &mut File, projector: &Projector) -> Result<(), Box<dyn Error>> {
+    println!("{:?}", projector);
+
+    for movie in &projector.movies {
+        match movie {
+            MovieInfo::Internal { offset, .. } => {
+                println!("Internal movie at {}", offset);
+                file.seek(SeekFrom::Start(u64::from(*offset)))?;
+                let riff = Riff::new(&mut file)?;
+                for resource in riff.iter() {
+                    println!("{:?} {:x?}", resource.id, resource.data()?);
+                }
+            },
+            MovieInfo::External { filename, path, .. } => {
+                // TODO
+            }
+        }
     }
 
     Ok(())

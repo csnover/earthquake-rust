@@ -26,8 +26,8 @@ pub enum MovieVersion {
     D4,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct OffsetSize {
+#[derive(Copy, Clone, Debug)]
+struct OffsetSize {
     offset: u32,
     size: u32,
 }
@@ -44,7 +44,7 @@ pub struct Riff<T: Reader> {
 
 impl<T: Reader> Riff<T> {
     pub fn new(mut input: T) -> IoResult<Self> {
-        let info = detect(&mut input).ok_or(ErrorKind::InvalidData)?;
+        let info = detect(&mut input).ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "Failed to detect a valid RIFF file"))?;
 
         let resource_map = {
             if info.os_type_endianness == Endianness::Little && info.data_endianness == Endianness::Little {
@@ -104,6 +104,24 @@ impl<'a, T: Reader> Iterator for RiffIterator<'a, T> {
             },
             None => None
         }
+    }
+}
+
+impl<'a, T: Reader> ExactSizeIterator for RiffIterator<'a, T> {
+    fn len(&self) -> usize {
+        self.map_iter.len()
+    }
+}
+
+impl<'a, T: Reader> std::iter::FusedIterator for RiffIterator<'a, T> {}
+
+impl<'a, T: Reader> IntoIterator for &'a Riff<T> {
+    type Item = RiffData<'a, T>;
+    type IntoIter = RiffIterator<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
