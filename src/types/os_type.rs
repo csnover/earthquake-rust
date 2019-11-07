@@ -1,3 +1,4 @@
+use byteorder::{ByteOrder};
 use std::{char, fmt, io};
 
 // TODO: Find a better way to do this. User-defined literals would be nice.
@@ -28,6 +29,12 @@ impl OSType {
     }
 }
 
+impl From<u32> for OSType {
+    fn from(value: u32) -> Self {
+        OSType(value.to_be_bytes())
+    }
+}
+
 impl Default for OSType {
     fn default() -> Self {
         OSType::new([0; 4])
@@ -51,18 +58,10 @@ impl fmt::Debug for OSType {
 
 pub trait OSTypeReadExt: io::Read {
     #[inline]
-    fn read_os_type(&mut self) -> io::Result<OSType> {
+    fn read_os_type<T: ByteOrder>(&mut self) -> io::Result<OSType> {
         let mut buf = [0; 4];
         self.read_exact(&mut buf)?;
-        Ok(OSType(buf))
-    }
-
-    #[inline]
-    fn read_le_os_type(&mut self) -> io::Result<OSType> {
-        let mut buf = [0; 4];
-        self.read_exact(&mut buf)?;
-        buf.reverse();
-        Ok(OSType(buf))
+        Ok(OSType::from(T::read_u32(&buf)))
     }
 }
 
@@ -70,6 +69,7 @@ impl<T: io::Read + ?Sized> OSTypeReadExt for T {}
 
 #[cfg(test)]
 mod tests {
+    use byteorder::{BigEndian, LittleEndian};
     use std::io::Cursor;
 	use super::*;
 
@@ -88,7 +88,14 @@ mod tests {
 
     #[test]
     fn os_type_read() {
-        let mut c = Cursor::new(b"HeLO");
-        assert_eq!(c.read_os_type().unwrap(), OSType(*b"HeLO"));
+        let mut c = Cursor::new(b"HeLOOLeH");
+        assert_eq!(c.read_os_type::<BigEndian>().unwrap(), OSType(*b"HeLO"));
+        assert_eq!(c.read_os_type::<LittleEndian>().unwrap(), OSType(*b"HeLO"));
+    }
+
+    #[test]
+    fn os_type_from_u32() {
+        let os_type = 0x48654c4f;
+        assert_eq!(OSType::from(os_type), OSType(*b"HeLO"));
     }
 }

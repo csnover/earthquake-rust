@@ -70,7 +70,7 @@ impl<T: Reader> MacResourceFile<T> {
 
         let mut resource_tables = HashMap::with_capacity(num_types as usize);
         for _ in 0..=num_types {
-            let os_type = input.read_os_type()?;
+            let os_type = input.read_os_type::<BigEndian>()?;
             let count = input.read_u16()?;
             let offset = types_offset + Offset::from(input.read_u16()?);
             resource_tables.insert(os_type, OffsetCount { offset, count });

@@ -41,7 +41,7 @@ pub struct Riff<T: Reader> {
 
 pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     reader.seek(SeekFrom::Start(0)).ok()?;
-    let os_type = reader.read_os_type().ok()?;
+    let os_type = reader.read_os_type::<BigEndian>().ok()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
         b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
@@ -187,7 +187,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     let mut chunk_size_raw = [0; 4];
     reader.read_exact(&mut chunk_size_raw).ok()?;
 
-    let sub_type = reader.read_os_type().ok()?;
+    let sub_type = reader.read_os_type::<BigEndian>().ok()?;
 
     match sub_type.as_bytes() {
         b"RMMP" => Some(DetectionInfo {
