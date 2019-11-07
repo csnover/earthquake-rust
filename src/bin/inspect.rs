@@ -11,7 +11,7 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
     // TODO: Create a projector instead of just the detected type info
     if let Ok(mut file) = io::open_resource_fork(&filename) {
         match detect::detect_type(&mut file) {
-            Some(FileType::Projector(projector)) => read_projector(&mut file, &projector)?,
+            Some(FileType::Projector(projector)) => return read_projector(&mut file, &projector),
             Some(FileType::Movie(_)) => panic!("Got a movie instead of a projector from the resource fork"),
             None => return Ok(())
         }
@@ -51,8 +51,11 @@ fn read_projector(mut file: &mut File, projector: &Projector) -> Result<(), Box<
                 }
             },
             MovieInfo::External { filename, path, .. } => {
-                // TODO
-            }
+                println!("External movie at {}/{}", path, filename);
+            },
+            MovieInfo::Embedded => {
+                println!("Embedded movie");
+            },
         }
     }
 

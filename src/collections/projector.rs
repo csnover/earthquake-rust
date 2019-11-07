@@ -1,8 +1,8 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use byteordered::{ByteOrdered, StaticEndianness};
+use byteordered::ByteOrdered;
 use encoding::all::{MAC_ROMAN, WINDOWS_1252};
 use crate::{Endianness, OSType, os, collections::{riff, rsrc::MacResourceFile}, Reader, resources::resource, string::StringReadExt};
-use std::io::{Cursor, SeekFrom};
+use std::{path::PathBuf, io::{Cursor, SeekFrom}};
 
 // TODO: Create an actual Projector type and do not expost this any more
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub struct DetectionInfo {
 
 #[derive(Debug)]
 pub enum Movie {
+    Embedded,
     Internal {
         offset: u32,
         size: u32
@@ -71,18 +72,16 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         let external_files = rom.get(os!(b"STR#"), 0)?;
         let cursor = ByteOrdered::be(Cursor::new(external_files.data().ok()?));
         for filename in resource::parse_string_list(cursor, MAC_ROMAN).ok()? {
+            let path: PathBuf = filename.split(' ').collect();
             movies.push(Movie::External {
-                filename,
-                path: String::from("TODO"),
+                filename: path.file_name().map_or_else(String::new, |v| v.to_string_lossy().into_owned()),
+                path: path.parent().map_or_else(String::new, |v| v.to_string_lossy().into_owned()),
                 size: 0,
             });
         }
     } else {
-        // TODO
-        movies.push(Movie::Internal {
-            offset: 0,
-            size: 0,
-        });
+        // Embedded movies start at Resource ID 1024
+        movies.push(Movie::Embedded);
     }
 
     Some(DetectionInfo {
@@ -95,6 +94,12 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 }
 
 fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
+    const MZ: u16 = 0x5a4d;
+    reader.seek(SeekFrom::Start(0)).ok()?;
+    if reader.read_u16::<LittleEndian>().ok()? != MZ {
+        return None;
+    }
+
     reader.seek(SeekFrom::End(-4)).ok()?;
     let offset = reader.read_u32::<LittleEndian>().ok()?;
     reader.seek(SeekFrom::Start(offset.into())).ok()?;
