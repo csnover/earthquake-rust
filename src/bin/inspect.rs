@@ -47,7 +47,7 @@ fn read_projector(mut file: &mut File, projector: &Projector) -> Result<(), Box<
                 file.seek(SeekFrom::Start(u64::from(*offset)))?;
                 let riff = Riff::new(&mut file)?;
                 for resource in riff.iter() {
-                    println!("{:?} {:x?}", resource.id, resource.data()?);
+                    println!("{:?}", resource.id);
                 }
             },
             MovieInfo::External { filename, path, .. } => {

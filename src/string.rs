@@ -27,6 +27,20 @@ pub(crate) trait StringReadExt: Read {
     }
 
     #[inline]
+    fn read_utf16_c_str<T: ByteOrder>(&mut self) -> IoResult<String> {
+        use byteorder::ReadBytesExt;
+        let mut result = Vec::with_capacity(16);
+        loop {
+            let value = self.read_u16::<T>()?;
+            if value != 0 {
+                result.push(value);
+            } else {
+                break String::from_utf16(&result).map_err(|e| Error::new(ErrorKind::InvalidData, e));
+            }
+        }
+    }
+
+    #[inline]
     fn read_pascal_str<D: Encoding>(&mut self, decoder: &D) -> IoResult<String> {
         let mut buf = [0; 1];
         self.read_exact(&mut buf)?;
