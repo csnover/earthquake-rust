@@ -268,7 +268,7 @@ mod pe {
             input.seek(SeekFrom::Current(key_padding_size as i64))?;
         }
 
-        let is_string_table = key == "StringFileInfo" || (key.len() == 8 && u32::from_str_radix(&key, 16).is_ok());
+        let is_string_table = key == "StringFileInfo" || (key.len() == 8 && &key[4..8] == "04b0");
 
         match key.as_ref() {
             "ProductName" => Ok(Some(input.read_utf16_c_str::<LittleEndian>()?)),
