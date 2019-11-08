@@ -77,51 +77,12 @@ impl<T: Reader> Riff<T> {
         self.info.version
     }
 
-    pub fn iter(&self) -> RiffIterator<T> {
-        RiffIterator {
+    pub fn iter(&self) -> impl Iterator<Item = RiffData<T>> {
+        self.resource_map.iter().map(move |(k, v)| RiffData {
+            id: *k,
             input: &self.input,
-            map_iter: self.resource_map.iter()
-        }
-    }
-}
-
-pub struct RiffIterator<'a, T: Reader> {
-    input: &'a Input<T>,
-    map_iter: std::collections::hash_map::Iter<'a, (OSType, u16), OffsetSize>,
-}
-
-impl<'a, T: Reader> Iterator for RiffIterator<'a, T> {
-    type Item = RiffData<'a, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.map_iter.next() {
-            Some(item) => {
-                Some(RiffData {
-                    id: *item.0,
-                    input: self.input,
-                    offset_size: *item.1,
-                })
-            },
-            None => None
-        }
-    }
-}
-
-impl<'a, T: Reader> ExactSizeIterator for RiffIterator<'a, T> {
-    fn len(&self) -> usize {
-        self.map_iter.len()
-    }
-}
-
-impl<'a, T: Reader> std::iter::FusedIterator for RiffIterator<'a, T> {}
-
-impl<'a, T: Reader> IntoIterator for &'a Riff<T> {
-    type Item = RiffData<'a, T>;
-    type IntoIter = RiffIterator<'a, T>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+            offset_size: *v,
+        })
     }
 }
 
