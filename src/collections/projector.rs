@@ -201,7 +201,7 @@ fn get_exe_filename<T: Reader>(input: &mut T) -> Option<String> {
     };
 
     if signature == *b"PE\0\0" {
-        read_pe_product_name(input)
+        pe::read_product_name(input)
     } else if signature[0..2] == *b"NE" {
         // 32 bytes from start of NE header, -4 since we consumed 4 bytes of
         // the header already
@@ -222,99 +222,110 @@ fn get_exe_filename<T: Reader>(input: &mut T) -> Option<String> {
     }
 }
 
-fn read_pe_product_name<T: Reader>(input: &mut T) -> Option<String> {
-    const VERSION_INFO_TYPE: u32 = 0x10;
-    const VERSION_INFO_ID: u32 = 1;
-    const VERSION_INFO_LANG: u32 = 1033;
+mod pe {
+    use super::*;
 
-    let (virtual_address, from_offset) = seek_to_pe_resource_table(input).ok()?;
-    seek_to_pe_directory_entry(input, from_offset, VERSION_INFO_TYPE).ok()?;
-    seek_to_pe_directory_entry(input, from_offset, VERSION_INFO_ID).ok()?;
-    seek_to_pe_directory_entry(input, from_offset, VERSION_INFO_LANG).ok()?;
-    seek_to_pe_resource_data(input, virtual_address, from_offset).ok()?;
-    read_pe_version_struct(input).ok()
-}
-
-fn read_pe_version_struct<T: Reader>(input: &mut T) -> io::Result<String> {
-    const FIXED_HEADER_WORD_SIZE: usize = 3;
-    let size = input.read_u16::<LittleEndian>()?;
-    let end = input.seek(SeekFrom::Current(0))? + u64::from(size);
-    let mut value_size = input.read_u16::<LittleEndian>()?;
-    let is_text_data = input.read_u16::<LittleEndian>()? == 1;
-    if is_text_data {
-        value_size *= 2;
-    }
-    let value_padding = if value_size & 3 != 0 { 4 - (value_size & 3) } else { 0 };
-    let key = input.read_utf16_c_str::<LittleEndian>()?;
-
-    let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
-    if key_padding_size != 0 {
-        input.seek(SeekFrom::Current(key_padding_size as i64))?;
-    }
-
-    match key.as_ref() {
-        "ProductName" => Ok(input.read_utf16_c_str::<LittleEndian>()?),
-        "StringFileInfo" | _ if key.len() == 8 && u32::from_str_radix(&key, 16).is_ok() => {
-            while input.seek(SeekFrom::Current(0))? != end {
-                if let Ok(value) = read_pe_version_struct(input) {
-                    return Ok(value);
-                }
+    fn find_resource_segment_offset<T: Reader>(input: &mut T, num_sections: u16) -> Option<(u32, u32)> {
+        for _ in 0..num_sections {
+            let mut section = [0u8; 40];
+            input.read_exact(&mut section).ok()?;
+            if section[0..8] == *b".rsrc\0\0\0" {
+                return Some((LittleEndian::read_u32(&section[12..]), LittleEndian::read_u32(&section[20..])))
             }
-            Err(io::ErrorKind::NotFound.into())
-        },
-        _ => {
-            input.seek(SeekFrom::Current(i64::from(value_size + value_padding)))?;
-            read_pe_version_struct(input)
         }
-    }
-}
 
-fn seek_to_pe_resource_table<T: Reader>(input: &mut T) -> io::Result<(u32, u32)> {
-    input.seek(SeekFrom::Current(2))?;
-    let num_sections = input.read_u16::<LittleEndian>()?;
-    input.seek(SeekFrom::Current(12))?;
-    let optional_header_size = input.read_u16::<LittleEndian>()?;
-    input.seek(SeekFrom::Current(2 + i64::from(optional_header_size)))?;
-    let (virtual_address, offset) = find_pe_resource_table_offset(input, num_sections).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
-    input.seek(SeekFrom::Start(u64::from(offset)))?;
-    Ok((virtual_address, offset))
-}
-
-fn find_pe_resource_table_offset<T: Reader>(input: &mut T, num_sections: u16) -> Option<(u32, u32)> {
-    for _ in 0..num_sections {
-        let mut section = [0u8; 40];
-        input.read_exact(&mut section).ok()?;
-        if section[0..8] == *b".rsrc\0\0\0" {
-            return Some((LittleEndian::read_u32(&section[12..]), LittleEndian::read_u32(&section[20..])))
-        }
+        None
     }
 
-    None
-}
+    pub(super) fn read_product_name<T: Reader>(input: &mut T) -> Option<String> {
+        const VERSION_INFO_TYPE: u32 = 0x10;
+        const VERSION_INFO_ID: u32 = 1;
+        const VERSION_INFO_LANG: u32 = 1033;
 
-fn seek_to_pe_directory_entry<T: Reader>(input: &mut T, from_offset: u32, id: u32) -> io::Result<()> {
-    const ENTRY_SIZE: usize = 8;
-    input.seek(SeekFrom::Current(12))?;
-    let skip_entries = input.read_u16::<LittleEndian>()?;
-    let num_entries = input.read_u16::<LittleEndian>()?;
-    input.seek(SeekFrom::Current(i64::from(ENTRY_SIZE as u16 * skip_entries)))?;
-    for _ in 0..num_entries {
-        let mut entry = [0u8; ENTRY_SIZE];
-        input.read_exact(&mut entry)?;
-        let found_id = LittleEndian::read_u32(&entry);
-        if found_id == id {
-            const HAS_CHILDREN_FLAG: u32 = 0x8000_0000;
-            let offset = LittleEndian::read_u32(&entry[4..]) & !HAS_CHILDREN_FLAG;
-            input.seek(SeekFrom::Start(u64::from(from_offset + offset)))?;
-            return Ok(());
+        let (virtual_address, from_offset) = seek_to_resource_segment(input).ok()?;
+        seek_to_directory_entry(input, from_offset, VERSION_INFO_TYPE).ok()?;
+        seek_to_directory_entry(input, from_offset, VERSION_INFO_ID).ok()?;
+        seek_to_directory_entry(input, from_offset, VERSION_INFO_LANG).ok()?;
+        seek_to_resource_data(input, virtual_address, from_offset).ok()?;
+        read_version_struct(input).ok()?
+    }
+
+    fn read_version_struct<T: Reader>(input: &mut T) -> io::Result<Option<String>> {
+        const FIXED_HEADER_WORD_SIZE: usize = 3;
+        let start = input.seek(SeekFrom::Current(0))?;
+        let size = input.read_u16::<LittleEndian>()?;
+        let mut value_size = input.read_u16::<LittleEndian>()?;
+        let is_text_data = input.read_u16::<LittleEndian>()? == 1;
+        if is_text_data {
+            value_size *= 2;
+        }
+        let value_padding = if value_size & 3 != 0 { 4 - (value_size & 3) } else { 0 };
+        let end = start + u64::from(size) + u64::from(if size & 3 != 0 { 4 - (size & 3) } else { 0 });
+        let key = input.read_utf16_c_str::<LittleEndian>()?;
+
+        let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
+        if key_padding_size != 0 {
+            input.seek(SeekFrom::Current(key_padding_size as i64))?;
+        }
+
+        let is_string_table = key == "StringFileInfo" || (key.len() == 8 && u32::from_str_radix(&key, 16).is_ok());
+
+        match key.as_ref() {
+            "ProductName" => Ok(Some(input.read_utf16_c_str::<LittleEndian>()?)),
+            "VS_VERSION_INFO" => {
+                input.seek(SeekFrom::Current(i64::from(value_size + value_padding)))?;
+                read_version_struct(input)
+            },
+            _ if is_string_table => {
+                while input.seek(SeekFrom::Current(0))? != end {
+                    if let Ok(Some(value)) = read_version_struct(input) {
+                        return Ok(Some(value));
+                    }
+                }
+                Ok(None)
+            },
+            _ => {
+                input.seek(SeekFrom::Start(end))?;
+                Ok(None)
+            }
         }
     }
 
-    Err(io::ErrorKind::InvalidData.into())
-}
+    fn seek_to_directory_entry<T: Reader>(input: &mut T, from_offset: u32, id: u32) -> io::Result<()> {
+        const ENTRY_SIZE: usize = 8;
+        input.seek(SeekFrom::Current(12))?;
+        let skip_entries = input.read_u16::<LittleEndian>()?;
+        let num_entries = input.read_u16::<LittleEndian>()?;
+        input.seek(SeekFrom::Current(i64::from(ENTRY_SIZE as u16 * skip_entries)))?;
+        for _ in 0..num_entries {
+            let mut entry = [0u8; ENTRY_SIZE];
+            input.read_exact(&mut entry)?;
+            let found_id = LittleEndian::read_u32(&entry);
+            if found_id == id {
+                const HAS_CHILDREN_FLAG: u32 = 0x8000_0000;
+                let offset = LittleEndian::read_u32(&entry[4..]) & !HAS_CHILDREN_FLAG;
+                input.seek(SeekFrom::Start(u64::from(from_offset + offset)))?;
+                return Ok(());
+            }
+        }
 
-fn seek_to_pe_resource_data<T: Reader>(input: &mut T, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
-    let offset = input.read_u32::<LittleEndian>()?;
-    input.seek(SeekFrom::Start(u64::from(offset - virtual_address + raw_offset)))?;
-    Ok(())
+        Err(io::ErrorKind::InvalidData.into())
+    }
+
+    fn seek_to_resource_data<T: Reader>(input: &mut T, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
+        let offset = input.read_u32::<LittleEndian>()?;
+        input.seek(SeekFrom::Start(u64::from(offset - virtual_address + raw_offset)))?;
+        Ok(())
+    }
+
+    fn seek_to_resource_segment<T: Reader>(input: &mut T) -> io::Result<(u32, u32)> {
+        input.seek(SeekFrom::Current(2))?;
+        let num_sections = input.read_u16::<LittleEndian>()?;
+        input.seek(SeekFrom::Current(12))?;
+        let optional_header_size = input.read_u16::<LittleEndian>()?;
+        input.seek(SeekFrom::Current(2 + i64::from(optional_header_size)))?;
+        let (virtual_address, offset) = find_resource_segment_offset(input, num_sections).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+        input.seek(SeekFrom::Start(u64::from(offset)))?;
+        Ok((virtual_address, offset))
+    }
 }
