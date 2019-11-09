@@ -1,4 +1,4 @@
-use earthquake::{collections::{projector::{DetectionInfo as Projector, Movie as MovieInfo}, riff::Riff}, detect::{self, FileType}, io};
+use earthquake::{collections::{projector::{DetectionInfo as Projector, Movie as MovieInfo}, riff::Riff, rsrc::MacResourceFile}, detect::{self, FileType}, io};
 use std::{env, error::Error, fs::File, io::{Seek, SeekFrom}, process::exit};
 
 fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
@@ -24,7 +24,7 @@ fn read_file(filename: &str) -> Result<(), Box<dyn Error>> {
         println!("{}: Version {} {}", filename, movie.version(), movie.kind());
 
         for resource in movie.iter() {
-            println!("{:?}", resource.id);
+            println!("{:?}", resource.id());
         }
     } else {
         match detect::detect_type(&mut file) {
@@ -47,14 +47,19 @@ fn read_projector(mut file: &mut File, projector: &Projector) -> Result<(), Box<
                 file.seek(SeekFrom::Start(u64::from(*offset)))?;
                 let riff = Riff::new(&mut file)?;
                 for resource in riff.iter() {
-                    println!("{:?}", resource.id);
+                    println!("{}", resource.id());
                 }
             },
-            MovieInfo::External { filename, path, .. } => {
-                println!("External movie at {}/{}", path, filename);
+            MovieInfo::External(filename) => {
+                println!("External movie at {}", filename);
             },
             MovieInfo::Embedded => {
                 println!("Embedded movie");
+                file.seek(SeekFrom::Start(0))?;
+                let rom = MacResourceFile::new(&mut file)?;
+                for resource in rom.iter() {
+                    println!("{}", resource.id());
+                }
             },
         }
     }

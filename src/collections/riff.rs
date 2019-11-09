@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, OSTypeReadExt, Reader};
+use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId};
 use enum_display_derive::Display;
 use std::{cell::RefCell, collections::HashMap, fmt::Display, io::{self, ErrorKind, Read, Result as IoResult, Seek, SeekFrom}};
 
@@ -32,7 +32,7 @@ struct OffsetSize {
     size: u32,
 }
 
-type ResourceMap = HashMap<(OSType, u16), OffsetSize>;
+type ResourceMap = HashMap<ResourceId, OffsetSize>;
 type Input<T> = RefCell<ByteOrdered<T, byteordered::Endianness>>;
 
 #[derive(Debug)]
@@ -87,7 +87,7 @@ impl<T: Reader> Riff<T> {
 }
 
 pub struct RiffData<'a, T: Reader> {
-    pub id: (OSType, u16),
+    id: ResourceId,
     input: &'a Input<T>,
     offset_size: OffsetSize,
 }
@@ -98,6 +98,10 @@ impl<'a, T: Reader> RiffData<'a, T> {
         let mut data = Vec::new();
         self.input.borrow_mut().as_mut().take(u64::from(self.offset_size.size)).read_to_end(&mut data)?;
         Ok(data)
+    }
+
+    pub fn id(&self) -> ResourceId {
+        self.id
     }
 }
 
@@ -130,7 +134,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
                 let id = input.read_i32::<DE>()?;
                 let offset = input.read_u32::<DE>()?;
 
-                let result = resource_map.insert((os_type, id as u16), OffsetSize { offset, size });
+                let result = resource_map.insert(ResourceId(os_type, id as i16), OffsetSize { offset, size });
                 if result.is_some() {
                     panic!(format!("Multiple {} {} in mmap", os_type, id));
                 }
@@ -162,7 +166,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
                 let size = input.read_u32::<DE>()?;
                 let offset = input.read_u32::<DE>()? + 8;
                 input.seek(SeekFrom::Current(i64::from(table_entry_size) - ENTRY_BYTES_READ))?;
-                resource_map.insert((os_type, id as u16), OffsetSize { offset, size });
+                resource_map.insert(ResourceId(os_type, id as i16), OffsetSize { offset, size });
             }
         },
         _ => return Err(io::Error::new(ErrorKind::InvalidData, "Could not find a valid resource map"))

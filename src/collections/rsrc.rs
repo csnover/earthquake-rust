@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
-use crate::{OSType, OSTypeReadExt, Reader, compression::ApplicationVise, os, string::StringReadExt};
+use crate::{OSType, OSTypeReadExt, Reader, ResourceId, compression::ApplicationVise, rsid, string::StringReadExt};
 use std::{cell::RefCell, collections::HashMap, io::{self, Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Debug)]
@@ -10,7 +10,7 @@ use std::{cell::RefCell, collections::HashMap, io::{self, Cursor, Read, Seek, Se
 pub struct MacResourceFile<T: Reader> {
     input: RefCell<Input<T>>,
     decompressor: RefCell<DecompressorState>,
-    resource_map: HashMap<(OSType, i16), ResourceOffsets>,
+    resource_map: HashMap<ResourceId, ResourceOffsets>,
 }
 
 impl<T: Reader> MacResourceFile<T> {
@@ -73,7 +73,7 @@ impl<T: Reader> MacResourceFile<T> {
 
                 input.seek(SeekFrom::Current(4))?; // Reserved
 
-                resource_map.insert((os_type, resource_id), ResourceOffsets {
+                resource_map.insert(ResourceId(os_type, resource_id), ResourceOffsets {
                     name_offset,
                     data_offset,
                     flags
@@ -94,20 +94,29 @@ impl<T: Reader> MacResourceFile<T> {
 
     /// Returns `true` if the resource file contains the resource with the given
     /// ID.
-    pub fn contains(&self, os_type: OSType, id: i16) -> bool {
-        self.resource_map.contains_key(&(os_type, id))
+    pub fn contains(&self, id: ResourceId) -> bool {
+        self.resource_map.contains_key(&id)
     }
 
     /// Returns a handle to retrieve the resource with the given ID.
-    pub fn get(&self, os_type: OSType, id: i16) -> Option<Resource<T>> {
-        if let Some(offsets) = self.resource_map.get(&(os_type, id)) {
+    pub fn get(&self, id: ResourceId) -> Option<Resource<T>> {
+        if let Some(offsets) = self.resource_map.get(&id) {
             Some(Resource {
+                id,
                 owner: self,
                 offsets: *offsets,
             })
         } else {
             None
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Resource<T>> {
+        self.resource_map.iter().map(move |(k, v)| Resource {
+            id: *k,
+            owner: self,
+            offsets: *v,
+        })
     }
 
     /// Returns the name embedded in the Resource File. For applications, this
@@ -135,7 +144,7 @@ impl<T: Reader> MacResourceFile<T> {
 
     fn decompress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         if let DecompressorState::Waiting(resource_id) = *self.decompressor.borrow() {
-            let resource = self.get(os!(b"CODE"), resource_id).unwrap();
+            let resource = self.get(rsid!(b"CODE", resource_id)).unwrap();
             let resource_data = resource.data()?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Could not find the Application VISE shared dictionary"))?;
@@ -153,11 +162,27 @@ impl<T: Reader> MacResourceFile<T> {
 #[derive(Debug)]
 /// A resource from a Resource File.
 pub struct Resource<'a, T: Reader> {
+    id: ResourceId,
     owner: &'a MacResourceFile<T>,
     offsets: ResourceOffsets,
 }
 
 impl<'a, T: Reader> Resource<'a, T> {
+    /// Returns the resource’s data.
+    pub fn data(&self) -> io::Result<Vec<u8>> {
+        self.owner.build_resource_data(&self.offsets)
+    }
+
+    /// Returns the resource’s flags.
+    pub fn flags(&self) -> ResourceFlags {
+        self.offsets.flags
+    }
+
+    /// Returns the resources’s ID.
+    pub fn id(&self) -> ResourceId {
+        self.id
+    }
+
     /// Returns the resource’s name.
     pub fn name(&self) -> Option<String> {
         if let Some(name_offset) = self.offsets.name_offset {
@@ -167,16 +192,6 @@ impl<'a, T: Reader> Resource<'a, T> {
         } else {
             None
         }
-    }
-
-    /// Returns the resource’s data.
-    pub fn data(&self) -> io::Result<Vec<u8>> {
-        self.owner.build_resource_data(&self.offsets)
-    }
-
-    /// Returns the resource’s flags.
-    pub fn flags(&self) -> ResourceFlags {
-        self.offsets.flags
     }
 }
 

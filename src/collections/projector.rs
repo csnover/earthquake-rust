@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, os, collections::{riff, rsrc::MacResourceFile}, Reader, resources::resource, string::StringReadExt};
+use crate::{OSType, Reader, ResourceId, collections::{riff, rsrc::MacResourceFile}, rsid, resources::resource, string::StringReadExt};
 use encoding::all::{MAC_ROMAN, WINDOWS_1252};
 use std::{path::PathBuf, io::{self, Cursor, SeekFrom}};
 
@@ -8,7 +8,6 @@ use std::{path::PathBuf, io::{self, Cursor, SeekFrom}};
 #[derive(Debug)]
 pub struct DetectionInfo {
     pub name: Option<String>,
-    endianness: Endianness,
     pub platform: Platform,
     pub version: ProjectorVersion,
     pub movies: Vec<Movie>,
@@ -21,11 +20,7 @@ pub enum Movie {
         offset: u32,
         size: u32
     },
-    External {
-        filename: String,
-        path: String,
-        size: u32
-    },
+    External(String),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -50,34 +45,29 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     reader.seek(SeekFrom::Start(0)).ok()?;
     let rom = MacResourceFile::new(reader).ok()?;
 
-    let version = if rom.contains(os!(b"PJ95"), 0) {
+    let version = if rom.contains(rsid!(b"PJ95", 0)) {
         ProjectorVersion::D5
-    } else if rom.contains(os!(b"PJ93"), 0) {
+    } else if rom.contains(rsid!(b"PJ93", 0)) {
         ProjectorVersion::D4
-    } else if rom.contains(os!(b"VWst"), 0) {
+    } else if rom.contains(rsid!(b"VWst", 0)) {
         ProjectorVersion::D3
     } else {
         return None;
     };
 
     let has_external_data = {
-        let os_type = if version == ProjectorVersion::D3 { os!(b"VWst") } else { os!(b"PJst") };
-        rom.get(os_type, 0)?.data().ok()?[4] != 0
+        let os_type = if version == ProjectorVersion::D3 { b"VWst" } else { b"PJst" };
+        rom.get(rsid!(os_type, 0))?.data().ok()?[4] != 0
     };
 
     let mut movies = Vec::new();
     if has_external_data {
         // TODO: Should parse this in Resource instead of pulling it from
         // the ROM and then pushing it into Resource?
-        let external_files = rom.get(os!(b"STR#"), 0)?;
+        let external_files = rom.get(rsid!(b"STR#", 0))?;
         let cursor = ByteOrdered::be(Cursor::new(external_files.data().ok()?));
         for filename in resource::parse_string_list(cursor, MAC_ROMAN).ok()? {
-            let path: PathBuf = filename.split(' ').collect();
-            movies.push(Movie::External {
-                filename: path.file_name().map_or_else(String::new, |v| v.to_string_lossy().into_owned()),
-                path: path.parent().map_or_else(String::new, |v| v.to_string_lossy().into_owned()),
-                size: 0,
-            });
+            movies.push(Movie::External(filename.replace(':', "/")));
         }
     } else {
         // Embedded movies start at Resource ID 1024
@@ -86,7 +76,6 @@ fn detect_mac<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     Some(DetectionInfo {
         name: rom.name(),
-        endianness: Endianness::Big,
         platform: Platform::Mac,
         version,
         movies,
@@ -128,15 +117,6 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         },
     };
 
-    // TODO: Turns out that this is a big lie and the data offsets in this file
-    // are still little-endian even when the OSType is not.
-    // let endianness = if buffer[0] == b'P' {
-    //     Endianness::Big
-    // } else {
-    //     Endianness::Little
-    // };
-    let endianness = Endianness::Little;
-
     let movies = match version {
         ProjectorVersion::D3 => {
             let num_movies = LittleEndian::read_u16(&buffer);
@@ -145,29 +125,26 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
             // read movies internally; find it and then set the movie list
             // appropriately. For now the only corpus available has a single
             // external movie.
-            let mut movies: Vec<Movie> = Vec::new();
+            let mut movies = Vec::new();
             for _ in 0..num_movies {
-                let size = reader.read_u32::<LittleEndian>().ok()?;
-                // TODO: Probably need to try to use CHARDET for this
-                let filename = reader.read_pascal_str(WINDOWS_1252).ok()?;
-                let path = reader.read_pascal_str(WINDOWS_1252).ok()?;
+                let _size = reader.read_u32::<LittleEndian>().ok()?;
+                let filename = {
+                    // TODO: May need to CHARDET the path if it is non-ASCII
+                    let filename = reader.read_pascal_str(WINDOWS_1252).ok()?;
+                    let path = reader.read_pascal_str(WINDOWS_1252).ok()?;
 
-                movies.push(Movie::External {
-                    filename,
-                    path,
-                    size,
-                });
+                    let mut pathbuf = PathBuf::from(path);
+                    pathbuf.push(filename);
+                    pathbuf.to_string_lossy().to_string()
+                };
+
+                movies.push(Movie::External(filename));
             }
 
             movies
         },
         _ => {
-            let offset = if endianness == Endianness::Big {
-                BigEndian::read_u32(&buffer[4..])
-            } else {
-                LittleEndian::read_u32(&buffer[4..])
-            };
-
+            let offset = LittleEndian::read_u32(&buffer[4..]);
             reader.seek(SeekFrom::Start(u64::from(offset))).ok()?;
             let info = riff::detect(reader).unwrap_or_else(|| panic!("Could not parse embedded RIFF at {}", offset));
 
@@ -182,7 +159,6 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     Some(DetectionInfo {
         name: get_exe_filename(reader),
-        endianness,
         platform: Platform::Windows,
         version,
         movies,
