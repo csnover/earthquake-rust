@@ -1,3 +1,4 @@
+use anyhow::{Context, Result as AResult, anyhow};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
@@ -15,44 +16,58 @@ pub struct MacResourceFile<T: Reader> {
 
 impl<T: Reader> MacResourceFile<T> {
     /// Makes a new MacResourceFile from a readable stream.
-    pub fn new(data: T) -> io::Result<Self> {
+    pub fn new(data: T) -> AResult<Self> {
         const RESOURCE_MAP_OFFSETS_OFFSET: u64 = 24;
         let mut input = ByteOrdered::be(data);
 
-        let data_offset = input.read_u32()?;
-        let map_offset = input.read_u32()?;
+        let data_offset = input.read_u32().context("Can’t read data offset")?;
+        let map_offset = input.read_u32().context("Can’t read map offset")?;
 
-        input.seek(SeekFrom::Start(u64::from(map_offset) + RESOURCE_MAP_OFFSETS_OFFSET))?;
-        let types_offset = u64::from(map_offset + u32::from(input.read_u16()?));
-        let names_offset = map_offset + u32::from(input.read_u16()?);
+        input.seek(SeekFrom::Start(u64::from(map_offset) + RESOURCE_MAP_OFFSETS_OFFSET))
+            .with_context(|| format!("Bad resource map offset {}", map_offset))?;
+        let types_offset = u64::from(map_offset + u32::from(input.read_u16().context("Can’t read types offset")?));
+        let names_offset = map_offset + u32::from(input.read_u16().context("Can’t read names offset")?);
         let num_types = input.read_u16()? + 1;
 
         let (mut type_list, mut resource_map) = {
             const TYPE_LIST_ENTRY_SIZE: usize = 8;
             let mut list = Vec::with_capacity(TYPE_LIST_ENTRY_SIZE * num_types as usize);
             let mut num_resources = 0;
-            input.as_mut().take(TYPE_LIST_ENTRY_SIZE as u64 * u64::from(num_types)).read_to_end(&mut list)?;
+            input.as_mut().take(TYPE_LIST_ENTRY_SIZE as u64 * u64::from(num_types)).read_to_end(&mut list)
+                .context("Can’t read types list")?;
             for i in 0..num_types {
-                num_resources += u32::from(BigEndian::read_u16(&list[i as usize * TYPE_LIST_ENTRY_SIZE + 4..]) + 1);
+                const MAX: u32 = 1 << 24;
+                if num_resources >= MAX {
+                    return Err(anyhow!("Bogus number of resources"));
+                }
+                num_resources += u32::from(BigEndian::read_u16(&list[i as usize * TYPE_LIST_ENTRY_SIZE + 4..])) + 1;
             }
             (ByteOrdered::be(Cursor::new(list)), HashMap::with_capacity(num_resources as usize))
         };
 
         let mut last_code_id = 0;
-        for _ in 0..num_types {
-            let os_type = type_list.read_os_type::<BigEndian>()?;
-            let num_resources = type_list.read_u16()?;
-            let table_offset = types_offset + u64::from(type_list.read_u16()?);
+        for i in 0..num_types {
+            let os_type = type_list.read_os_type::<BigEndian>()
+                .with_context(|| format!("Can’t read OSType of resource table index {}", i))?;
+            let num_resources = type_list.read_u16()
+                .with_context(|| format!("Can’t read number of resources for {}", os_type))?;
+            let table_offset = types_offset + u64::from(type_list.read_u16()
+                .with_context(|| format!("Can’t read resource table offset for {}", os_type))?);
 
-            input.seek(SeekFrom::Start(table_offset))?;
+            input.seek(SeekFrom::Start(table_offset))
+                .with_context(|| format!("Bad offset {} for {} resource list", table_offset, os_type))?;
 
-            let mut resource_id = 0;
-            for _ in 0..=num_resources {
-                resource_id = input.read_i16()?;
+            let mut resource_num = 0;
+            for i in 0..=num_resources {
+                resource_num = input.read_i16()
+                    .with_context(|| format!("Can’t read resource number of {} index {}", os_type, i))?;
+
+                let resource_id = ResourceId(os_type, resource_num);
 
                 let name_offset = {
                     const NO_NAME: u16 = 0xffff;
-                    let value = input.read_u16()?;
+                    let value = input.read_u16()
+                        .with_context(|| format!("Can’t read name offset of {}", resource_id))?;
                     if value == NO_NAME {
                         None
                     } else {
@@ -65,15 +80,16 @@ impl<T: Reader> MacResourceFile<T> {
                     const OFFSET_MASK: u32 = (1 << OFFSET_BITS) - 1;
                     const FLAGS_MASK: u32 = !OFFSET_MASK;
 
-                    let value = input.read_u32()?;
+                    let value = input.read_u32()
+                        .with_context(|| format!("Can’t read offset of {}", resource_id))?;
                     let offset = value & OFFSET_MASK;
                     let flags = ((value & FLAGS_MASK) >> OFFSET_BITS) as u8;
                     (data_offset + offset, ResourceFlags::from_bits_truncate(flags))
                 };
 
-                input.seek(SeekFrom::Current(4))?; // Reserved
+                input.seek(SeekFrom::Current(4))?;
 
-                resource_map.insert(ResourceId(os_type, resource_id), ResourceOffsets {
+                resource_map.insert(resource_id, ResourceOffsets {
                     name_offset,
                     data_offset,
                     flags
@@ -81,7 +97,7 @@ impl<T: Reader> MacResourceFile<T> {
             }
 
             if os_type.as_bytes() == b"CODE" {
-                last_code_id = resource_id;
+                last_code_id = resource_num;
             }
         }
 
@@ -127,7 +143,7 @@ impl<T: Reader> MacResourceFile<T> {
         input.read_pascal_str(MAC_ROMAN).ok()
     }
 
-    fn build_resource_data(&self, offsets: &ResourceOffsets) -> io::Result<Vec<u8>> {
+    fn build_resource_data(&self, offsets: &ResourceOffsets) -> AResult<Vec<u8>> {
         let mut input = self.input.borrow_mut();
 
         input.seek(SeekFrom::Start(u64::from(offsets.data_offset)))?;
@@ -142,17 +158,17 @@ impl<T: Reader> MacResourceFile<T> {
         Ok(data)
     }
 
-    fn decompress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
+    fn decompress(&self, data: &[u8]) -> AResult<Vec<u8>> {
         if let DecompressorState::Waiting(resource_id) = *self.decompressor.borrow() {
             let resource = self.get(rsid!(b"CODE", resource_id)).unwrap();
             let resource_data = resource.data()?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Could not find the Application VISE shared dictionary"))?;
+                .ok_or_else(|| anyhow!("Could not find the Application VISE shared dictionary"))?;
             self.decompressor.replace(DecompressorState::Loaded(ApplicationVise::new(shared_data.to_vec())));
         }
 
         if let DecompressorState::Loaded(decompressor) = &*self.decompressor.borrow() {
-            decompressor.decompress(&data)
+            decompressor.decompress(&data).context("Decompression failure")
         } else {
             unreachable!();
         }
@@ -169,8 +185,8 @@ pub struct Resource<'a, T: Reader> {
 
 impl<'a, T: Reader> Resource<'a, T> {
     /// Returns the resource’s data.
-    pub fn data(&self) -> io::Result<Vec<u8>> {
-        self.owner.build_resource_data(&self.offsets)
+    pub fn data(&self) -> AResult<Vec<u8>> {
+        self.owner.build_resource_data(&self.offsets).with_context(|| format!("Can’t read {}", self.id))
     }
 
     /// Returns the resource’s flags.

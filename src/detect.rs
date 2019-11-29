@@ -1,21 +1,20 @@
-use crate::{Reader, collections::{projector::{self, DetectionInfo as ProjectorDetectionInfo}, riff::{self, DetectionInfo as RiffDetectionInfo}}};
+use anyhow::{Context, Result as AResult};
+use crate::{Reader, collections::{movie::{self, DetectionInfo as MovieDetectionInfo}, projector::{self, DetectionInfo as ProjectorDetectionInfo}}};
 use std::io::SeekFrom;
 
 #[derive(Debug)]
 pub enum FileType {
     Projector(ProjectorDetectionInfo),
-    Movie(RiffDetectionInfo)
+    Movie(MovieDetectionInfo)
 }
 
-pub fn detect_type<T: Reader>(reader: &mut T) -> Option<FileType> {
-    reader.seek(SeekFrom::Start(0)).ok()?;
-    if let Some(file_type) = riff::detect(reader) {
-        return Some(FileType::Movie(file_type));
-    }
+pub fn detect_type<T: Reader>(reader: &mut T) -> AResult<FileType> {
+    reader.seek(SeekFrom::Start(0))?;
 
-    if let Some(file_type) = projector::detect(reader) {
-        return Some(FileType::Projector(file_type));
-    }
-
-    None
+    projector::detect(reader)
+        .map(FileType::Projector)
+        .or_else(|e|
+            movie::detect(reader)
+            .map(FileType::Movie)
+            .context(e))
 }

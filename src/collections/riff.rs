@@ -1,30 +1,8 @@
+use anyhow::{Context, Result as AResult, anyhow};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId};
-use enum_display_derive::Display;
-use std::{cell::RefCell, collections::HashMap, fmt::Display, io::{self, ErrorKind, Read, Result as IoResult, Seek, SeekFrom}};
-
-#[derive(Debug)]
-pub struct DetectionInfo {
-    os_type_endianness: Endianness,
-    data_endianness: Endianness,
-    version: MovieVersion,
-    kind: MovieType,
-    pub size: u32,
-}
-
-#[derive(Debug, Display, Copy, Clone, PartialEq)]
-pub enum MovieType {
-    Embedded,
-    Movie,
-    Cast,
-}
-
-#[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
-pub enum MovieVersion {
-    D3,
-    D4,
-}
+use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId, collections::movie::*};
+use std::{cell::RefCell, collections::HashMap, io::{Read, Seek, SeekFrom}};
 
 #[derive(Copy, Clone, Debug)]
 struct OffsetSize {
@@ -43,8 +21,8 @@ pub struct Riff<T: Reader> {
 }
 
 impl<T: Reader> Riff<T> {
-    pub fn new(mut input: T) -> IoResult<Self> {
-        let info = detect(&mut input).ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "Failed to detect a valid RIFF file"))?;
+    pub fn new(mut input: T) -> AResult<Self> {
+        let info = detect(&mut input)?;
 
         let resource_map = {
             if info.os_type_endianness == Endianness::Little && info.data_endianness == Endianness::Little {
@@ -54,11 +32,13 @@ impl<T: Reader> Riff<T> {
             } else if info.os_type_endianness == Endianness::Big && info.data_endianness == Endianness::Big {
                 build_resource_map::<T, BigEndian, BigEndian>(&mut input)?
             } else {
-                panic!("Big endian data with little endian OSType is impossible.");
+                unreachable!();
             }
         };
 
         Ok(Self {
+            // TODO: Figure out how to use a static ByteOrdered reader instead
+            // of the runtime one
             input: RefCell::new(ByteOrdered::runtime(input, info.data_endianness)),
             resource_map,
             info
@@ -93,10 +73,20 @@ pub struct RiffData<'a, T: Reader> {
 }
 
 impl<'a, T: Reader> RiffData<'a, T> {
-    pub fn data(&self) -> IoResult<Vec<u8>> {
-        self.input.borrow_mut().seek(SeekFrom::Start(u64::from(self.offset_size.offset)))?;
+    pub fn data(&self) -> AResult<Vec<u8>> {
+        self.input
+            .borrow_mut()
+            .seek(SeekFrom::Start(u64::from(self.offset_size.offset)))
+            .with_context(|| format!("Can’t seek {}", self.id))?;
+
         let mut data = Vec::new();
-        self.input.borrow_mut().as_mut().take(u64::from(self.offset_size.size)).read_to_end(&mut data)?;
+        self.input
+            .borrow_mut()
+            .as_mut()
+            .take(u64::from(self.offset_size.size))
+            .read_to_end(&mut data)
+            .with_context(|| format!("Can’t read {}", self.id))?;
+
         Ok(data)
     }
 
@@ -105,16 +95,16 @@ impl<'a, T: Reader> RiffData<'a, T> {
     }
 }
 
-pub fn detect<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
-    let os_type = reader.read_os_type::<BigEndian>().ok()?;
+pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
+    let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
-        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader),
-        b"FFIR" => panic!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open."),
-        _ => None,
+        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).context("Not a Director RIFF"),
+        b"FFIR" => Err(anyhow!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open.")),
+        _ => Err(anyhow!("Not a RIFF file")),
     }
 }
 
-fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) -> IoResult<ResourceMap> {
+fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) -> AResult<ResourceMap> {
     let map_os_type = input.read_os_type::<OE>()?;
     let mut bytes_to_read = input.read_u32::<DE>()?;
     let mut resource_map = HashMap::new();
@@ -148,7 +138,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
             input.seek(SeekFrom::Start(u64::from(map_offset)))?;
             let map_os_type = input.read_os_type::<OE>()?;
             if map_os_type.as_bytes() != b"mmap" {
-                return Err(io::Error::new(ErrorKind::InvalidData, "Could not find a valid resource map"));
+                return Err(anyhow!("Could not find a valid resource map"));
             }
             let _chunk_size = input.read_u32::<DE>()?;
 
@@ -169,7 +159,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
                 resource_map.insert(ResourceId(os_type, id as i16), OffsetSize { offset, size });
             }
         },
-        _ => return Err(io::Error::new(ErrorKind::InvalidData, "Could not find a valid resource map"))
+        _ => return Err(anyhow!("Could not find a valid resource map"))
     }
 
     Ok(resource_map)

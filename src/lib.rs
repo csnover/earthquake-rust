@@ -2,7 +2,7 @@ pub mod collections;
 pub(crate) mod compression;
 pub mod detect;
 pub mod io;
-pub(crate) mod resources;
+pub mod resources;
 pub(crate) mod string;
 pub(crate) mod types;
 
