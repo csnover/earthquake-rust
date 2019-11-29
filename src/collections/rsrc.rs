@@ -4,7 +4,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
 use crate::{OSType, OSTypeReadExt, Reader, ResourceId, compression::ApplicationVise, rsid, string::StringReadExt};
-use std::{cell::RefCell, collections::HashMap, io::{self, Cursor, Read, Seek, SeekFrom}};
+use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
