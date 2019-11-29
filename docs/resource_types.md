@@ -63,6 +63,13 @@ for authoring and not playback.
 | 'amdr' |        |        |        |        |        |
 | 'Aout' |        |        |        |        |        |
 | 'Bout' |        |        |        |        |        |
+| 'memo' | ?      | ?      | ?      | ?      | ?      |
+| 'MIDI' | ?      | ?      | ?      | ?      | ?      |
+| 'EMPO'*| ?      | ?      | ?      | ?      | ?      |
+| 'TRNS'*| ?      | ?      | ?      | ?      | ?      |
+| 'SOND'*| ?      | ?      | ?      | ?      | ?      |
+| 'Acas'*| ?      | ?      | ?      | ?      | ?      |
+| 'Arez'*| ?      | ?      | ?      | ?      | ?      |
 | 'vers' | 'ver '?| 'vers' | 'vers' | 'vers' | 'vers' |
 | 'VWCF' | 'vwcf' | 'VWCF' | 'VWCF' | 'VWCF' |        |
 | 'VWCR' | 'vwcr' | 'VWCR' | 'VWCR' | 'VWCR' |        |
@@ -111,7 +118,7 @@ for authoring and not playback.
 |        | 'mftx' |        |        |        |        |
 |        | 'ver.' |        |        |        |        |
 |        | 'RMMP' |        | 'RMMP' |        |        |
-|        | 'stxt' |        | 'STXT' | 'STXT' |        |
+| 'STXT' | 'stxt' |        | 'STXT' | 'STXT' |        |
 |        | 'clut' | 'clut' | 'clut' | 'clut' | 'clut' |
 | See [1]| 'dib ' |        | 'DIB ' | 'DIB ' |        |
 |        | 'scvw' |        | 'SCVW' | 'SCVW' |        |
@@ -133,7 +140,7 @@ for authoring and not playback.
 |        |        |        | 'free' | 'free' |        |
 |        |        |        | 'acur' | 'acur' |        |
 |        |        |        | 'VWtk' | 'VWtk' |        |
-|        |        |        | 'MooV' | 'MooV' |        |
+| 'MooV' |        |        | 'MooV' | 'MooV' |        |
 |        |        |        | 'crsr' | 'crsr' |        |
 |        |        |        | 'RIFX' | 'RIFX' |        |
 |        |        |        | 'junk' | 'junk' |        |
@@ -168,8 +175,8 @@ for authoring and not playback.
 |        |        |        | 'pltt' | 'pltt' |        |
 |        |        |        | 'ppat' | 'ppat' | 'ppat' |
 |        |        |        | 'PACK' | 'PACK' |        |
-|        |        |        | 'MOVI' | 'MOVI' |        |
-|        |        |        | 'BUTT' | 'BUTT' |        |
+| 'MOVI' |        |        | 'MOVI' | 'MOVI' |        |
+| 'BUTT' |        |        | 'BUTT' | 'BUTT' |        |
 |        |        |        | 'SHAP' | 'SHAP' |        |
 |        |        |        | 'SCRI' | 'SCRI' |        |
 |        |        |        | 'TXTS' | 'TXTS' |        |
