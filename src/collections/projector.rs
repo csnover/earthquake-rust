@@ -119,6 +119,11 @@ fn detect_win<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     let movies = match version {
         ProjectorVersion::D3 => {
+            // Since we read 8 bytes above to make RIFF subtype detection easier
+            // and the D3 header is actually 7 bytes, rewind once to get
+            // realigned to the rest of the data
+            reader.seek(SeekFrom::Current(-1))?;
+
             let num_movies = LittleEndian::read_u16(&buffer);
 
             // TODO: Somewhere in the projector header is probably a flag to
