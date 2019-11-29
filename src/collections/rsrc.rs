@@ -114,6 +114,17 @@ impl<T: Reader> MacResourceFile<T> {
         self.resource_map.contains_key(&id)
     }
 
+    /// Returns `true` if the resource file contains the resource with the given
+    /// ID.
+    pub fn contains_type(&self, os_type: OSType) -> bool {
+        for resource_id in self.resource_map.keys() {
+            if resource_id.0 == os_type {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Returns a handle to retrieve the resource with the given ID.
     pub fn get(&self, id: ResourceId) -> Option<Resource<T>> {
         if let Some(offsets) = self.resource_map.get(&id) {

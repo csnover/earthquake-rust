@@ -1,5 +1,5 @@
 use anyhow::{Result as AResult, anyhow};
-use crate::{Endianness, OSType, Reader, ResourceId, rsid, collections::{riff, rsrc::MacResourceFile}};
+use crate::{Endianness, OSType, Reader, ResourceId, os, rsid, collections::{riff, rsrc::MacResourceFile}};
 use enum_display_derive::Display;
 use std::{fmt::Display, io::SeekFrom};
 
@@ -34,7 +34,7 @@ pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     reader.seek(SeekFrom::Start(0))?;
     let rom = MacResourceFile::new(reader)?;
 
-    if rom.contains(rsid!(b"VWCF", 1024)) {
+    if rom.contains_type(os!(b"VWCF")) {
         Ok(DetectionInfo {
             data_endianness: Endianness::Big,
             os_type_endianness: Endianness::Big,
@@ -42,7 +42,7 @@ pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
             kind: MovieType::Embedded,
             size: 0,
         })
-    } else if rom.contains(rsid!(b"EMPO", 256)) {
+    } else if rom.contains_type(os!(b"EMPO")) {
         Ok(DetectionInfo {
             data_endianness: Endianness::Big,
             os_type_endianness: Endianness::Big,

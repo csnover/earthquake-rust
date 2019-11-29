@@ -1,13 +1,30 @@
+#![allow(dead_code)]
+
 use byteordered::{ByteOrdered, Endian};
 use crate::{OSType, string::StringReadExt};
 use encoding::Encoding;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
+
+#[derive(Debug)]
+pub enum CastRegistry {
+    None,
+    Bitmap {},
+    FilmLoop {},
+    Text {},
+    Palette {},
+    Picture {},
+    Sound {},
+    Button {},
+    Shape {},
+    EmbeddedMovie {},
+    QuickTime {},
+}
 
 #[derive(Debug)]
 pub enum Resource {
-    CastProps {},
     CastInfo {},
     CastMap {},
+    CastRegistry(Vec<CastRegistry>),
     ColorLookupTable {},
     Config {},
     Cursor {},
@@ -31,6 +48,38 @@ pub enum Resource {
     Unknown { os_type: OSType, size: usize },
 }
 
+pub fn parse_cast_registry<T, U, V>(mut input: ByteOrdered<T, U>, str_encoding: &V) -> io::Result<Vec<CastRegistry>>
+where
+    T: io::Read + io::Seek,
+    U: Endian,
+    V: Encoding {
+    let mut registry = Vec::new();
+
+    let size = input.read_u8()?;
+    registry.push(if size == 0 {
+        CastRegistry::None
+    } else {
+        use CastRegistry as CR;
+        let kind = input.read_u8()?;
+        input.seek(SeekFrom::Current(size.into()))?;
+        match kind {
+             1 => CR::Bitmap {},
+             2 => CR::FilmLoop {},
+             3 => CR::Text {},
+             4 => CR::Palette {},
+             5 => CR::Picture {},
+             6 => CR::Sound {},
+             7 => CR::Button {},
+             8 => CR::Shape {},
+             9 => CR::EmbeddedMovie {},
+            10 => CR::QuickTime {},
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unexpected kind {}", kind)))
+        }
+    });
+
+    Ok(registry)
+}
+
 pub fn parse_string_list<T, U, V>(mut input: ByteOrdered<T, U>, str_encoding: &V) -> io::Result<Vec<String>>
 where
     T: io::Read,
@@ -46,7 +95,7 @@ where
 
 pub fn parse_resource<T, U, V>(os_type: OSType, mut input: ByteOrdered<T, U>, str_encoding: Option<&V>) -> io::Result<Resource>
 where
-    T: io::Read,
+    T: io::Read + io::Seek,
     U: Endian,
     V: Encoding {
     use Resource as R;
@@ -73,7 +122,7 @@ where
         // VWAC = Accelerator?
         b"VWCF" | b"DRCF" => R::Config {},
         b"VWCI" => R::CastInfo {},
-        b"VWCR" | b"CASt" => R::CastProps {},
+        b"VWCR" | b"CASt" => R::CastRegistry(parse_cast_registry(input, str_encoding.expect("String encoding required"))?),
         // Ver. = ?
         b"VWFI" => R::FileInfo {},
         b"VWFM" => R::Frame {},
