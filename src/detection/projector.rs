@@ -1,27 +1,41 @@
 use anyhow::{anyhow, Context, Result as AResult};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{OSType, Reader, ResourceId, collections::{riff, rsrc::MacResourceFile}, rsid, resources::resource, string::StringReadExt};
+use crate::{OSType, Reader, ResourceId, collections::riff, macos::MacResourceFile, rsid, resources::resource, string::StringReadExt};
 use encoding::all::{MAC_ROMAN, WINDOWS_1252};
 use std::{path::PathBuf, io::{self, Cursor, SeekFrom}};
 
-// TODO: Create an actual Projector type and do not expost this any more
 #[derive(Debug)]
 pub struct DetectionInfo {
-    pub name: Option<String>,
-    pub platform: Platform,
-    pub version: ProjectorVersion,
-    pub movies: Vec<Movie>,
+    name: Option<String>,
+    platform: Platform,
+    version: ProjectorVersion,
+    movie: Movie,
+}
+
+impl DetectionInfo {
+    pub fn movie(&self) -> &Movie {
+        &self.movie
+    }
+
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.platform
+    }
+
+    pub fn version(&self) -> ProjectorVersion {
+        self.version
+    }
 }
 
 #[derive(Debug)]
 pub enum Movie {
-    Embedded,
-    Internal {
-        offset: u32,
-        size: u32
-    },
-    External(String),
+    Embedded(u16),
+    Internal { offset: u32, size: u32 },
+    External(Vec<String>),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -38,12 +52,15 @@ pub enum ProjectorVersion {
     D7,
 }
 
-pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
-    detect_win(reader).or_else(|e| detect_mac(reader).context(e))
+pub fn detect<T: Reader>(mut reader: T) -> AResult<DetectionInfo> {
+    let start_pos = reader.seek(SeekFrom::Current(0))?;
+    detect_win(&mut reader).or_else(|e| {
+        reader.seek(SeekFrom::Start(start_pos))?;
+        detect_mac(&mut reader).context(e)
+    })
 }
 
-fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
-    reader.seek(SeekFrom::Start(0))?;
+pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = MacResourceFile::new(reader)?;
 
     let version = if rom.contains(rsid!(b"PJ95", 0)) && rom.contains(rsid!(b"PJst", 0)) {
@@ -56,40 +73,42 @@ fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
         return Err(anyhow!("No Mac projector settings resource"));
     };
 
-    let has_external_data = {
+    let config = {
         let os_type = if version == ProjectorVersion::D3 { b"VWst" } else { b"PJst" };
         let resource_id = rsid!(os_type, 0);
-        let data = rom.get(resource_id).unwrap().data()?;
-        data[4] != 0
+        rom.get(resource_id).unwrap().data()?
     };
 
-    let mut movies = Vec::new();
-    if has_external_data {
+    let has_external_data = config[4] != 0;
+    let num_movies = BigEndian::read_u16(&config[6..]);
+
+    let movie = if has_external_data {
         // TODO: Should parse this in Resource instead of pulling it from
         // the ROM and then pushing it into Resource?
         let resource_id = rsid!(b"STR#", 0);
         let external_files = rom.get(resource_id).ok_or_else(|| anyhow!("Missing external file list"))?;
         let cursor = ByteOrdered::be(Cursor::new(external_files.data().with_context(|| format!("Can’t read {}", resource_id))?));
         // TODO: May need to CHARDET the paths
+        let mut movies = Vec::with_capacity(usize::from(num_movies));
         for filename in resource::parse_string_list(cursor, MAC_ROMAN)? {
-            movies.push(Movie::External(filename.replace(':', "/")));
+            movies.push(filename.replace(':', "/"));
         }
+        Movie::External(movies)
     } else {
         // Embedded movies start at Resource ID 1024
-        movies.push(Movie::Embedded);
-    }
+        Movie::Embedded(num_movies)
+    };
 
     Ok(DetectionInfo {
         name: rom.name(),
         platform: Platform::Mac,
         version,
-        movies,
+        movie,
     })
 }
 
-fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
+pub fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     const MZ: u16 = 0x4d5a;
-    reader.seek(SeekFrom::Start(0))?;
     if reader.read_u16::<BigEndian>().context("Can’t read magic")? != MZ {
         return Err(anyhow!("Not a Windows executable"));
     }
@@ -122,7 +141,7 @@ fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
         },
     };
 
-    let movies = match version {
+    let movie = match version {
         ProjectorVersion::D3 => {
             // Since we read 8 bytes above to make RIFF subtype detection easier
             // and the D3 header is actually 7 bytes, rewind once to get
@@ -135,7 +154,7 @@ fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
             // read movies internally; find it and then set the movie list
             // appropriately. For now the only corpus available has a single
             // external movie.
-            let mut movies = Vec::new();
+            let mut movies = Vec::with_capacity(usize::from(num_movies));
             for i in 0..num_movies {
                 let _size = reader.read_u32::<LittleEndian>()
                     .with_context(|| format!("Can’t read external movie {} size", i))?;
@@ -151,10 +170,10 @@ fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
                     pathbuf.to_string_lossy().to_string()
                 };
 
-                movies.push(Movie::External(filename));
+                movies.push(filename);
             }
 
-            movies
+            Movie::External(movies)
         },
         _ => {
             let offset = LittleEndian::read_u32(&buffer[4..]);
@@ -162,12 +181,10 @@ fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
                 .with_context(|| format!("Bad RIFF offset {}", offset))?;
             let info = riff::detect(reader).with_context(|| format!("Can’t detect RIFF at {}", offset))?;
 
-            let mut movies = Vec::new();
-            movies.push(Movie::Internal {
+            Movie::Internal {
                 offset,
-                size: info.size
-            });
-            movies
+                size: info.size()
+            }
         }
     };
 
@@ -175,7 +192,7 @@ fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
         name: get_exe_filename(reader),
         platform: Platform::Windows,
         version,
-        movies,
+        movie,
     })
 }
 

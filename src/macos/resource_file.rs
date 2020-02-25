@@ -36,11 +36,14 @@ impl<T: Reader> MacResourceFile<T> {
             input.as_mut().take(TYPE_LIST_ENTRY_SIZE as u64 * u64::from(num_types)).read_to_end(&mut list)
                 .context("Can’t read types list")?;
             for i in 0..num_types {
-                const MAX: u32 = 1 << 24;
-                if num_resources >= MAX {
+                const DOCUMENTED_MAXIMUM: u32 = 2727;
+                if num_resources > DOCUMENTED_MAXIMUM {
                     return Err(anyhow!("Bogus number of resources"));
                 }
-                num_resources += u32::from(BigEndian::read_u16(&list[i as usize * TYPE_LIST_ENTRY_SIZE + 4..])) + 1;
+
+                let offset = i as usize * TYPE_LIST_ENTRY_SIZE + 4;
+                let entry_slice = &list.get(offset..offset + 2).ok_or_else(|| anyhow!("Premature end of resource list at {}/{}", i, num_types))?;
+                num_resources += u32::from(BigEndian::read_u16(entry_slice)) + 1;
             }
             (ByteOrdered::be(Cursor::new(list)), HashMap::with_capacity(num_resources as usize))
         };
@@ -135,6 +138,25 @@ impl<T: Reader> MacResourceFile<T> {
             })
         } else {
             None
+        }
+    }
+
+    pub fn get_indexed_string(&self, id: i16, index: i16) -> String {
+        if let Some(resource) = self.get(rsid!(b"STR#", id)) {
+            let mut input = self.input.borrow_mut();
+            input.seek(SeekFrom::Start(u64::from(resource.offsets.data_offset))).unwrap();
+            let num_strings = input.read_i16().unwrap();
+            if index >= num_strings {
+                String::new()
+            } else {
+                for _ in 0..index {
+                    let size = input.read_u8().unwrap();
+                    input.seek(SeekFrom::Current(i64::from(size))).unwrap();
+                }
+                input.read_pascal_str(MAC_ROMAN).unwrap()
+            }
+        } else {
+            String::new()
         }
     }
 

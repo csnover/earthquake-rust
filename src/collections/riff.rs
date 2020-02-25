@@ -1,7 +1,7 @@
 use anyhow::{Context, Result as AResult, anyhow};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId, collections::movie::*};
+use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId, detection::movie::*};
 use std::{cell::RefCell, collections::HashMap, io::{Read, Seek, SeekFrom}};
 
 #[derive(Copy, Clone, Debug)]
@@ -25,11 +25,11 @@ impl<T: Reader> Riff<T> {
         let info = detect(&mut input)?;
 
         let resource_map = {
-            if info.os_type_endianness == Endianness::Little && info.data_endianness == Endianness::Little {
+            if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {
                 build_resource_map::<T, LittleEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness == Endianness::Big && info.data_endianness == Endianness::Little {
+            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Little {
                 build_resource_map::<T, BigEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness == Endianness::Big && info.data_endianness == Endianness::Big {
+            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Big {
                 build_resource_map::<T, BigEndian, BigEndian>(&mut input)?
             } else {
                 unreachable!();
@@ -39,22 +39,22 @@ impl<T: Reader> Riff<T> {
         Ok(Self {
             // TODO: Figure out how to use a static ByteOrdered reader instead
             // of the runtime one
-            input: RefCell::new(ByteOrdered::runtime(input, info.data_endianness)),
+            input: RefCell::new(ByteOrdered::runtime(input, info.data_endianness())),
             resource_map,
             info
         })
     }
 
     pub fn kind(&self) -> MovieType {
-        self.info.kind
+        self.info.kind()
     }
 
     pub fn size(&self) -> u32 {
-        self.info.size
+        self.info.size()
     }
 
     pub fn version(&self) -> MovieVersion {
-        self.info.version
+        self.info.version()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = RiffData<T>> {

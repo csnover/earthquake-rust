@@ -1,74 +1,98 @@
-use anyhow::{Context, Result as AResult};
+use anyhow::{Result as AResult};
 use byteordered::ByteOrdered;
-use earthquake::{collections::{projector::{DetectionInfo as Projector, Movie as MovieInfo}, riff::Riff, rsrc::MacResourceFile}, detect::{self, FileType}, io, resources::parse_resource};
+use earthquake::{
+    collections::riff::Riff,
+    detection::{
+        detect,
+        FileType,
+        movie::{
+            DetectionInfo as MovieDetectionInfo,
+            MovieType,
+        },
+        projector::{
+            DetectionInfo as ProjectorDetectionInfo,
+            Movie as MovieInfo,
+        },
+    },
+    macos::MacResourceFile,
+    resources::parse_resource,
+    SharedStream,
+};
 use encoding::all::MAC_ROMAN;
-use std::{env, fs::File, io::{Seek, SeekFrom}, process::exit};
+use pico_args::Arguments;
+use std::{env, fs::File, path::{Path, PathBuf}, process::exit};
 
-fn read_file(filename: &str) -> AResult<()> {
-    // Files from Macs have both data and resource forks. In the case of
-    // projectors, the resource fork should be checked first, since the data
-    // fork in D4+ projectors also contains valid movie data, even though the
-    // user intends to inspect the projector. In the case of movie files in D4
-    // and later, the resource fork exists and contains data, but not Director
-    // data.
-    // So, if a resource fork exists but detection fails, we still need to check
-    // the data fork to see if it’s actually a movie file.
-    if let Ok(mut file) = io::open_resource_fork(&filename) {
-        match detect::detect_type(&mut file) {
-            Ok(FileType::Projector(projector)) => return read_projector(&mut file, &projector),
-            Ok(FileType::Movie(_)) => return read_embedded_movie(&mut file),
-            Err(_) => {},
-        }
+fn read_file(filename: &str, data_dir: Option<&PathBuf>) -> AResult<()> {
+    match detect(filename)? {
+        FileType::Projector(p, s) => read_projector(p, s, data_dir),
+        FileType::Movie(m, s) => read_movie(m, s),
     }
+}
 
-    let mut file = File::open(filename)?;
-
-    if let Ok(movie) = Riff::new(&mut file) {
-        println!("{}: Version {} {}", filename, movie.version(), movie.kind());
-
-        for resource in movie.iter() {
-            println!("{}", resource.id());
-        }
-    } else {
-        match detect::detect_type(&mut file)
-            .with_context(|| format!("{} is not a Director file", filename))? {
-            FileType::Projector(projector) => read_projector(&mut file, &projector)?,
-            FileType::Movie(_) => panic!("Got a movie instead of a projector after trying to detect a movie"),
-        }
+fn read_movie(info: MovieDetectionInfo, stream: SharedStream<File>) -> AResult<()> {
+    println!("{:?}", info);
+    match info.kind() {
+        MovieType::Movie | MovieType::Cast => {
+            let riff = Riff::new(stream)?;
+            for resource in riff.iter() {
+                println!("{}", resource.id());
+            }
+        },
+        MovieType::Accelerator | MovieType::Embedded => {
+            read_embedded_movie(1, stream)?;
+        },
     }
-
     Ok(())
 }
 
-fn read_projector(mut file: &mut File, projector: &Projector) -> AResult<()> {
-    println!("{:?}", projector);
-
-    for movie in &projector.movies {
-        match movie {
-            MovieInfo::Internal { offset, .. } => {
-                println!("Internal movie at {}", offset);
-                file.seek(SeekFrom::Start(u64::from(*offset)))?;
-                let riff = Riff::new(&mut file)?;
-                for resource in riff.iter() {
-                    println!("{}", resource.id());
-                }
-            },
-            MovieInfo::External(filename) => {
+fn read_projector(info: ProjectorDetectionInfo, mut stream: SharedStream<File>, data_dir: Option<&PathBuf>) -> AResult<()> {
+    println!("{:?}", info);
+    match info.movie() {
+        MovieInfo::Internal { offset, .. } => {
+            println!("Internal movie at {}", offset);
+            let riff = Riff::new(&mut stream)?;
+            for resource in riff.iter() {
+                println!("{}", resource.id());
+            }
+        },
+        MovieInfo::External(filenames) => {
+            for filename in filenames {
                 println!("External movie at {}", filename);
-            },
-            MovieInfo::Embedded => {
-                println!("Embedded movie");
-                read_embedded_movie(file)?;
-            },
-        }
-    }
 
+                let mut components = Path::new(filename).components();
+                loop {
+                    components.next();
+                    let components_path = components.as_path();
+                    if components_path.file_name().is_none() {
+                        println!("File not found");
+                        break;
+                    }
+
+                    let file_path = if let Some(data_dir) = data_dir {
+                        let mut file_path = data_dir.clone();
+                        file_path.push(components_path);
+                        file_path
+                    } else {
+                        PathBuf::from(components_path)
+                    };
+
+                    if file_path.exists() {
+                        read_file(file_path.to_str().unwrap(), data_dir)?;
+                        break;
+                    }
+                }
+            }
+        },
+        MovieInfo::Embedded(num_movies) => {
+            println!("{} embedded movies", num_movies);
+            read_embedded_movie(*num_movies, stream)?;
+        },
+    }
     Ok(())
 }
 
-fn read_embedded_movie(mut file: &mut File) -> AResult<()> {
-    file.seek(SeekFrom::Start(0))?;
-    let rom = MacResourceFile::new(&mut file)?;
+fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>) -> AResult<()> {
+    let rom = MacResourceFile::new(stream)?;
     for resource in rom.iter() {
         println!("{} {:?}", resource.id(), resource.flags());
         if resource.id().0.as_bytes() == b"VWCR" {
@@ -86,14 +110,18 @@ fn main() -> AResult<()> {
 
     println!("Earthquake {} file inspector", VERSION.unwrap_or(""));
 
-    let args: Vec<_> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: {} <exe/cxr/dxr>", args[0]);
+    let mut args = Arguments::from_env();
+    let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
+    let files = args.free()?;
+
+    if files.is_empty() {
+        println!("Usage: {} [--data <dir>] <exe/cxr/dxr ...>", env::args().nth(0).unwrap_or_else(|| "inspect".to_string()));
+        println!("\nOptional arguments:\n    --data: The path to movies referenced by a Projector");
         exit(1);
     }
 
-    for arg in &args[1..] {
-        read_file(&arg)?;
+    for filename in files {
+        read_file(&filename, data_dir.as_ref())?;
     }
 
     Ok(())

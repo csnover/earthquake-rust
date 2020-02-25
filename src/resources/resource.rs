@@ -55,27 +55,37 @@ where
     V: Encoding {
     let mut registry = Vec::new();
 
-    let size = input.read_u8()?;
-    registry.push(if size == 0 {
-        CastRegistry::None
-    } else {
-        use CastRegistry as CR;
-        let kind = input.read_u8()?;
-        input.seek(SeekFrom::Current(size.into()))?;
-        match kind {
-             1 => CR::Bitmap {},
-             2 => CR::FilmLoop {},
-             3 => CR::Text {},
-             4 => CR::Palette {},
-             5 => CR::Picture {},
-             6 => CR::Sound {},
-             7 => CR::Button {},
-             8 => CR::Shape {},
-             9 => CR::EmbeddedMovie {},
-            10 => CR::QuickTime {},
-            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unexpected kind {}", kind)))
-        }
-    });
+    let mut end = {
+        let current = input.seek(SeekFrom::Current(0))?;
+        let end = input.seek(SeekFrom::End(0))?;
+        input.seek(SeekFrom::Start(current))?;
+        end
+    };
+
+    while end > 0 {
+        let size = input.read_u8()?;
+        end -= u64::from(size) + 1;
+        registry.push(if size == 0 {
+            CastRegistry::None
+        } else {
+            use CastRegistry as CR;
+            let kind = input.read_u8()?;
+            input.seek(SeekFrom::Current(i64::from(size) - 1))?;
+            match kind {
+                1 => CR::Bitmap {},
+                2 => CR::FilmLoop {},
+                3 => CR::Text {},
+                4 => CR::Palette {},
+                5 => CR::Picture {},
+                6 => CR::Sound {},
+                7 => CR::Button {},
+                8 => CR::Shape {},
+                9 => CR::EmbeddedMovie {},
+                10 => CR::QuickTime {},
+                _ => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unexpected kind {}", kind)))
+            }
+        });
+    }
 
     Ok(registry)
 }

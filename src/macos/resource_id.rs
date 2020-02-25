@@ -1,5 +1,5 @@
+use crate::OSType;
 use std::fmt;
-use super::os_type::OSType;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct ResourceId(pub OSType, pub i16);

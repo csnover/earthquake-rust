@@ -1,7 +1,7 @@
 use anyhow::{Result as AResult, anyhow};
-use crate::{Endianness, OSType, Reader, ResourceId, os, rsid, collections::{riff, rsrc::MacResourceFile}};
+use crate::{Endianness, macos::MacResourceFile, OSType, Reader, os};
 use enum_display_derive::Display;
-use std::{fmt::Display, io::SeekFrom};
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub struct DetectionInfo {
@@ -9,7 +9,29 @@ pub struct DetectionInfo {
     pub(crate) data_endianness: Endianness,
     pub(crate) version: MovieVersion,
     pub(crate) kind: MovieType,
-    pub size: u32,
+    pub(crate) size: u32,
+}
+
+impl DetectionInfo {
+    pub fn data_endianness(&self) -> Endianness {
+        self.data_endianness
+    }
+
+    pub fn os_type_endianness(&self) -> Endianness {
+        self.os_type_endianness
+    }
+
+    pub fn kind(&self) -> MovieType {
+        self.kind
+    }
+
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    pub fn version(&self) -> MovieVersion {
+        self.version
+    }
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq)]
@@ -26,12 +48,7 @@ pub enum MovieVersion {
     D4,
 }
 
-pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
-    if let Ok(file_type) = riff::detect(reader) {
-        return Ok(file_type);
-    }
-
-    reader.seek(SeekFrom::Start(0))?;
+pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = MacResourceFile::new(reader)?;
 
     if rom.contains_type(os!(b"VWCF")) {
