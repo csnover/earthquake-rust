@@ -21,15 +21,31 @@ pub enum FileType {
 
 pub fn detect(filename: &str) -> AResult<FileType> {
     detect_resource_fork(filename)
-        .or_else(|e| detect_apple_single_or_apple_double(filename).context(e))
-        .or_else(|e| detect_mac_binary(filename).context(e))
+        .or_else(|e| detect_apple_single_or_apple_double(filename, false).context(e))
+        .or_else(|e| detect_mac_binary(filename, false).context(e))
         .or_else(|e| detect_file(filename).context(e))
 }
 
-fn detect_apple_single_or_apple_double(filename: &str) -> AResult<FileType> {
+pub fn detect_data_fork(filename: &str) -> AResult<FileType> {
+    detect_apple_single_or_apple_double(filename, true)
+        .or_else(|e| detect_mac_binary(filename, true).context(e))
+        .or_else(|e| {
+            let file = SharedStream::new(File::open(filename)?);
+            detect_riff(file).context(e)
+        })
+}
+
+fn detect_apple_single_or_apple_double(filename: &str, only_data_fork: bool) -> AResult<FileType> {
     let apple_file = AppleDouble::open(filename)?;
-    if let Some(resource_fork) = apple_file.resource_fork() {
-        detect_mac(resource_fork)
+
+    let resource_fork = if only_data_fork {
+        None
+    } else {
+        apple_file.resource_fork()
+    };
+
+    if let Some(resource_fork) = resource_fork {
+        detect_mac(resource_fork, apple_file.data_fork())
             .or_else(|e| {
                 if let Some(data_fork) = apple_file.data_fork() {
                     detect_riff(data_fork).context(e)
@@ -48,13 +64,13 @@ fn detect_file(filename: &str) -> AResult<FileType> {
     let file = SharedStream::new(File::open(filename)?);
     projector::detect_win(&mut file.clone())
         .map(|p| FileType::Projector(p, file.clone()))
-        .or_else(|e| detect_mac(file.clone()).context(e))
+        .or_else(|e| detect_mac(file.clone(), None::<SharedStream<File>>).context(e))
         .or_else(|e| detect_riff(file).context(e))
 }
 
-fn detect_mac(mut stream: SharedStream<File>) -> AResult<FileType> {
+fn detect_mac(mut stream: SharedStream<File>, mut data_fork: Option<SharedStream<impl Reader>>) -> AResult<FileType> {
     let start_pos = stream.seek(SeekFrom::Current(0))?;
-    projector::detect_mac(&mut stream)
+    projector::detect_mac(&mut stream, data_fork.as_mut())
         .map(|p| {
             stream.seek(SeekFrom::Start(start_pos)).unwrap();
             FileType::Projector(p, stream.clone())
@@ -68,10 +84,16 @@ fn detect_mac(mut stream: SharedStream<File>) -> AResult<FileType> {
         })
 }
 
-fn detect_mac_binary(filename: &str) -> AResult<FileType> {
+fn detect_mac_binary(filename: &str, only_data_fork: bool) -> AResult<FileType> {
     let mac_binary = MacBinary::new(File::open(filename)?)?;
-    if let Some(resource_fork) = mac_binary.resource_fork() {
-        detect_mac(resource_fork).or_else(|e| {
+    let resource_fork = if only_data_fork {
+        None
+    } else {
+        mac_binary.resource_fork()
+    };
+
+    if let Some(resource_fork) = resource_fork {
+        detect_mac(resource_fork, mac_binary.data_fork()).or_else(|e| {
             if let Some(data_fork) = mac_binary.data_fork() {
                 detect_riff(data_fork).context(e)
             } else {
@@ -86,7 +108,7 @@ fn detect_mac_binary(filename: &str) -> AResult<FileType> {
 }
 
 fn detect_resource_fork(filename: &str) -> AResult<FileType> {
-    detect_mac(SharedStream::new(open_resource_fork(filename)?))
+    detect_mac(SharedStream::new(open_resource_fork(filename)?), Some(SharedStream::new(File::open(filename)?)))
 }
 
 fn detect_riff(mut stream: SharedStream<File>) -> AResult<FileType> {

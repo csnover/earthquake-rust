@@ -1,9 +1,10 @@
-use anyhow::{Result as AResult};
+use anyhow::{anyhow, Result as AResult};
 use byteordered::ByteOrdered;
 use earthquake::{
     collections::riff::Riff,
     detection::{
         detect,
+        detect_data_fork,
         FileType,
         movie::{
             DetectionInfo as MovieDetectionInfo,
@@ -12,6 +13,8 @@ use earthquake::{
         projector::{
             DetectionInfo as ProjectorDetectionInfo,
             Movie as MovieInfo,
+            Platform,
+            ProjectorVersion,
         },
     },
     macos::MacResourceFile,
@@ -20,11 +23,11 @@ use earthquake::{
 };
 use encoding::all::MAC_ROMAN;
 use pico_args::Arguments;
-use std::{env, fs::File, path::{Path, PathBuf}, process::exit};
+use std::{env, fs::File, io::{Seek, SeekFrom}, path::{Path, PathBuf}, process::exit};
 
 fn read_file(filename: &str, data_dir: Option<&PathBuf>) -> AResult<()> {
     match detect(filename)? {
-        FileType::Projector(p, s) => read_projector(p, s, data_dir),
+        FileType::Projector(p, s) => read_projector(p, s, filename, data_dir),
         FileType::Movie(m, s) => read_movie(m, s),
     }
 }
@@ -45,11 +48,19 @@ fn read_movie(info: MovieDetectionInfo, stream: SharedStream<File>) -> AResult<(
     Ok(())
 }
 
-fn read_projector(info: ProjectorDetectionInfo, mut stream: SharedStream<File>, data_dir: Option<&PathBuf>) -> AResult<()> {
+fn read_projector(info: ProjectorDetectionInfo, stream: SharedStream<File>, filename: &str, data_dir: Option<&PathBuf>) -> AResult<()> {
     println!("{:?}", info);
     match info.movie() {
         MovieInfo::Internal { offset, .. } => {
             println!("Internal movie at {}", offset);
+            let mut stream = if info.platform() == Platform::Mac {
+                // TODO: This does not work correctly for AppleSingle and
+                // MacBinary files
+                SharedStream::new(File::open(filename)?)
+            } else {
+                stream
+            };
+            stream.seek(SeekFrom::Start(u64::from(*offset)))?;
             let riff = Riff::new(&mut stream)?;
             for resource in riff.iter() {
                 println!("{}", resource.id());
@@ -84,14 +95,22 @@ fn read_projector(info: ProjectorDetectionInfo, mut stream: SharedStream<File>, 
             }
         },
         MovieInfo::Embedded(num_movies) => {
-            println!("{} embedded movies", num_movies);
-            read_embedded_movie(*num_movies, stream)?;
+            if info.version() == ProjectorVersion::D3 {
+                read_embedded_movie(*num_movies, stream)?;
+            } else {
+                match detect_data_fork(filename)? {
+                    FileType::Projector(..) => return Err(anyhow!("Embedded movie looped back to projector")),
+                    FileType::Movie(m, s) => read_movie(m, s)?,
+                };
+            }
         },
     }
     Ok(())
 }
 
 fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>) -> AResult<()> {
+    println!("{} embedded movies", num_movies);
+
     let rom = MacResourceFile::new(stream)?;
     for resource in rom.iter() {
         println!("{} {:?}", resource.id(), resource.flags());

@@ -3,7 +3,8 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
 use crate::{OSType, Reader, ResourceId, collections::riff, macos::MacResourceFile, rsid, resources::resource, string::StringReadExt};
 use encoding::all::{MAC_ROMAN, WINDOWS_1252};
-use std::{path::PathBuf, io::{self, Cursor, SeekFrom}};
+use enum_display_derive::Display;
+use std::{fmt::Display, path::PathBuf, io::{self, Cursor, SeekFrom}};
 
 #[derive(Debug)]
 pub struct DetectionInfo {
@@ -44,7 +45,7 @@ pub enum Platform {
     Mac,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ProjectorVersion {
     D3,
     D4,
@@ -52,16 +53,8 @@ pub enum ProjectorVersion {
     D7,
 }
 
-pub fn detect<T: Reader>(mut reader: T) -> AResult<DetectionInfo> {
-    let start_pos = reader.seek(SeekFrom::Current(0))?;
-    detect_win(&mut reader).or_else(|e| {
-        reader.seek(SeekFrom::Start(start_pos))?;
-        detect_mac(&mut reader).context(e)
-    })
-}
-
-pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
-    let rom = MacResourceFile::new(reader)?;
+pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option<&mut U>) -> AResult<DetectionInfo> {
+    let rom = MacResourceFile::new(resource_fork)?;
 
     let version = if rom.contains(rsid!(b"PJ95", 0)) && rom.contains(rsid!(b"PJst", 0)) {
         ProjectorVersion::D5
@@ -94,9 +87,31 @@ pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
             movies.push(filename.replace(':', "/"));
         }
         Movie::External(movies)
-    } else {
+    } else if version == ProjectorVersion::D3 {
         // Embedded movies start at Resource ID 1024
         Movie::Embedded(num_movies)
+    } else if let Some(data_fork) = data_fork {
+        // TODO: Figure out WTF is going on with this; AMBER has a non-zero
+        // embedded movie value (1 or 2) and a PJ93 chunk in the data fork;
+        // others like JMP which have a movie clunt of 0 have no PJ93 in the
+        // data fork. This is probably a wrong test since it is a hack guess!
+        if num_movies != 0 {
+            let mut buffer = [0u8; 8];
+            data_fork.read_exact(&mut buffer).context("Can’t read Projector header")?;
+            let data_version = data_version(&buffer[0..4]);
+            if data_version.is_none() || data_version.unwrap() != version {
+                return Err(anyhow!(
+                    "Projector data fork version {} does not match resource fork version {}",
+                    data_version.map_or_else(|| "None".to_string(), |v| format!("{}", v)),
+                    version
+                ));
+            }
+            internal_movie(BigEndian::read_u32(&buffer[4..]), data_fork)?
+        } else {
+            internal_movie(0, data_fork)?
+        }
+    } else {
+        return Err(anyhow!("Missing data fork; can’t get offset of internal movie"));
     };
 
     Ok(DetectionInfo {
@@ -118,12 +133,10 @@ pub fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     reader.seek(SeekFrom::Start(offset.into())).context("Bad Director data offset")?;
 
     let mut buffer = [0u8; 8];
-    reader.read_exact(&mut buffer).context("Can’t read RIFF type")?;
+    reader.read_exact(&mut buffer).context("Can’t read Projector header")?;
 
-    let version = match &buffer[0..4] {
-        b"PJ93" | b"39JP" => ProjectorVersion::D4,
-        b"PJ95" | b"59JP" => ProjectorVersion::D5,
-        b"PJ00" | b"00JP" => ProjectorVersion::D7,
+    let version = match data_version(&buffer[0..4]) {
+        Some(version) => version,
         _ => {
             let checksum: u8 = buffer[0]
                 .wrapping_add(buffer[1])
@@ -175,17 +188,7 @@ pub fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
 
             Movie::External(movies)
         },
-        _ => {
-            let offset = LittleEndian::read_u32(&buffer[4..]);
-            reader.seek(SeekFrom::Start(u64::from(offset)))
-                .with_context(|| format!("Bad RIFF offset {}", offset))?;
-            let info = riff::detect(reader).with_context(|| format!("Can’t detect RIFF at {}", offset))?;
-
-            Movie::Internal {
-                offset,
-                size: info.size()
-            }
-        }
+        _ => internal_movie(LittleEndian::read_u32(&buffer[4..]), reader)?
     };
 
     Ok(DetectionInfo {
@@ -194,6 +197,15 @@ pub fn detect_win<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
         version,
         movie,
     })
+}
+
+fn data_version(raw_version: &[u8]) -> Option<ProjectorVersion> {
+    match &raw_version[0..4] {
+        b"PJ93" | b"39JP" => Some(ProjectorVersion::D4),
+        b"PJ95" | b"59JP" => Some(ProjectorVersion::D5),
+        b"PJ00" | b"00JP" => Some(ProjectorVersion::D7),
+        _ => None
+    }
 }
 
 fn get_exe_filename<T: Reader>(input: &mut T) -> Option<String> {
@@ -227,6 +239,17 @@ fn get_exe_filename<T: Reader>(input: &mut T) -> Option<String> {
     } else {
         None
     }
+}
+
+fn internal_movie<T: Reader>(offset: u32, reader: &mut T) -> AResult<Movie> {
+    reader.seek(SeekFrom::Start(u64::from(offset)))
+        .with_context(|| format!("Bad RIFF offset {}", offset))?;
+    let info = riff::detect(reader).with_context(|| format!("Can’t detect RIFF at {}", offset))?;
+
+    Ok(Movie::Internal {
+        offset,
+        size: info.size()
+    })
 }
 
 mod pe {
