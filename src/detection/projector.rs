@@ -50,13 +50,16 @@ pub enum ProjectorVersion {
     D3,
     D4,
     D5,
+    D6,
     D7,
 }
 
 pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option<&mut U>) -> AResult<DetectionInfo> {
     let rom = MacResourceFile::new(resource_fork)?;
 
-    let version = if rom.contains(rsid!(b"PJ95", 0)) && rom.contains(rsid!(b"PJst", 0)) {
+    let version = if rom.contains(rsid!(b"PJ97", 0)) && rom.contains(rsid!(b"PJst", 0)) {
+        ProjectorVersion::D6
+    } else if rom.contains(rsid!(b"PJ95", 0)) && rom.contains(rsid!(b"PJst", 0)) {
         ProjectorVersion::D5
     } else if rom.contains(rsid!(b"PJ93", 0)) && rom.contains(rsid!(b"PJst", 0)) {
         ProjectorVersion::D4
@@ -204,6 +207,7 @@ fn data_version(raw_version: &[u8]) -> Option<ProjectorVersion> {
     match &raw_version[0..4] {
         b"PJ93" | b"39JP" => Some(ProjectorVersion::D4),
         b"PJ95" | b"59JP" => Some(ProjectorVersion::D5),
+        b"PJ97" | b"79JP" => Some(ProjectorVersion::D6),
         b"PJ00" | b"00JP" => Some(ProjectorVersion::D7),
         _ => None
     }
