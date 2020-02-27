@@ -25,6 +25,44 @@ use encoding::all::MAC_ROMAN;
 use pico_args::Arguments;
 use std::{env, fs::File, io::{Seek, SeekFrom}, path::{Path, PathBuf}, process::exit};
 
+fn main() -> AResult<()> {
+    const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+
+    println!("Earthquake {} file inspector", VERSION.unwrap_or(""));
+
+    let mut args = Arguments::from_env();
+    let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
+    let files = args.free()?;
+
+    if files.is_empty() {
+        println!("Usage: {} [--data <dir>] <exe/cxr/dxr ...>", env::args().nth(0).unwrap_or_else(|| "inspect".to_string()));
+        println!("\nOptional arguments:\n    --data: The path to movies referenced by a Projector");
+        exit(1);
+    }
+
+    for filename in files {
+        read_file(&filename, data_dir.as_ref())?;
+    }
+
+    Ok(())
+}
+
+fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>) -> AResult<()> {
+    println!("{} embedded movies", num_movies);
+
+    let rom = MacResourceFile::new(stream)?;
+    for resource in rom.iter() {
+        println!("{} {:?}", resource.id(), resource.flags());
+        if resource.id().0.as_bytes() == b"VWCR" {
+            let data = std::io::Cursor::new(resource.data()?);
+            let reader = ByteOrdered::be(data);
+            println!("{:?}", parse_resource(resource.id().0, reader, Some(MAC_ROMAN)));
+        }
+    }
+
+    Ok(())
+}
+
 fn read_file(filename: &str, data_dir: Option<&PathBuf>) -> AResult<()> {
     match detect(filename)? {
         FileType::Projector(p, s) => read_projector(p, s, filename, data_dir),
@@ -105,43 +143,5 @@ fn read_projector(info: ProjectorDetectionInfo, stream: SharedStream<File>, file
             }
         },
     }
-    Ok(())
-}
-
-fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>) -> AResult<()> {
-    println!("{} embedded movies", num_movies);
-
-    let rom = MacResourceFile::new(stream)?;
-    for resource in rom.iter() {
-        println!("{} {:?}", resource.id(), resource.flags());
-        if resource.id().0.as_bytes() == b"VWCR" {
-            let data = std::io::Cursor::new(resource.data()?);
-            let reader = ByteOrdered::be(data);
-            println!("{:?}", parse_resource(resource.id().0, reader, Some(MAC_ROMAN)));
-        }
-    }
-
-    Ok(())
-}
-
-fn main() -> AResult<()> {
-    const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-
-    println!("Earthquake {} file inspector", VERSION.unwrap_or(""));
-
-    let mut args = Arguments::from_env();
-    let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
-    let files = args.free()?;
-
-    if files.is_empty() {
-        println!("Usage: {} [--data <dir>] <exe/cxr/dxr ...>", env::args().nth(0).unwrap_or_else(|| "inspect".to_string()));
-        println!("\nOptional arguments:\n    --data: The path to movies referenced by a Projector");
-        exit(1);
-    }
-
-    for filename in files {
-        read_file(&filename, data_dir.as_ref())?;
-    }
-
     Ok(())
 }

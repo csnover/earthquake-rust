@@ -47,7 +47,7 @@ impl<T: Reader> MacBinary<T> {
         let resource_fork_end = resource_fork_start + u64::from(BigEndian::read_u32(&header[87..]));
 
         Self {
-            input: SharedStream::new(data),
+            input: SharedStream::from(data),
             name,
             data_fork_start,
             data_fork_end,

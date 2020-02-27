@@ -1,5 +1,4 @@
 pub mod collections;
-pub(crate) mod compression;
 pub mod detection;
 pub mod macos;
 pub mod io;

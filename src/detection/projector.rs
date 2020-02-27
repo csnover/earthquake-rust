@@ -73,6 +73,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
     };
 
     let has_external_data = config[4] != 0;
+    // TODO: In D4+ this is a field for CPU architecture.
     let num_movies = BigEndian::read_u16(&config[6..]);
 
     let movie = if has_external_data {
@@ -91,10 +92,10 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
         // Embedded movies start at Resource ID 1024
         Movie::Embedded(num_movies)
     } else if let Some(data_fork) = data_fork {
-        // TODO: Figure out WTF is going on with this; AMBER has a non-zero
-        // embedded movie value (1 or 2) and a PJ93 chunk in the data fork;
-        // others like JMP which have a movie clunt of 0 have no PJ93 in the
-        // data fork. This is probably a wrong test since it is a hack guess!
+        // TODO: Figure out WTF is going on with this, seems like some
+        // pre-release version of Director 4 created projectors with no PJ93
+        // in the data fork, then suddenly it got added by the final release?
+        // And also in the pre-release ones the CPU architecture field was 0?
         if num_movies != 0 {
             let mut buffer = [0u8; 8];
             data_fork.read_exact(&mut buffer).context("Can’t read Projector header")?;

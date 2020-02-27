@@ -39,6 +39,9 @@ pub enum ScriptCode {
     UninterpretedSymbols,
 }
 
+// TODO: This is not sufficient; region codes are needed in addition to the
+// script code for correct decoding of Turkish, Croatian, Icelandic, Romanian,
+// Celtic, Gaelic, Greek, and Farsi.
 pub fn decode_text<T: Reader>(input: &mut T, script_code: u8) -> String {
     match ScriptCode::from_u8(script_code) {
         Some(ScriptCode::Roman) | None       => decode_with_decoder(input, encodings::MAC_ROMAN),

@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
 use encoding::all::MAC_ROMAN;
-use crate::{OSType, OSTypeReadExt, Reader, ResourceId, compression::ApplicationVise, rsid, string::StringReadExt};
+use crate::{macos::ApplicationVise, OSType, OSTypeReadExt, Reader, ResourceId, rsid, string::StringReadExt};
 use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Debug)]

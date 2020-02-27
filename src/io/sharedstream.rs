@@ -11,15 +11,21 @@ pub struct SharedStream<T: Reader + ?Sized> {
     end_pos: u64,
 }
 
-fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
-    let start_pos = input.seek(SeekFrom::Current(0))?;
-    let end_pos = input.seek(SeekFrom::End(0))?;
-    input.seek(SeekFrom::Start(start_pos))?;
-    Ok((start_pos, end_pos))
+impl<T> From<Rc<RefCell<T>>> for SharedStream<T> where T: Reader {
+    fn from(input: Rc<RefCell<T>>) -> Self {
+        let (start_pos, end_pos) = input_bounds(&mut *input.borrow_mut()).unwrap();
+
+        Self {
+            inner: input,
+            start_pos,
+            current_pos: start_pos,
+            end_pos,
+        }
+    }
 }
 
-impl<T> SharedStream<T> where T: Reader {
-    pub fn new(mut input: T) -> Self {
+impl<T> From<T> for SharedStream<T> where T: Reader {
+    fn from(mut input: T) -> Self {
         let (start_pos, end_pos) = input_bounds(&mut input).unwrap();
 
         Self {
@@ -29,14 +35,11 @@ impl<T> SharedStream<T> where T: Reader {
             end_pos,
         }
     }
+}
 
-    pub fn with_stream_bounds(stream: &SharedStream<T>, start_pos: u64, end_pos: u64) -> Self {
-        Self {
-            inner: stream.inner.clone(),
-            start_pos,
-            current_pos: start_pos,
-            end_pos,
-        }
+impl<T> SharedStream<T> where T: Reader {
+    pub fn new(input: T) -> Self {
+        Self::from(input)
     }
 
     pub fn with_bounds(input: T, start_pos: u64, end_pos: u64) -> Self {
@@ -107,6 +110,13 @@ impl<T> Seek for SharedStream<T> where T: Reader {
             _ => Err(Error::new(ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position"))
         }
     }
+}
+
+fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
+    let start_pos = input.seek(SeekFrom::Current(0))?;
+    let end_pos = input.seek(SeekFrom::End(0))?;
+    input.seek(SeekFrom::Start(start_pos))?;
+    Ok((start_pos, end_pos))
 }
 
 #[cfg(test)]
