@@ -35,12 +35,12 @@ impl ApplicationVise {
 
         let shared_data = {
             let config = consume_u32(&mut local_data);
-            if config & USE_SHARED_DICT != 0 {
-                let offset = BigEndian::read_u16(&self.shared_data[(1 << (config & 3)) + 6..]);
-                &self.shared_data[offset as usize..]
-            } else {
+            if config & USE_SHARED_DICT == 0 {
                 // TODO: This branch is untested. Find a sample!
                 &data[config as usize..]
+            } else {
+                let offset = BigEndian::read_u16(&self.shared_data[(1 << (config & 3)) + 6..]);
+                &self.shared_data[offset as usize..]
             }
         };
 
@@ -123,7 +123,7 @@ impl ApplicationVise {
     pub fn validate(data: &[u8]) -> IoResult<()> {
         let expected = BigEndian::read_u32(data.get(4..).ok_or(ErrorKind::UnexpectedEof)?);
 
-        let mut actual = 0xAAAA_AAAAu32;
+        let mut actual = 0xAAAA_AAAA;
         let mut index = 8;
         let size = data.len() - index;
         for _ in 0..size / 4 {
@@ -176,6 +176,7 @@ fn consume_bit(data: &mut u16) -> u16 {
 }
 
 #[inline]
+#[allow(clippy::comparison_chain, clippy::same_functions_in_if_condition)] // https://github.com/rust-lang/rust-clippy/issues/5212
 fn consume_op(op_stream: &mut &[u8]) -> Op {
     let mut code = consume_u8(op_stream);
 
@@ -239,27 +240,27 @@ fn copy_u16(from: &[u8], to: &mut Vec<u8>) {
 mod tests {
     use super::*;
 
-    const SHARED: &'static [u8] = include!("tests/data/compression/shared.in");
+    const SHARED: &'static [u8] = include!("../tests/data/compression/shared.in");
 
     #[test]
     fn decompress_data1() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data1.in");
-        const EXPECTED: &'static [u8] = include!("tests/data/compression/data1.expected.in");
+        const DATA: &'static [u8] = include!("../tests/data/compression/data1.in");
+        const EXPECTED: &'static [u8] = include!("../tests/data/compression/data1.expected.in");
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), EXPECTED);
     }
 
     #[test]
     fn decompress_data2() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data2.in");
-        const EXPECTED: &'static [u8] = include!("tests/data/compression/data2.expected.in");
+        const DATA: &'static [u8] = include!("../tests/data/compression/data2.in");
+        const EXPECTED: &'static [u8] = include!("../tests/data/compression/data2.expected.in");
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), EXPECTED);
     }
 
     #[test]
     fn decompress_empty() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
+        const DATA: &'static [u8] = include!("../tests/data/compression/data0.in");
         let expected = [0u8; 68].to_vec();
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), expected);
@@ -267,13 +268,13 @@ mod tests {
 
     #[test]
     fn find_shared_data() {
-        const DATA: &'static [u8] = include!("tests/data/compression/code.in");
+        const DATA: &'static [u8] = include!("../tests/data/compression/code.in");
         assert_eq!(ApplicationVise::find_shared_data(&DATA).unwrap(), &DATA[62..]);
     }
 
     #[test]
     fn validate() {
-        const DATA: &'static [u8] = include!("tests/data/compression/data0.in");
+        const DATA: &'static [u8] = include!("../tests/data/compression/data0.in");
         ApplicationVise::validate(&DATA).unwrap();
     }
 }

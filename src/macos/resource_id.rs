@@ -18,7 +18,7 @@ impl fmt::Debug for ResourceId {
 
 #[macro_export]
 macro_rules! rsid {
-    ($os_type:expr, $id:expr) => (ResourceId(OSType::new(*$os_type), $id));
+    ($os_type:expr, $id:expr) => ($crate::ResourceId($crate::OSType::new(*$os_type), $id));
 }
 
 #[cfg(test)]

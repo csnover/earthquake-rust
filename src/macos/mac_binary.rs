@@ -1,4 +1,4 @@
-use anyhow::{Context, Result as AResult, anyhow};
+use anyhow::{bail, Context, Result as AResult};
 use byteorder::{ByteOrder, BigEndian};
 use crc::crc16::checksum_x25;
 use crate::{io::SharedStream, OSType, os, Reader};
@@ -21,10 +21,10 @@ impl<T: Reader> MacBinary<T> {
         const HEADER_SIZE: u32 = 128;
         const SCRIPT_FLAG: u8 = 0x80;
 
-        let aligned_header_size = HEADER_SIZE + if version != Version::V1 {
-            align_power_of_two(u32::from(BigEndian::read_u16(&header[120..])), BLOCK_SIZE)
-        } else {
+        let aligned_header_size = HEADER_SIZE + if version == Version::V1 {
             0
+        } else {
+            align_power_of_two(u32::from(BigEndian::read_u16(&header[120..])), BLOCK_SIZE)
         };
 
         let data_fork_size = BigEndian::read_u32(&header[83..]);
@@ -59,18 +59,18 @@ impl<T: Reader> MacBinary<T> {
     pub fn new(mut data: T) -> AResult<Self> {
         let start_pos = data.seek(SeekFrom::Current(0))?;
         let header = {
-            let mut header = [0u8; 128];
+            let mut header = [ 0; 128 ];
             data.read_exact(&mut header).context("Not a MacBinary file; file too small")?;
             data.seek(SeekFrom::Start(start_pos))?;
             header
         };
 
         if header[0] != 0 {
-            return Err(anyhow!("Not a MacBinary file; bad magic byte 0"));
+            bail!("Not a MacBinary file; bad magic byte 0");
         }
 
         if header[74] != 0 {
-            return Err(anyhow!("Not a MacBinary file; bad magic byte 1"));
+            bail!("Not a MacBinary file; bad magic byte 1");
         }
 
         if OSType::from(BigEndian::read_u32(&header[102..])) == os!(b"mBIN") {
@@ -88,51 +88,52 @@ impl<T: Reader> MacBinary<T> {
         }
 
         if header[82] != 0 {
-            return Err(anyhow!("Not a MacBinary file; bad magic byte 2"));
+            bail!("Not a MacBinary file; bad magic byte 2");
         }
 
         for byte in &header[101..=125] {
             if *byte != 0 {
-                return Err(anyhow!("Not a MacBinary file; bad header padding"));
+                bail!("Not a MacBinary file; bad header padding");
             }
         }
 
         if header[1] < 1 || header[1] > 63 {
-            return Err(anyhow!("Not a MacBinary file; bad filename length"));
+            bail!("Not a MacBinary file; bad filename length");
         }
 
         let resource_size = BigEndian::read_u32(&header[83..]);
         let data_size = BigEndian::read_u32(&header[87..]);
 
         if resource_size > 0x7f_ffff || data_size > 0x7f_ffff || (resource_size == 0 && data_size == 0) {
-            return Err(anyhow!("Not a MacBinary file; bad fork length"));
+            bail!("Not a MacBinary file; bad fork length");
         }
 
         Ok(Self::build(data, &header, Version::V1))
     }
 
     pub fn data_fork(&self) -> Option<SharedStream<T>> {
-        if self.data_fork_start != self.data_fork_end {
-            Some(self.input.substream(self.data_fork_start, self.data_fork_end))
-        } else {
+        if self.data_fork_start == self.data_fork_end {
             None
+        } else {
+            Some(self.input.substream(self.data_fork_start, self.data_fork_end))
         }
     }
 
+    #[must_use]
     pub fn name(&self) -> &String {
         &self.name
     }
 
     pub fn resource_fork(&self) -> Option<SharedStream<T>> {
-        if self.resource_fork_start != self.resource_fork_end {
-            Some(self.input.substream(self.resource_fork_start, self.resource_fork_end))
-        } else {
+        if self.resource_fork_start == self.resource_fork_end {
             None
+        } else {
+            Some(self.input.substream(self.resource_fork_start, self.resource_fork_end))
         }
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum Version {
     V1,
     V2,

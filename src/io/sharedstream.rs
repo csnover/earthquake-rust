@@ -51,6 +51,7 @@ impl<T> SharedStream<T> where T: Reader {
         }
     }
 
+    #[must_use]
     pub fn substream(&self, start_pos: u64, end_pos: u64) -> Self {
         assert!(end_pos <= self.end_pos);
         Self {

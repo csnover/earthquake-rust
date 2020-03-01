@@ -1,21 +1,20 @@
-use anyhow::{Context, Result as AResult, anyhow};
+use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, StaticEndianness};
-use encoding::all::MAC_ROMAN;
-use crate::{macos::ApplicationVise, OSType, OSTypeReadExt, Reader, ResourceId, rsid, string::StringReadExt};
+use crate::{encodings::MAC_ROMAN, macos::ApplicationVise, OSType, OSTypeReadExt, Reader, ResourceId, rsid, string::StringReadExt};
 use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
-pub struct MacResourceFile<T: Reader> {
+pub struct ResourceFile<T: Reader> {
     input: RefCell<Input<T>>,
     decompressor: RefCell<DecompressorState>,
     resource_map: HashMap<ResourceId, ResourceOffsets>,
 }
 
-impl<T: Reader> MacResourceFile<T> {
-    /// Makes a new MacResourceFile from a readable stream.
+impl<T: Reader> ResourceFile<T> {
+    /// Makes a new `ResourceFile` from a readable stream.
     pub fn new(data: T) -> AResult<Self> {
         const RESOURCE_MAP_OFFSETS_OFFSET: u64 = 24;
         let mut input = ByteOrdered::be(data);
@@ -38,7 +37,7 @@ impl<T: Reader> MacResourceFile<T> {
             for i in 0..num_types {
                 const DOCUMENTED_MAXIMUM: u32 = 2727;
                 if num_resources > DOCUMENTED_MAXIMUM {
-                    return Err(anyhow!("Bogus number of resources"));
+                    bail!("Bogus number of resources");
                 }
 
                 let offset = i as usize * TYPE_LIST_ENTRY_SIZE + 4;
@@ -177,12 +176,15 @@ impl<T: Reader> MacResourceFile<T> {
     }
 
     fn build_resource_data(&self, offsets: &ResourceOffsets) -> AResult<Vec<u8>> {
-        let mut input = self.input.borrow_mut();
+        let mut data = {
+            let mut input = self.input.borrow_mut();
 
-        input.seek(SeekFrom::Start(u64::from(offsets.data_offset)))?;
-        let size = input.read_u32()?;
-        let mut data = Vec::with_capacity(size as usize);
-        input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
+            input.seek(SeekFrom::Start(u64::from(offsets.data_offset)))?;
+            let size = input.read_u32()?;
+            let mut data = Vec::with_capacity(size as usize);
+            input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
+            data
+        };
 
         if ApplicationVise::is_compressed(&data) {
             data = self.decompress(&data)?;
@@ -192,7 +194,14 @@ impl<T: Reader> MacResourceFile<T> {
     }
 
     fn decompress(&self, data: &[u8]) -> AResult<Vec<u8>> {
-        if let DecompressorState::Waiting(resource_id) = *self.decompressor.borrow() {
+        // https://stackoverflow.com/questions/33495933/how-to-end-a-borrow-in-a-match-or-if-let-expression
+        let resource_id = if let DecompressorState::Waiting(resource_id) = *self.decompressor.borrow() {
+            Some(resource_id)
+        } else {
+            None
+        };
+
+        if let Some(resource_id) = resource_id {
             let resource = self.get(rsid!(b"CODE", resource_id)).unwrap();
             let resource_data = resource.data()?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
@@ -212,7 +221,7 @@ impl<T: Reader> MacResourceFile<T> {
 /// A resource from a Resource File.
 pub struct Resource<'a, T: Reader> {
     id: ResourceId,
-    owner: &'a MacResourceFile<T>,
+    owner: &'a ResourceFile<T>,
     offsets: ResourceOffsets,
 }
 
@@ -223,16 +232,19 @@ impl<'a, T: Reader> Resource<'a, T> {
     }
 
     /// Returns the resource’s flags.
+    #[must_use]
     pub fn flags(&self) -> ResourceFlags {
         self.offsets.flags
     }
 
     /// Returns the resources’s ID.
+    #[must_use]
     pub fn id(&self) -> ResourceId {
         self.id
     }
 
     /// Returns the resource’s name.
+    #[must_use]
     pub fn name(&self) -> Option<String> {
         if let Some(name_offset) = self.offsets.name_offset {
             let mut input = self.owner.input.borrow_mut();

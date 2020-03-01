@@ -1,2 +1,4 @@
+mod macromedia;
+
 pub(crate) mod resource;
-pub use resource::parse_resource;
+pub use resource::parse as parse_resource;

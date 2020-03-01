@@ -4,7 +4,7 @@ use std::{char, fmt, io};
 // TODO: Find a better way to do this. User-defined literals would be nice.
 #[macro_export]
 macro_rules! os {
-    ($os_type:literal) => (OSType::new(*$os_type));
+    ($os_type:literal) => ($crate::OSType::new(*$os_type));
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -18,7 +18,7 @@ impl OSType {
     #[inline]
     fn fmt_write(self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: Find a less incredibly stupid way to do this
-        for b in self.0.iter() {
+        for b in &self.0 {
             write!(f, "{}", char::from_u32(u32::from(*b)).unwrap_or(char::REPLACEMENT_CHARACTER))?;
         }
         Ok(())

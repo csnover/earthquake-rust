@@ -1,7 +1,18 @@
-use anyhow::{Context, Result as AResult, anyhow};
+use anyhow::{anyhow, bail, Context, Result as AResult};
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
-use crate::{Endianness, OSType, OSTypeReadExt, Reader, ResourceId, detection::movie::*};
+use crate::{
+    detection::movie::{
+        DetectionInfo,
+        Kind as MovieKind,
+        Version as MovieVersion,
+    },
+    Endianness,
+    OSType,
+    OSTypeReadExt,
+    Reader,
+    ResourceId,
+};
 use std::{cell::RefCell, collections::HashMap, io::{Read, Seek, SeekFrom}};
 
 #[derive(Copy, Clone, Debug)]
@@ -45,7 +56,7 @@ impl<T: Reader> Riff<T> {
         })
     }
 
-    pub fn kind(&self) -> MovieType {
+    pub fn kind(&self) -> MovieKind {
         self.info.kind()
     }
 
@@ -57,8 +68,8 @@ impl<T: Reader> Riff<T> {
         self.info.version()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = RiffData<T>> {
-        self.resource_map.iter().map(move |(k, v)| RiffData {
+    pub fn iter(&self) -> impl Iterator<Item = Data<T>> {
+        self.resource_map.iter().map(move |(k, v)| Data {
             id: *k,
             input: &self.input,
             offset_size: *v,
@@ -66,13 +77,13 @@ impl<T: Reader> Riff<T> {
     }
 }
 
-pub struct RiffData<'a, T: Reader> {
+pub struct Data<'a, T: Reader> {
     id: ResourceId,
     input: &'a Input<T>,
     offset_size: OffsetSize,
 }
 
-impl<'a, T: Reader> RiffData<'a, T> {
+impl<'a, T: Reader> Data<'a, T> {
     pub fn data(&self) -> AResult<Vec<u8>> {
         self.input
             .borrow_mut()
@@ -90,6 +101,7 @@ impl<'a, T: Reader> RiffData<'a, T> {
         Ok(data)
     }
 
+    #[must_use]
     pub fn id(&self) -> ResourceId {
         self.id
     }
@@ -133,16 +145,17 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
             }
         },
         b"imap" => {
+            const MMAP_HEADER_BYTES_READ: i64 = 12;
+
             let _num_maps = input.read_u32::<DE>()?;
             let map_offset = input.read_u32::<DE>()?;
             input.seek(SeekFrom::Start(u64::from(map_offset)))?;
             let map_os_type = input.read_os_type::<OE>()?;
             if map_os_type.as_bytes() != b"mmap" {
-                return Err(anyhow!("Could not find a valid resource map"));
+                bail!("Could not find a valid resource map");
             }
             let _chunk_size = input.read_u32::<DE>()?;
 
-            const MMAP_HEADER_BYTES_READ: i64 = 12;
             let header_size = input.read_u16::<DE>()?;
             let table_entry_size = input.read_u16::<DE>()?;
             let _table_entry_count_max = input.read_u32::<DE>()?;
@@ -159,7 +172,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
                 resource_map.insert(ResourceId(os_type, id as i16), OffsetSize { offset, size });
             }
         },
-        _ => return Err(anyhow!("Could not find a valid resource map"))
+        _ => bail!("Could not find a valid resource map")
     }
 
     Ok(resource_map)
@@ -176,7 +189,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
             os_type_endianness: Endianness::Big,
             data_endianness: Endianness::Little,
             version: MovieVersion::D3,
-            kind: MovieType::Movie,
+            kind: MovieKind::Movie,
             // This version of Director incorrectly includes the
             // size of the chunk header in the RIFF chunk size
             size: LittleEndian::read_u32(&chunk_size_raw) - 8,
@@ -187,7 +200,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
                 version: MovieVersion::D4,
-                kind: MovieType::Movie,
+                kind: MovieKind::Movie,
                 size,
             })
         },
@@ -197,7 +210,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
                 version: MovieVersion::D4,
-                kind: MovieType::Cast,
+                kind: MovieKind::Cast,
                 size,
             })
         },
@@ -207,7 +220,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
                 version: MovieVersion::D4,
-                kind: MovieType::Embedded,
+                kind: MovieKind::Embedded,
                 size,
             })
         },
