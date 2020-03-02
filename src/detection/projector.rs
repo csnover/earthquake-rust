@@ -8,8 +8,8 @@ use crate::{
     macos::ResourceFile,
     Reader,
     resources::{
+        apple::string_list::Resource as StringListResource,
         apple::version::Resource as VersionResource,
-        resource,
     },
     rsid,
     SharedStream,
@@ -139,10 +139,10 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
                 // the ROM and then pushing it into Resource?
                 let resource_id = rsid!(b"STR#", 0);
                 let external_files = rom.get(resource_id).ok_or_else(|| anyhow!("Missing external file list"))?;
-                let cursor = ByteOrdered::be(Cursor::new(external_files.data().with_context(|| format!("Can’t read {}", resource_id))?));
+                let mut cursor = ByteOrdered::be(Cursor::new(external_files.data().with_context(|| format!("Can’t read {}", resource_id))?));
                 // TODO: May need to CHARDET the paths
                 let mut movies = Vec::with_capacity(usize::from(num_movies));
-                for filename in resource::parse_string_list(cursor, MAC_ROMAN)? {
+                for filename in StringListResource::parse(&mut cursor, MAC_ROMAN)? {
                     movies.push(filename.replace(':', "/"));
                 }
                 (config, Movie::External(movies))

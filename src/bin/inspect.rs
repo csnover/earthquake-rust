@@ -1,5 +1,4 @@
 use anyhow::{bail, Result as AResult};
-use byteordered::ByteOrdered;
 use earthquake::{
     collections::riff::Riff,
     detection::{
@@ -16,9 +15,7 @@ use earthquake::{
             Version as ProjectorVersion,
         },
     },
-    encodings::MAC_ROMAN,
     macos::ResourceFile,
-    resources::parse_resource,
     SharedStream,
 };
 use pico_args::Arguments;
@@ -54,11 +51,6 @@ fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>, inspect_data
         let rom = ResourceFile::new(stream)?;
         for resource in rom.iter() {
             println!("{} {:?}", resource.id(), resource.flags());
-            if resource.id().0.as_bytes() == b"VWCR" {
-                let data = std::io::Cursor::new(resource.data()?);
-                let reader = ByteOrdered::be(data);
-                println!("{:?}", parse_resource(resource.id().0, reader, Some(MAC_ROMAN)));
-            }
         }
     }
 
