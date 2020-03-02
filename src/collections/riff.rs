@@ -10,6 +10,7 @@ use crate::{
     Endianness,
     OSType,
     OSTypeReadExt,
+    panic_sample,
     Reader,
     ResourceId,
 };
@@ -111,7 +112,7 @@ pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).context("Not a Director RIFF"),
-        b"FFIR" => Err(anyhow!("RIFF-LE files are not known to exist. Please send a sample of the file you are trying to open.")),
+        b"FFIR" => panic_sample!("RIFF-LE"),
         _ => Err(anyhow!("Not a RIFF file")),
     }
 }
@@ -138,7 +139,7 @@ fn build_resource_map<T: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut T) ->
 
                 let result = resource_map.insert(ResourceId(os_type, id as i16), OffsetSize { offset, size });
                 if result.is_some() {
-                    panic!(format!("Multiple {} {} in mmap", os_type, id));
+                    panic_sample!("Multiple {} {} in mmap", os_type, id);
                 }
 
                 bytes_to_read -= 16;

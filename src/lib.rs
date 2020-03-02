@@ -25,9 +25,24 @@ pub(crate) use crate::macos::ResourceId;
 pub use crate::player::*;
 pub use crate::io::SharedStream;
 
-#[allow(dead_code)]
-pub(crate) fn panic_for_sample<T: AsRef<str>>(is_needed: bool, kind: T) {
-    if is_needed {
-        panic!("{}. Please send this file for analysis.", kind.as_ref());
-    }
-}
+#[macro_export]
+macro_rules! panic_sample(
+    ($msg:expr) => ({
+        panic!("{}. Please send this file for analysis.", $msg)
+    });
+    ($msg:expr,) => ({
+        $crate::panic_sample!($msg)
+    });
+    ($fmt:expr, $($arg:tt)+) => ({
+        panic!("{}. Please send this file for analysis.", format_args!($fmt, $($arg)+))
+    });
+);
+
+#[macro_export]
+macro_rules! assert_sample(
+    ($test:expr, $($arg:tt)+) => (
+        if !$test {
+            $crate::panic_sample!($($arg)+)
+        }
+    )
+);

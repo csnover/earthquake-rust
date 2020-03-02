@@ -6,6 +6,7 @@ use crate::{
     collections::riff,
     encodings::{DecoderRef, MAC_ROMAN, WIN_ROMAN},
     macos::ResourceFile,
+    panic_sample,
     Reader,
     resources::{
         apple::string_list::Resource as StringListResource,
@@ -345,7 +346,7 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
         b"PJ95" | b"59JP" => Some(Version::D5),
         // Director 6 uses "PJ95" for the data version on both Mac and Win,
         // even though it has incompatible settings
-        b"PJ97" | b"79JP" => panic!("Unexpected PJ97 in data fork"),
+        b"PJ97" | b"79JP" => panic_sample!("PJ97 in data fork"),
         b"PJ00" | b"00JP" => Some(Version::D7),
         _ => None
     }
