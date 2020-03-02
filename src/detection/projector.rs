@@ -322,7 +322,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
         // but they use the same data version magic number so the check must
         // occur late in the process. (Not only do they use the same magic
         // number, the Win3 projectors are still named “Release 5.0”)
-        if buffer[0] & 0x10 == 0 {
+        if version == Version::D5 && buffer[0] & 0x10 == 0 {
             version = Version::D6;
         }
 
