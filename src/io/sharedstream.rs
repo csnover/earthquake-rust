@@ -114,7 +114,7 @@ impl<T> Seek for SharedStream<T> where T: Reader {
 }
 
 fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
-    let start_pos = input.seek(SeekFrom::Current(0))?;
+    let start_pos = input.pos()?;
     let end_pos = input.seek(SeekFrom::End(0))?;
     input.seek(SeekFrom::Start(start_pos))?;
     Ok((start_pos, end_pos))
@@ -122,6 +122,7 @@ fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::wildcard_imports)]
     use super::*;
 
     #[test]

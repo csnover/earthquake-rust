@@ -1,4 +1,4 @@
-use byteorder::{ByteOrder};
+use byteorder::ByteOrder;
 use std::{char, fmt, io};
 
 // TODO: Find a better way to do this. User-defined literals would be nice.
@@ -11,6 +11,7 @@ macro_rules! os {
 pub struct OSType([u8; 4]);
 
 impl OSType {
+    #[must_use]
     pub fn new(os_type: [u8; 4]) -> OSType {
         OSType(os_type)
     }
@@ -24,6 +25,7 @@ impl OSType {
         Ok(())
     }
 
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8; 4] {
         &self.0
     }
@@ -69,6 +71,7 @@ impl<T: io::Read + ?Sized> OSTypeReadExt for T {}
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::wildcard_imports)]
     use byteorder::{BigEndian, LittleEndian};
     use std::io::Cursor;
 	use super::*;
@@ -95,7 +98,7 @@ mod tests {
 
     #[test]
     fn os_type_from_u32() {
-        let os_type = 0x48654c4f;
+        let os_type = 0x48_65_4c_4f;
         assert_eq!(OSType::from(os_type), OSType(*b"HeLO"));
     }
 }

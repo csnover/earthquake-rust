@@ -59,7 +59,8 @@ pub(crate) trait StringReadExt: Read {
 impl<T: Read + ?Sized> StringReadExt for T {}
 
 #[cfg(test)]
-mod tests {
+mod test {
+    #![allow(clippy::wildcard_imports)]
     use byteorder::{BigEndian, LittleEndian};
     use crate::encodings::WIN_ROMAN;
     use std::io::Cursor;

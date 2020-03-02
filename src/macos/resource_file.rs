@@ -89,7 +89,7 @@ impl<T: Reader> ResourceFile<T> {
                     (data_offset + offset, ResourceFlags::from_bits_truncate(flags))
                 };
 
-                input.seek(SeekFrom::Current(4))?;
+                input.skip(4)?;
 
                 resource_map.insert(resource_id, ResourceOffsets {
                     name_offset,
@@ -150,7 +150,7 @@ impl<T: Reader> ResourceFile<T> {
             } else {
                 for _ in 0..index {
                     let size = input.read_u8().unwrap();
-                    input.seek(SeekFrom::Current(i64::from(size))).unwrap();
+                    input.skip(u64::from(size)).unwrap();
                 }
                 input.read_pascal_str(MAC_ROMAN).unwrap()
             }

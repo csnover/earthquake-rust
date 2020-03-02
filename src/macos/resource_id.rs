@@ -1,14 +1,10 @@
 use crate::OSType;
+use derive_more::Display;
 use std::fmt;
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Display, Hash, PartialEq, Eq)]
+#[display(fmt = "{}({})", _0, _1)]
 pub struct ResourceId(pub OSType, pub i16);
-
-impl fmt::Display for ResourceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({})", self.0, self.1)
-    }
-}
 
 impl fmt::Debug for ResourceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -23,11 +19,13 @@ macro_rules! rsid {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::wildcard_imports)]
     use crate::os;
     use super::*;
 
     #[test]
     fn basic() {
+        println!("{:?}", ResourceId(os!(b"HELO"), 123));
         let id = ResourceId(os!(b"HELO"), 123);
         assert_eq!(id.0, OSType::new(*b"HELO"));
         assert_eq!(id.1, 123);

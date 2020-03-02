@@ -1,5 +1,7 @@
-use anyhow::Result as AResult;
-use crate::{assert_sample, panic_sample};
+#![allow(clippy::struct_excessive_bools)]
+
+use anyhow::{anyhow, Result as AResult};
+use crate::{bail_sample, ensure_sample};
 use super::projector::{
     MacCPU,
     Platform,
@@ -159,21 +161,22 @@ impl ProjectorSettings {
         }
 
         // Sanity check: these bits cannot normally be changed by an author
-        assert_sample!(bits[0..=1] == [ 0; 2 ], "D4+Mac PJst bytes 0-1");
-        assert_sample!(bits[4..=5] == [ 0; 2 ], "D4+Mac PJst bytes 4-5");
-        assert_sample!(bits[8] == 0, "D4+Mac PJst byte 8");
+        ensure_sample!(bits[0..=1] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 0-1");
+        ensure_sample!(bits[4..=5] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 4-5");
+        ensure_sample!(bits[8] == 0, "Unexpected D4+Mac PJst byte 8");
         match version {
             ProjectorVersion::D3 => unreachable!(),
             ProjectorVersion::D4 => {
                 // TODO: This is 0x14 for the post-release D4 and 0x04 in the
                 // pre-release D4.
-                assert_sample!(bits[11] & 4 != 0, "D4Mac PJst byte 11");
+                ensure_sample!(bits[11] & 4 != 0, "Unexpected D4Mac PJst byte 11");
             },
             ProjectorVersion::D5 => {
-                assert_sample!(bits[6] & 8 != 0, "D5Mac PJst byte 6");
+                // TODO: This flag is 0 in Safecracker
+                // ensure_sample!(bits[6] & 8 != 0, "Unexpected D5Mac PJst byte 6");
             },
             ProjectorVersion::D6 => {
-                assert_sample!(bits[6] & 0x24 == 0x24, "D6Mac PJst byte 6");
+                ensure_sample!(bits[6] & 0x24 == 0x24, "Unexpected D6Mac PJst byte 6");
             },
             ProjectorVersion::D7 => todo!(),
         }
@@ -184,7 +187,7 @@ impl ProjectorSettings {
             MacCPU::M68K
         } else {
             MacCPU::from_bits(bits[7])
-                .unwrap_or_else(|| panic_sample!("Unknown CPU {}", bits[7]))
+                .ok_or_else(|| anyhow!("D4+Mac PJst unknown CPU {}", bits[7]))?
         };
         let resize_stage           = bits[11] & 1 != 0;
         let switch_color_depth     = bits[10] & 0x40 != 0;
@@ -257,17 +260,20 @@ impl ProjectorSettings {
                 // the authoring environment
             },
             ProjectorVersion::D4 => {
-                assert_sample!(bits[1..=3] == [ 0; 3 ], "D4Win PJ93 bytes 1-3");
-                assert_sample!(bits[6..=11] == [ 0, 0, 0x80, 2, 0xe0, 1 ], "D4Win PJ93 bytes 6-11");
+                ensure_sample!(bits[1..=3] == [ 0; 3 ], "Unexpected D4Win PJ93 bytes 1-3");
+                ensure_sample!(bits[6..=11] == [ 0, 0, 0x80, 2, 0xe0, 1 ], "Unexpected D4Win PJ93 bytes 6-11");
             },
             ProjectorVersion::D5 => {
-                assert_sample!(bits[0] & 0x10 != 0, "D5Win PJ95 byte 0");
-                assert_sample!(bits[1..=3] == [ 0; 3 ], "D5Win PJ95 bytes 1-3");
-                assert_sample!(bits[5..=11] == [ 0; 7 ], "D5Win PJ95 bytes 5-11");
+                ensure_sample!(bits[0] & 0x10 != 0, "Unexpected D5Win PJ95 byte 0");
+                ensure_sample!(bits[1..=3] == [ 0; 3 ], "Unexpected D5Win PJ95 bytes 1-3");
+
+                // bytes 8-11 are (x, y) for the initial stage window but always
+                // seem to be (0, 0) in every sample
+                ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D5Win PJ95 bytes 5-11");
             },
             ProjectorVersion::D6 => {
-                assert_sample!(bits[0] & 0x20 != 0, "D6Win PJ95 byte 0");
-                assert_sample!(bits[5..=11] == [ 0; 7 ], "D6Win PJ95 bytes 5-11");
+                ensure_sample!(bits[0] & 0x20 != 0, "Unexpected D6Win PJ95 byte 0");
+                ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D6Win PJ95 bytes 5-11");
             },
             ProjectorVersion::D7 => todo!(),
         }
@@ -344,8 +350,8 @@ impl ProjectorSettings {
 
     fn parse_d3_mac(bits: &[u8]) -> AResult<Self> {
         // Sanity check: these bits cannot normally be changed by an author
-        assert_sample!(bits[0] == 0, "D3Mac PJst byte 0");
-        assert_sample!(bits[11] == 0, "D3Mac PJst byte 11");
+        // This is 1 in GADGET. ensure_sample!(bits[0] == 0, "D3Mac PJst byte 0");
+        ensure_sample!(bits[11] == 0, "Unexpected D3Mac PJst byte 11");
 
         Ok(Self {
             resize_stage:       bits[2] & 1 != 0,
@@ -361,7 +367,7 @@ impl ProjectorSettings {
                         1 => AccelMode::FillMemory,
                         2 => AccelMode::Frame,
                         3 => AccelMode::Chunk,
-                        _ => panic_sample!("Unknown accel mode {}", bits[10]),
+                        _ => bail_sample!("Unknown accel mode {}", bits[10]),
                     },
                 },
             }),

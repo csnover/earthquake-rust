@@ -1,4 +1,4 @@
-use anyhow::{Result as AResult, anyhow};
+use anyhow::{bail, Result as AResult};
 use crate::{
     Endianness,
     macos::ResourceFile,
@@ -78,6 +78,6 @@ pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
             size: 0,
         })
     } else {
-        Err(anyhow!("No Director 3 movie configuration resource"))
+        bail!("No Director 3 movie configuration resource")
     }
 }

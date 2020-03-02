@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteordered::ByteOrdered;
 use crate::{Reader, SharedStream};
-use std::{fs::File, io::{Seek, SeekFrom, self}, path::PathBuf};
+use std::{fs::File, io, path::PathBuf};
 use super::script_manager::decode_text;
 
 pub struct AppleDouble<T: Reader> {
@@ -54,7 +54,7 @@ impl AppleDouble<File> {
 
         // In V1 this is an ASCII string, in V2 it is zero-filled, in all cases
         // we do not care about it
-        input.seek(SeekFrom::Current(16)).context("Could not seek past AppleSingle/AppleDouble home file system name")?;
+        input.skip(16).context("Could not seek past AppleSingle/AppleDouble home file system name")?;
 
         let num_entries = input.read_u16().context("Could not read number of AppleSingle/AppleDouble entries")?;
 
@@ -85,7 +85,7 @@ impl AppleDouble<File> {
                 },
                 9 => {
                     let mut finder_info = ByteOrdered::be(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
-                    finder_info.seek(SeekFrom::Current(26)).context("Could not seek to AppleSingle/AppleDouble filename script code")?;
+                    finder_info.skip(26).context("Could not seek to AppleSingle/AppleDouble filename script code")?;
                     name_script_code = finder_info.read_u8().context("Could not read AppleSingle/AppleDouble script code")?;
                 },
                 _ => {},

@@ -1,4 +1,7 @@
-use crate::{encodings::*, Reader};
+use crate::{
+    encodings::{Decoder, DecoderRef, MAC_CYRILLIC, MAC_JAPANESE, MAC_ROMAN},
+    Reader,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -121,6 +124,7 @@ impl CountryCode {
         // instead of also needing a script code because country codes can be
         // found in any 'vers' resource but script codes are generally not
         // available in the resource fork.
+        #![allow(clippy::match_same_arms)]
         match self {
             Self::Turkey | Self::Croatia | Self::Slovenian | Self::YugoCroatian |
             Self::Iceland | Self::FaroeIsl | Self::Ireland | Self::ScottishGaelic |
@@ -186,6 +190,7 @@ pub enum ScriptCode {
 // script code for correct decoding of Turkish, Croatian, Icelandic, Romanian,
 // Celtic, Gaelic, Greek, and Farsi.
 pub fn decode_text<T: Reader>(input: &mut T, script_code: u8) -> String {
+    #![allow(clippy::match_same_arms)]
     match ScriptCode::from_u8(script_code) {
         Some(ScriptCode::Roman) | None       => MAC_ROMAN.decode_stream(input),
         Some(ScriptCode::Japanese)           => MAC_JAPANESE.decode_stream(input),

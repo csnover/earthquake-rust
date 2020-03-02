@@ -194,7 +194,7 @@ for authoring and not playback.
 |        |        |        | 'font' | 'font' |        |
 |        |        |        | 'CNTL' | 'CNTL' |        |
 |        |        |        | 'CASt' | 'CASt' |        |
-|        |        |        | 'CAS*' | 'CAS*' |        |
+|        |        |        | 'CAS*' | 'CAS*' |        | similar to ROWN
 |        |        |        | 'Lctx' | 'Lctx' |        |
 |        |        |        | 'wctb' | 'wctb' |        |
 |        |        |        |        | 'actb' |        |

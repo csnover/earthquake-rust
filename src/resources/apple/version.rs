@@ -1,7 +1,11 @@
-use anyhow::Result as AResult;
+use anyhow::{anyhow, Result as AResult};
 use byteorder::BigEndian;
 use byteordered::{ByteOrdered, StaticEndianness};
-use crate::{macos::script_manager::CountryCode, panic_sample, Reader, string::StringReadExt};
+use crate::{
+    macos::script_manager::CountryCode,
+    Reader,
+    string::StringReadExt
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -40,7 +44,7 @@ impl Resource {
 
         let country_code = input.read_u16()?;
         let country_code = CountryCode::from_u16(country_code)
-            .unwrap_or_else(|| panic_sample!("Invalid country code {}", country_code));
+            .ok_or_else(|| anyhow!("Invalid country code {}", country_code))?;
 
         Ok(Self {
             version,

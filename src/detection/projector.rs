@@ -4,6 +4,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
 use crate::{
     collections::riff,
+    detection::projector_settings::ProjectorSettings,
     encodings::{DecoderRef, MAC_ROMAN, WIN_ROMAN},
     macos::ResourceFile,
     panic_sample,
@@ -18,7 +19,7 @@ use crate::{
 };
 use enum_display_derive::Display;
 use std::{fmt::Display, path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
-use super::projector_settings::*;
+//use super::projector_settings::*;
 
 #[derive(Debug)]
 pub struct DetectionInfo<T: Reader> {
@@ -281,7 +282,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
             let mut movies = Vec::with_capacity(usize::from(num_movies));
             for i in 0..num_movies {
                 let (size, filename) = d3_win_movie_info(&mut input, i)?;
-                let offset = input.seek(SeekFrom::Current(0))? as u32;
+                let offset = input.pos()? as u32;
                 movies.push(D3WinMovie {
                     filename,
                     offset,
@@ -368,10 +369,10 @@ fn get_exe_info<T: Reader>(input: &mut T) -> AResult<(Platform, Option<String>)>
     } else if signature[0..2] == *b"NE" {
         // 32 bytes from start of NE header, -4 since we consumed 4 bytes of
         // the header already
-        input.seek(SeekFrom::Current(32 - 4))?;
+        input.skip(32 - 4)?;
         let non_resident_table_size = input.read_u16::<LittleEndian>()?;
         // 44 bytes from start of NE header
-        input.seek(SeekFrom::Current(44 - 32 - 2))?;
+        input.skip(44 - 32 - 2)?;
         let non_resident_table_offset = input.read_u32::<LittleEndian>()?;
 
         if non_resident_table_size == 0 {
@@ -381,7 +382,7 @@ fn get_exe_info<T: Reader>(input: &mut T) -> AResult<(Platform, Option<String>)>
             Ok((Platform::Win(WinVersion::Win3), Some(input.read_pascal_str(WIN_ROMAN)?)))
         }
     } else {
-        Err(anyhow!("Not a Windows executable"))
+        bail!("Not a Windows executable")
     }
 }
 
@@ -397,7 +398,16 @@ fn internal_movie<T: Reader>(reader: &mut SharedStream<T>, offset: u32) -> AResu
 }
 
 mod pe {
-    use super::*;
+    use super::{
+        AResult,
+        ByteOrder,
+        io,
+        LittleEndian,
+        ReadBytesExt,
+        Reader,
+        SeekFrom,
+        StringReadExt,
+    };
 
     fn find_resource_segment_offset<T: Reader>(input: &mut T, num_sections: u16) -> Option<(u32, u32)> {
         for _ in 0..num_sections {
@@ -426,7 +436,7 @@ mod pe {
 
     fn read_version_struct<T: Reader>(input: &mut T) -> AResult<Option<String>> {
         const FIXED_HEADER_WORD_SIZE: usize = 3;
-        let start = input.seek(SeekFrom::Current(0))?;
+        let start = input.pos()?;
         let size = input.read_u16::<LittleEndian>()?;
         let mut value_size = input.read_u16::<LittleEndian>()?;
         let is_text_data = input.read_u16::<LittleEndian>()? == 1;
@@ -439,7 +449,7 @@ mod pe {
 
         let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
         if key_padding_size != 0 {
-            input.seek(SeekFrom::Current(key_padding_size as i64))?;
+            input.skip(key_padding_size as u64)?;
         }
 
         let is_string_table = key == "StringFileInfo" || (key.len() == 8 && &key[4..8] == "04b0");
@@ -447,11 +457,11 @@ mod pe {
         match key.as_ref() {
             "ProductName" => Ok(Some(input.read_utf16_c_str::<LittleEndian>()?)),
             "VS_VERSION_INFO" => {
-                input.seek(SeekFrom::Current(i64::from(value_size + value_padding)))?;
+                input.skip(u64::from(value_size + value_padding))?;
                 read_version_struct(input)
             },
             _ if is_string_table => {
-                while input.seek(SeekFrom::Current(0))? != end {
+                while input.pos()? != end {
                     if let Ok(Some(value)) = read_version_struct(input) {
                         return Ok(Some(value));
                     }
@@ -467,10 +477,10 @@ mod pe {
 
     fn seek_to_directory_entry<T: Reader>(input: &mut T, from_offset: u32, id: u32) -> io::Result<()> {
         const ENTRY_SIZE: usize = 8;
-        input.seek(SeekFrom::Current(12))?;
+        input.skip(12)?;
         let skip_entries = input.read_u16::<LittleEndian>()?;
         let num_entries = input.read_u16::<LittleEndian>()?;
-        input.seek(SeekFrom::Current(i64::from(ENTRY_SIZE as u16 * skip_entries)))?;
+        input.skip(u64::from(ENTRY_SIZE as u16 * skip_entries))?;
         for _ in 0..num_entries {
             let mut entry = [ 0; ENTRY_SIZE ];
             input.read_exact(&mut entry)?;
@@ -493,11 +503,11 @@ mod pe {
     }
 
     fn seek_to_resource_segment<T: Reader>(input: &mut T) -> io::Result<(u32, u32)> {
-        input.seek(SeekFrom::Current(2))?;
+        input.skip(2)?;
         let num_sections = input.read_u16::<LittleEndian>()?;
-        input.seek(SeekFrom::Current(12))?;
+        input.skip(12)?;
         let optional_header_size = input.read_u16::<LittleEndian>()?;
-        input.seek(SeekFrom::Current(2 + i64::from(optional_header_size)))?;
+        input.skip(2 + u64::from(optional_header_size))?;
         let (virtual_address, offset) = find_resource_segment_offset(input, num_sections).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         input.seek(SeekFrom::Start(u64::from(offset)))?;
         Ok((virtual_address, offset))

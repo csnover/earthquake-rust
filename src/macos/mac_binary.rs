@@ -57,7 +57,7 @@ impl<T: Reader> MacBinary<T> {
     }
 
     pub fn new(mut data: T) -> AResult<Self> {
-        let start_pos = data.seek(SeekFrom::Current(0))?;
+        let start_pos = data.pos()?;
         let header = {
             let mut header = [ 0; 128 ];
             data.read_exact(&mut header).context("Not a MacBinary file; file too small")?;
@@ -149,12 +149,13 @@ fn align_power_of_two(n: u32, mut align: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::wildcard_imports)]
     use super::*;
 
     #[test]
     fn validate() {
         use std::io::Cursor;
-        const DATA: &'static [u8] = include_bytes!("../tests/data/collections/macbinary/test.bin");
+        const DATA: &'_ [u8] = include_bytes!("../tests/data/collections/macbinary/test.bin");
         let data = Cursor::new(DATA);
         let header = MacBinary::new(data).unwrap();
         assert_eq!(header.name, "File I/O TextFile");

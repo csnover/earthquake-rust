@@ -2,8 +2,8 @@ pub mod movie;
 pub mod projector;
 pub mod projector_settings;
 
-use anyhow::{anyhow, Context, Result as AResult};
-use crate::{collections::riff, io::open_resource_fork, macos::{AppleDouble, MacBinary}, SharedStream};
+use anyhow::{anyhow, bail, Context, Result as AResult};
+use crate::{collections::riff, io::open_resource_fork, macos::{AppleDouble, MacBinary}, Reader, SharedStream};
 use std::{fs::File, io::{Seek, SeekFrom}};
 
 // 1. D4+Mac projector: resource fork w/ projector ostype + maybe riff in data fork
@@ -58,7 +58,7 @@ fn detect_apple_single_or_apple_double(filename: &str, only_data_fork: bool) -> 
     } else if let Some(data_fork) = apple_file.data_fork() {
         detect_riff(data_fork)
     } else {
-        Err(anyhow!("No data in AppleSingle/AppleDouble file"))
+        bail!("No data in AppleSingle/AppleDouble file")
     }
 }
 
@@ -71,7 +71,7 @@ fn detect_file(filename: &str) -> AResult<FileType> {
 }
 
 fn detect_mac(mut stream: SharedStream<File>, mut data_fork: Option<SharedStream<File>>) -> AResult<FileType> {
-    let start_pos = stream.seek(SeekFrom::Current(0))?;
+    let start_pos = stream.pos()?;
     projector::detect_mac(&mut stream, data_fork.as_mut())
         .map(|p| {
             stream.seek(SeekFrom::Start(start_pos)).unwrap();
@@ -105,19 +105,19 @@ fn detect_mac_binary(filename: &str, only_data_fork: bool) -> AResult<FileType> 
     } else if let Some(data_fork) = mac_binary.data_fork() {
         detect_riff(data_fork)
     } else {
-        Err(anyhow!("No data in MacBinary file"))
+        bail!("No data in MacBinary file")
     }
 }
 
 fn detect_resource_fork(filename: &str) -> AResult<FileType> {
     detect_mac(
-        SharedStream::new(open_resource_fork(filename).or_else(|_| Err(anyhow!("No resource fork on filesystem")))?),
+        SharedStream::new(open_resource_fork(filename).or_else(|_| bail!("No resource fork on filesystem"))?),
         Some(SharedStream::new(File::open(filename).context("Could not open data fork")?))
     )
 }
 
 fn detect_riff(mut stream: SharedStream<File>) -> AResult<FileType> {
-    let start_pos = stream.seek(SeekFrom::Current(0))?;
+    let start_pos = stream.pos()?;
     riff::detect(&mut stream).and_then(|m| {
         stream.seek(SeekFrom::Start(start_pos))?;
         Ok(FileType::Movie(m, stream))
