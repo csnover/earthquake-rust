@@ -4,10 +4,13 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::ByteOrdered;
 use crate::{
     collections::riff,
-    encodings::{MAC_ROMAN, WIN_ROMAN},
+    encodings::{DecoderRef, MAC_ROMAN, WIN_ROMAN},
     macos::ResourceFile,
     Reader,
-    resources::resource,
+    resources::{
+        apple::version::Resource as VersionResource,
+        resource,
+    },
     rsid,
     SharedStream,
     string::StringReadExt,
@@ -19,6 +22,7 @@ use super::projector_settings::*;
 #[derive(Debug)]
 pub struct DetectionInfo<T: Reader> {
     name: Option<String>,
+    string_decoder: Option<DecoderRef>,
     version: Version,
     movie: Movie<T>,
     config: ProjectorSettings,
@@ -116,6 +120,15 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
         rom.get(resource_id).unwrap().data()?
     };
 
+    let string_decoder = {
+        let id = rsid!(b"vers", 1);
+        let vers = rom.get(id)
+            .ok_or_else(|| anyhow!("Missing {}", id))?
+            .data()?;
+        let vers = VersionResource::parse(&mut ByteOrdered::be(std::io::Cursor::new(vers)))?;
+        Some(vers.country_code().encoding())
+    };
+
     let (config, movie) = match version {
         Version::D3 => {
             let has_external_data = config[4] != 0;
@@ -195,6 +208,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
 
     Ok(DetectionInfo {
         name: rom.name(),
+        string_decoder,
         version,
         movie,
         config,
@@ -317,6 +331,8 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
 
     Ok(DetectionInfo {
         name,
+        // TODO: Detect the character encoding.
+        string_decoder: None,
         version,
         movie,
         config,

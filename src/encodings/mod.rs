@@ -2,7 +2,7 @@ use encoding::{all as encodings, types::{DecoderTrap, Encoding as _}};
 
 // Mappings: https://www.unicode.org/Public/MAPPINGS/VENDORS/
 
-pub trait Decoder {
+pub trait Decoder: std::fmt::Debug {
     /// Decodes a byte slice into a string. Invalid code sequences are replaced
     /// by the Unicode replacement character.
     fn decode(&self, text: &[u8]) -> String;
@@ -16,6 +16,7 @@ pub trait Decoder {
     }
 }
 
+#[derive(Debug)]
 pub struct MacJapanese;
 impl Decoder for MacJapanese {
     fn decode(&self, text: &[u8]) -> String {
@@ -26,6 +27,7 @@ pub const MAC_JAPANESE: &MacJapanese = &MacJapanese;
 
 macro_rules! encodings_decoder(
     ($name:ident, $id:ident, $($module:ident)::+) => (
+        #[derive(Debug)]
         pub struct $id;
         impl Decoder for $id {
             fn decode(&self, text: &[u8]) -> String {
