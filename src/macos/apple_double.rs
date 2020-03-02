@@ -14,6 +14,7 @@ pub struct AppleDouble<T: Reader> {
 }
 
 impl<T: Reader> AppleDouble<T> {
+    #[allow(dead_code)]
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }

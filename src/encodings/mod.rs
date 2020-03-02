@@ -19,7 +19,7 @@ pub trait Decoder: std::fmt::Debug {
 #[derive(Debug)]
 pub struct MacJapanese;
 impl Decoder for MacJapanese {
-    fn decode(&self, text: &[u8]) -> String {
+    fn decode(&self, _text: &[u8]) -> String {
         todo!()
     }
 }

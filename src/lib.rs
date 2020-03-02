@@ -25,6 +25,7 @@ pub(crate) use crate::macos::ResourceId;
 pub use crate::player::*;
 pub use crate::io::SharedStream;
 
+#[allow(dead_code)]
 pub(crate) fn panic_for_sample<T: AsRef<str>>(is_needed: bool, kind: T) {
     if is_needed {
         panic!("{}. Please send this file for analysis.", kind.as_ref());

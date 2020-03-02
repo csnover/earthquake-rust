@@ -119,6 +119,7 @@ impl<T: Reader> MacBinary<T> {
         }
     }
 
+    #[allow(dead_code)]
     #[must_use]
     pub fn name(&self) -> &String {
         &self.name
