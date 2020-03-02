@@ -343,9 +343,9 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
     match &raw_version[0..4] {
         b"PJ93" | b"39JP" => Some(Version::D4),
         b"PJ95" | b"59JP" => Some(Version::D5),
-        // Director 6 has PJ95 data on both Mac and Win, but PJ97 resource on
-        // Mac, so this test only works for Mac
-        b"PJ97" | b"79JP" => Some(Version::D6),
+        // Director 6 uses "PJ95" for the data version on both Mac and Win,
+        // even though it has incompatible settings
+        b"PJ97" | b"79JP" => panic!("Unexpected PJ97 in data fork"),
         b"PJ00" | b"00JP" => Some(Version::D7),
         _ => None
     }
