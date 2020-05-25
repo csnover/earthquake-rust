@@ -25,7 +25,7 @@ use pico_args::Arguments;
 use std::{env, fs::File, io::{Seek, SeekFrom}, path::{Path, PathBuf}, process::exit};
 
 fn main() -> AResult<()> {
-    const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+    const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
 
     println!("Earthquake {} file inspector", VERSION.unwrap_or(""));
 
