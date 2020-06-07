@@ -127,7 +127,7 @@ impl<T: Reader> ResourceFile<T> {
         false
     }
 
-    /// Returns a handle to retrieve the resource with the given ID.
+    // TODO: Replace this API with a typed API
     pub fn get(&self, id: ResourceId) -> Option<Resource<T>> {
         if let Some(offsets) = self.resource_map.get(&id) {
             Some(Resource {

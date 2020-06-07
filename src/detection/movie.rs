@@ -5,8 +5,7 @@ use crate::{
     Reader,
     rsid,
 };
-use enum_display_derive::Display;
-use std::fmt::Display;
+use derive_more::Display;
 
 #[derive(Debug)]
 pub struct DetectionInfo {
@@ -54,7 +53,9 @@ pub enum Kind {
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
 pub enum Version {
+    #[display(fmt = "3")]
     D3,
+    #[display(fmt = "4")]
     D4,
 }
 

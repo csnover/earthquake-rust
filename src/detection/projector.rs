@@ -17,8 +17,8 @@ use crate::{
     SharedStream,
     string::StringReadExt,
 };
-use enum_display_derive::Display;
-use std::{fmt::Display, path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
+use derive_more::Display;
+use std::{path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
 //use super::projector_settings::*;
 
 #[derive(Debug)]
@@ -72,9 +72,11 @@ pub enum Movie<T: Reader> {
     External(Vec<String>),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Display, Copy, Clone, PartialEq)]
 pub enum WinVersion {
+    #[display(fmt = "3")]
     Win3,
+    #[display(fmt = "95")]
     Win95,
 }
 
@@ -86,18 +88,36 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+impl std::fmt::Display for MacCPU {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            MacCPU::M68K => write!(f, "68000"),
+            MacCPU::PPC => write!(f, "PowerPC"),
+            MacCPU::ANY => write!(f, "68000/PowerPC"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq)]
 pub enum Platform {
+    #[display(fmt = "Mac {}", _0)]
     Mac(MacCPU),
+    #[display(fmt = "Windows {}", _0)]
     Win(WinVersion),
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
 pub enum Version {
+    #[display(fmt = "3")]
     D3,
+    #[display(fmt = "4")]
     D4,
+    #[display(fmt = "5")]
     D5,
+    #[display(fmt = "6")]
     D6,
+    #[display(fmt = "7")]
     D7,
 }
 

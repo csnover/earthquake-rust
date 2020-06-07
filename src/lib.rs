@@ -11,8 +11,9 @@
 pub mod collections;
 pub mod detection;
 pub mod encodings;
-pub mod macos;
 pub mod io;
+pub mod macos;
+pub mod player;
 pub mod resources;
 pub(crate) mod string;
 pub(crate) mod types;
@@ -22,6 +23,24 @@ pub use crate::types::os_type::*;
 pub use crate::types::reader::*;
 pub(crate) use crate::macos::ResourceId;
 pub use crate::io::SharedStream;
+
+#[must_use]
+pub fn name(with_version: bool) -> String {
+    const SEMVER: Option<&str> = option_env!("VERGEN_SEMVER");
+    const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
+    const GIT_HASH: Option<&str> = option_env!("VERGEN_SHA_SHORT");
+
+    let mut name = "Earthquake".to_string();
+    if with_version {
+        if let Some(version) = SEMVER.or_else(|| VERSION) {
+            name += &format!(" {}", version);
+        }
+        if let Some(hash) = GIT_HASH {
+            name += &format!(" ({})", hash);
+        }
+    }
+    name
+}
 
 #[macro_export]
 macro_rules! assert_sample(

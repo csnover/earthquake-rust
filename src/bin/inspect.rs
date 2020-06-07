@@ -18,6 +18,7 @@ use earthquake::{
             Version as ProjectorVersion,
         },
     },
+    name,
     macos::ResourceFile,
     SharedStream,
 };
@@ -25,9 +26,7 @@ use pico_args::Arguments;
 use std::{env, fs::File, io::{Seek, SeekFrom}, path::{Path, PathBuf}, process::exit};
 
 fn main() -> AResult<()> {
-    const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
-
-    println!("Earthquake {} file inspector", VERSION.unwrap_or(""));
+    println!("{} file inspector", name(true));
 
     let mut args = Arguments::from_env();
     let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
@@ -35,8 +34,7 @@ fn main() -> AResult<()> {
     let files = args.free()?;
 
     if files.is_empty() {
-        println!("Usage: {} [--inspect-data] [--data <dir>] <exe/cxr/dxr ...>", env::args().next().unwrap_or_else(|| "inspect".to_string()));
-        println!("\nOptional arguments:\n    --data: The path to movies referenced by a Projector\n    --inspect-data: Print movie contents");
+        println!(include_str!("inspect.usage"), env::args().next().unwrap_or_else(|| "inspect".to_string()));
         exit(1);
     }
 

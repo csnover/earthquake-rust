@@ -1,0 +1,4 @@
+Usage: {} [--data <dir>] [--inspect-data] <exe/cxr/dxr ...>
+Optional arguments:
+    --data: The path to movies referenced by a Projector
+    --inspect-data: Print movie contents

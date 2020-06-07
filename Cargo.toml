@@ -1,28 +1,36 @@
 [package]
 name = "earthquake"
 version = "1.0.0"
-authors = ["csnover", "djsrv <dservilla@gmail.com>"]
-description = "Library for reading and modifying Director files"
+authors = ["csnover"]
+description = "Open-source Director Projector reimplementation"
 homepage = "https://github.com/Earthquake-Project/earthquake-rust"
 repository = "https://github.com/Earthquake-Project/earthquake-rust"
 readme = "README.md"
 license = "Apache-2.0"
 edition = "2018"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1.0"
 bitflags = "1.2"
 byteorder = "1.3"
 byteordered = "0.4"
+cpp_core = "0.6"
 crc = "1.8"
 derive_more = "0.99"
 encoding = "0.2"
-enum-display-derive = "0.1"
 num-derive = "0.3"
 num-traits = "0.2"
 pest = "2.1"
 pest_derive = "2.1"
+qt_core = "0.5"
+qt_widgets = "0.5"
+strum = "0.18"
+strum_macros = "0.18"
 unicase = "2.6"
 
 # For bin only
 pico-args = "0.3"
+
+[build-dependencies]
+vergen = "3"

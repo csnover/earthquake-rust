@@ -4,6 +4,7 @@ use crate::{
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use strum_macros::EnumVariantNames;
 
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum CountryCode {
@@ -117,6 +118,7 @@ pub enum CountryCode {
 }
 
 impl CountryCode {
+    #[must_use]
     pub fn encoding(self) -> DecoderRef {
         // This translation matrix is based on the list at
         // https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/ReadMe.txt.
@@ -150,7 +152,8 @@ impl CountryCode {
     }
 }
 
-#[derive(Copy, Clone, Debug, FromPrimitive)]
+#[derive(Copy, Clone, Debug, EnumVariantNames, FromPrimitive)]
+#[strum(serialize_all = "title_case")]
 pub enum ScriptCode {
     Roman = 0,
     Japanese,
