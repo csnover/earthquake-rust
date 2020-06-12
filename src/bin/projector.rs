@@ -6,9 +6,28 @@ use earthquake::{
     detection::{detect, FileType, movie::Kind as MovieKind},
     name,
     macos::script_manager::ScriptCode,
+    version,
 };
 use pico_args::Arguments;
-use qt_core::{q_dir::Filter as DirFilter, AlignmentFlag, QBox, QObject, QPtr, qs, QVariant, slot, SlotNoArgs};
+use qt_core::{
+    q_dir::Filter as DirFilter,
+    AlignmentFlag,
+    QBox,
+    QObject,
+    QPtr,
+    qs,
+    QVariant,
+    slot,
+    SlotNoArgs,
+    TextInteractionFlag,
+    WidgetAttribute,
+    WindowType,
+};
+use qt_gui::{
+    QIcon,
+    QPainter,
+    QPixmap,
+};
 use qt_widgets::{
     q_action::MenuRole,
     q_combo_box::SizeAdjustPolicy,
@@ -38,7 +57,7 @@ use qt_widgets::{
     QVBoxLayout,
     QWidget,
 };
-use std::{env, path::{Path, PathBuf}, process::exit, rc::Rc};
+use std::{cell::RefCell, env, path::{Path, PathBuf}, process::exit, rc::Rc};
 use strum::VariantNames;
 
 struct FileWidget {
@@ -163,14 +182,6 @@ impl OptionsWidget {
         }
     }
 
-    unsafe fn build_data_box(parent: &QFormLayout) -> FileWidget {
-        let file_widget = FileWidget::new(true);
-        let label = QLabel::from_q_string(&qs("&Data directory:"));
-        parent.add_row_q_widget_q_layout(&label, &file_widget.layout);
-        label.set_buddy(&file_widget.input);
-        file_widget
-    }
-
     unsafe fn build_charset_box(parent: &QFormLayout) -> QBox<QComboBox> {
         let charset = QComboBox::new_0a();
         charset.set_size_adjust_policy(SizeAdjustPolicy::AdjustToContentsOnFirstShow);
@@ -179,6 +190,14 @@ impl OptionsWidget {
         }
         parent.add_row_q_string_q_widget(&qs("&Character set:"), &charset);
         charset
+    }
+
+    unsafe fn build_data_box(parent: &QFormLayout) -> FileWidget {
+        let file_widget = FileWidget::new(true);
+        let label = QLabel::from_q_string(&qs("&Data directory:"));
+        parent.add_row_q_widget_q_layout(&label, &file_widget.layout);
+        label.set_buddy(&file_widget.input);
+        file_widget
     }
 }
 
@@ -206,6 +225,7 @@ impl TabsWidget {
 }
 
 struct Loader {
+    about_box: RefCell<QBox<QDialog>>,
     about_action: QPtr<QAction>,
     about_license_action: QPtr<QAction>,
     dialog: QBox<QDialog>,
@@ -237,6 +257,7 @@ impl Loader {
 
             let this = Rc::new(Self {
                 dialog,
+                about_box: RefCell::new(QBox::null()),
                 about_action,
                 about_license_action,
                 file,
@@ -266,8 +287,8 @@ impl Loader {
         let menu_bar = QMenuBar::new_1a(parent);
         menu_bar.set_native_menu_bar(true);
         let menu = menu_bar.add_menu_q_string(&qs("&Help"));
-        let about_action = menu.add_action_q_string(&qs(format!("&About {}…", name(false))));
-        let about_license_action = menu.add_action_q_string(&qs("About &License…"));
+        let about_action = menu.add_action_q_string(&qs(format!("&About {}", name(false))));
+        let about_license_action = menu.add_action_q_string(&qs("About &License"));
         about_license_action.set_menu_role(MenuRole::AboutQtRole);
         (about_action, about_license_action)
     }
@@ -347,34 +368,117 @@ impl Loader {
             let mut actions = String::new();
             let has_homepage = option_env!("CARGO_PKG_HOMEPAGE").is_some();
             if has_homepage || option_env!("CARGO_PKG_REPOSITORY").is_some() {
-                actions += r#"<hr><div style="text-align: center">"#;
+                actions += r#"<hr><div>"#;
                 if let Some(homepage) = option_env!("CARGO_PKG_HOMEPAGE") {
-                    actions += &format!(r#"<a href="{}">Home page</a>"#, homepage);
+                    actions += &format!(r#"<a style="color: black" href="{}">Home page</a>"#, homepage);
                 }
                 if let Some(repository) = option_env!("CARGO_PKG_REPOSITORY") {
                     if has_homepage {
                         actions += " &nbsp;·&nbsp; ";
                     }
-                    actions += &format!(r#"<a href="{0}">Repository</a> &nbsp;·&nbsp;
-                        <a href="{0}/issues/new">Report a bug</a>"#, repository);
+                    actions += &format!(r#"<a style="color: black" href="{0}">Repository</a> &nbsp;·&nbsp;
+                        <a style="color: black" href="{0}/issues/new">Report a bug</a>"#, repository);
                 }
                 actions += r"</div>";
             }
             actions
         };
 
-        let text = format!(r#"
-            <b>{}</b>
-            <div style="font-weight: normal; margin-top: 4"
-                >© {}{}
-                {}
-            </div>"#,
-            name(true),
+        let text = format!("<div>© {}Earthquake Project contributors</div>{}",
             copyright_year,
-            "Earthquake Project contributors",
             actions,
         );
-        QMessageBox::about(&self.dialog, &qs(name(false)), &qs(text));
+
+        if let Ok(message_box) = self.about_box.try_borrow() {
+            if !message_box.is_null() {
+                message_box.show();
+                message_box.raise();
+                message_box.activate_window();
+                return;
+            }
+        }
+
+        let message_box = QDialog::new_2a(
+            &self.dialog,
+            WindowType::MSWindowsFixedSizeDialogHint
+            | WindowType::WindowTitleHint
+            | WindowType::WindowSystemMenuHint
+            | WindowType::WindowCloseButtonHint
+        );
+
+        message_box.set_modal(true);
+        message_box.set_attribute_1a(WidgetAttribute::WADeleteOnClose);
+
+        if cfg!(target_os = "macos") {
+        } else {
+            message_box.set_window_title(&qs(format!("About {}", name(false))));
+        }
+
+        message_box.set_style_sheet(&qs("* { color: black; background: white; }"));
+
+        let logo = {
+            let logo = QPixmap::from_q_string(&qs("resources/logo.png"));
+            logo.set_device_pixel_ratio(2.0);
+
+            let paint = QPainter::new_1a(&logo);
+            let mut x = 383;
+            let y = 197;
+            for (index, version) in env!("CARGO_PKG_VERSION").split('.').take(2).enumerate() {
+                if index != 0 {
+                    if version == "0" {
+                        break;
+                    }
+                    let dot = QPixmap::from_q_string(&qs("resources/logo-dot.png"));
+                    dot.set_device_pixel_ratio(2.0);
+                    paint.draw_pixmap_2_int_q_pixmap(x, y, &dot);
+                    x += dot.width() / dot.device_pixel_ratio() as i32;
+                }
+                let digit = QPixmap::from_q_string(&qs(format!("resources/logo-{}.png", version)));
+                digit.set_device_pixel_ratio(2.0);
+                paint.draw_pixmap_2_int_q_pixmap(x, y, &digit);
+                x += digit.width() / digit.device_pixel_ratio() as i32;
+            }
+
+            logo
+        };
+
+        let layout = QVBoxLayout::new_0a();
+        layout.set_size_constraint(SizeConstraint::SetFixedSize);
+        layout.set_contents_margins_4a(0, 0, 0, 10);
+        message_box.set_layout(&layout);
+
+        layout.add_widget(&{
+            let about_label = QLabel::new();
+            about_label.set_pixmap(&logo);
+            about_label.set_contents_margins_1a(&{
+                let margins = about_label.contents_margins();
+                margins.set_bottom(2);
+                margins
+            });
+            about_label
+        });
+
+        layout.add_widget(&{
+            let version_label = QLabel::from_q_string(&qs(version()));
+            version_label.set_text_interaction_flags(TextInteractionFlag::TextBrowserInteraction.into());
+            version_label.set_alignment(AlignmentFlag::AlignHCenter.into());
+            version_label
+        });
+
+        layout.add_widget(&{
+            let about_text_label = QLabel::from_q_string(&qs(text));
+            about_text_label.set_alignment(AlignmentFlag::AlignHCenter.into());
+            about_text_label
+        });
+
+        if cfg!(target_os = "macos") {
+            message_box.show();
+            message_box.raise();
+            message_box.activate_window();
+            self.about_box.replace(message_box);
+        } else {
+            message_box.exec();
+        }
     }
 
     #[slot(SlotNoArgs)]
@@ -507,6 +611,8 @@ fn main() -> AResult<()> {
     let files = args.free()?;
 
     QApplication::init(|_| unsafe {
+        let icon = QIcon::from_q_string(&qs("resources/icon.png"));
+        QApplication::set_window_icon(&icon);
         let filename = if files.is_empty() {
             let ask = Loader::new();
             ask.exec()

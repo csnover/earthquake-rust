@@ -26,20 +26,38 @@ pub use crate::io::SharedStream;
 
 #[must_use]
 pub fn name(with_version: bool) -> String {
+    let mut name = "Earthquake".to_string();
+    if with_version {
+        let version = version();
+        if !version.is_empty() {
+            name.push(' ');
+            name.push_str(&version);
+        }
+    }
+    name
+}
+
+#[must_use]
+pub fn version() -> String {
     const SEMVER: Option<&str> = option_env!("VERGEN_SEMVER");
     const VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
     const GIT_HASH: Option<&str> = option_env!("VERGEN_SHA_SHORT");
 
-    let mut name = "Earthquake".to_string();
-    if with_version {
-        if let Some(version) = SEMVER.or_else(|| VERSION) {
-            name += &format!(" {}", version);
-        }
-        if let Some(hash) = GIT_HASH {
-            name += &format!(" ({})", hash);
+    let mut version = String::new();
+    if let Some(semver) = SEMVER.or_else(|| VERSION) {
+        if semver == "UNKNOWN" && VERSION.is_some() {
+            version += VERSION.unwrap();
+        } else {
+            version += semver;
         }
     }
-    name
+    if let Some(hash) = GIT_HASH {
+        if !version.is_empty() {
+            version.push(' ');
+        }
+        version.push_str(&format!("({})", hash));
+    }
+    version
 }
 
 #[macro_export]
