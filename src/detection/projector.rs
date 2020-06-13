@@ -1,17 +1,17 @@
 use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use byteordered::ByteOrdered;
+use byteordered::{ByteOrdered, Endianness};
 use crate::{
     collections::riff,
     detection::projector_settings::ProjectorSettings,
-    encodings::{DecoderRef, MAC_ROMAN, WIN_ROMAN},
-    macos::ResourceFile,
+    encodings::WIN_ROMAN,
+    macos::{ResourceFile, script_manager::ScriptCode},
     panic_sample,
     Reader,
     resources::{
-        apple::string_list::Resource as StringListResource,
-        apple::version::Resource as VersionResource,
+        apple::string_list::StringList as StringListResource,
+        Resource,
     },
     rsid,
     SharedStream,
@@ -19,12 +19,11 @@ use crate::{
 };
 use derive_more::Display;
 use std::{path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
-//use super::projector_settings::*;
 
 #[derive(Debug)]
 pub struct DetectionInfo<T: Reader> {
     name: Option<String>,
-    string_decoder: Option<DecoderRef>,
+    charset: Option<ScriptCode>,
     version: Version,
     movie: Movie<T>,
     config: ProjectorSettings,
@@ -142,15 +141,6 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
         rom.get(resource_id).unwrap().data()?
     };
 
-    let string_decoder = {
-        let id = rsid!(b"vers", 1);
-        let vers = rom.get(id)
-            .ok_or_else(|| anyhow!("Missing {}", id))?
-            .data()?;
-        let vers = VersionResource::parse(&mut ByteOrdered::be(std::io::Cursor::new(vers)))?;
-        Some(vers.country_code().encoding())
-    };
-
     let (config, movie) = match version {
         Version::D3 => {
             let has_external_data = config[4] != 0;
@@ -161,10 +151,12 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
                 // the ROM and then pushing it into Resource?
                 let resource_id = rsid!(b"STR#", 0);
                 let external_files = rom.get(resource_id).ok_or_else(|| anyhow!("Missing external file list"))?;
-                let mut cursor = ByteOrdered::be(Cursor::new(external_files.data().with_context(|| format!("Can’t read {}", resource_id))?));
+                let data = external_files.data().with_context(|| format!("Can’t read {}", resource_id))?;
+                let data_size = data.len() as u32;
+                let mut cursor = ByteOrdered::new(Cursor::new(data), Endianness::Big);
                 // TODO: May need to CHARDET the paths
                 let mut movies = Vec::with_capacity(usize::from(num_movies));
-                for filename in StringListResource::parse(&mut cursor, MAC_ROMAN)? {
+                for filename in StringListResource::load(&mut cursor, data_size)? {
                     movies.push(filename.replace(':', "/"));
                 }
                 (config, Movie::External(movies))
@@ -230,7 +222,9 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
 
     Ok(DetectionInfo {
         name: rom.name(),
-        string_decoder,
+        // TODO: Detect the character encoding. Reading the file creator name
+        // from VWFI might be the best way to do this.
+        charset: None,
         version,
         movie,
         config,
@@ -241,7 +235,6 @@ fn d3_win_movie_info<T: Reader>(input: &mut T, i: u16) -> AResult<(u32, String)>
     let size = input.read_u32::<LittleEndian>()
         .with_context(|| format!("Can’t read external movie {} size", i))?;
     let filename = {
-        // TODO: May need to CHARDET the path if it is non-ASCII
         let filename = input.read_pascal_str(WIN_ROMAN)
             .with_context(|| format!("Can’t read external movie {} filename", i))?;
         let path = input.read_pascal_str(WIN_ROMAN)
@@ -354,7 +347,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
     Ok(DetectionInfo {
         name,
         // TODO: Detect the character encoding.
-        string_decoder: None,
+        charset: None,
         version,
         movie,
         config,

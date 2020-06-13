@@ -3,6 +3,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{
     ensure_sample,
+    macos::System,
     os,
     Reader,
     resources::{macromedia::{ByteVec, List}, Resource},
@@ -105,7 +106,7 @@ impl Resource for Dict {
             let end = start + 4;
             let size = BigEndian::read_u32(&keys[start..end]) as usize;
             // TODO: Handle non-ASCII file paths correctly
-            let key = OsString::from(String::from_utf8_lossy(&keys[end..end + size]).as_ref());
+            let key = OsString::from(System::instance().decoder().decode(&keys[end..end + size]));
             dict.insert(key, item.value as usize);
         }
 

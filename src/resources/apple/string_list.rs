@@ -1,16 +1,27 @@
-use anyhow::Result as AResult;
-use byteorder::BigEndian;
-use byteordered::{ByteOrdered, StaticEndianness};
-use crate::{encodings::DecoderRef, Reader, string::StringReadExt};
+use anyhow::{Context, Result as AResult};
+use byteordered::{ByteOrdered, Endianness};
+use crate::{
+    macos::System,
+    Reader,
+    resources::Resource,
+    string::StringReadExt,
+};
+use derive_more::{Deref, DerefMut, Index, IndexMut, IntoIterator};
 
-pub struct Resource(pub Vec<String>);
-impl Resource {
-    pub fn parse<T: Reader>(input: &mut ByteOrdered<T, StaticEndianness<BigEndian>>, str_encoding: DecoderRef) -> AResult<Vec<String>> {
-        let count = input.read_u16()?;
+#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut, IntoIterator)]
+pub struct StringList(Vec<String>);
+
+impl Resource for StringList {
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _size: u32) -> AResult<Self> where Self: Sized {
+        let count = input.read_u16()
+            .context("Failed to read StringList count")?;
         let mut strings = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            strings.push(input.read_pascal_str(str_encoding)?);
+        for index in 0..count {
+            strings.push(
+                input.read_pascal_str(System::instance().decoder())
+                .with_context(|| format!("Failed to read StringList item {}", index))?
+            );
         }
-        Ok(strings)
+        Ok(Self(strings))
     }
 }

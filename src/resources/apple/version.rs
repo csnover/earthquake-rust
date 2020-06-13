@@ -1,10 +1,9 @@
 use anyhow::{anyhow, Result as AResult};
-use byteorder::BigEndian;
-use byteordered::{ByteOrdered, StaticEndianness};
 use crate::{
     macos::script_manager::CountryCode,
     Reader,
-    string::StringReadExt
+    resources::Resource,
+    string::StringReadExt,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -18,7 +17,7 @@ pub enum Stage {
 }
 
 #[derive(Debug)]
-pub struct Version {
+pub struct Number {
     major: u8,
     minor: u8,
     stage: Stage,
@@ -26,16 +25,22 @@ pub struct Version {
 }
 
 #[derive(Debug)]
-pub struct Resource {
-    version: Version,
+pub struct Version {
+    version: Number,
     country_code: CountryCode,
     short_version: String,
     long_version: String,
 }
 
-impl Resource {
-    pub fn parse<T: Reader>(input: &mut ByteOrdered<T, StaticEndianness<BigEndian>>) -> AResult<Self> {
-        let version = Version {
+impl Version {
+    pub fn country_code(&self) -> CountryCode {
+        self.country_code
+    }
+}
+
+impl Resource for Version {
+    fn load<T: Reader>(input: &mut byteordered::ByteOrdered<T, byteordered::Endianness>, _size: u32) -> AResult<Self> where Self: Sized {
+        let version = Number {
             major: input.read_u8()?,
             minor: input.read_u8()?,
             stage: Stage::from_u8(input.read_u8()?).unwrap(),
@@ -52,9 +57,5 @@ impl Resource {
             short_version: input.read_pascal_str(country_code.encoding())?,
             long_version: input.read_pascal_str(country_code.encoding())?,
         })
-    }
-
-    pub fn country_code(&self) -> CountryCode {
-        self.country_code
     }
 }

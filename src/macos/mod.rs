@@ -4,12 +4,14 @@ mod mac_binary;
 mod resource_file;
 mod resource_id;
 pub mod script_manager;
+mod system;
 
 pub(crate) use apple_double::*;
 pub(crate) use application_vise::*;
 pub(crate) use mac_binary::*;
 pub use resource_file::*;
 pub(crate) use resource_id::*;
+pub(crate) use system::System;
 
 #[derive(Default)]
 pub struct Point {

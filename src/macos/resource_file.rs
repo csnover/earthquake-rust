@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
-use byteordered::{ByteOrdered, StaticEndianness};
+use byteordered::{ByteOrdered, Endianness};
 use crate::{encodings::MAC_ROMAN, macos::ApplicationVise, OSType, OSTypeReadExt, Reader, ResourceId, rsid, string::StringReadExt};
-use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
+use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::Rc};
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
@@ -17,7 +17,7 @@ impl<T: Reader> ResourceFile<T> {
     /// Makes a new `ResourceFile` from a readable stream.
     pub fn new(data: T) -> AResult<Self> {
         const RESOURCE_MAP_OFFSETS_OFFSET: u64 = 24;
-        let mut input = ByteOrdered::be(data);
+        let mut input = ByteOrdered::new(data, Endianness::Big);
 
         let data_offset = input.read_u32().context("Can’t read data offset")?;
         let map_offset = input.read_u32().context("Can’t read map offset")?;
@@ -127,7 +127,22 @@ impl<T: Reader> ResourceFile<T> {
         false
     }
 
+    pub fn load<R: 'static + crate::resources::Resource>(&self, id: ResourceId) -> AResult<Rc<R>> {
+        let entry = self.resource_map.get(&id)
+            .with_context(|| format!("Resource {} not found", id))?;
+
+        let mut input = self.input.try_borrow_mut()?;
+        input.seek(SeekFrom::Start(u64::from(entry.data_offset)))
+            .with_context(|| format!("Could not seek to resource {}", id))?;
+
+        let size = input.read_u32()
+            .with_context(|| format!("Could not read size of resource {}", id))?;
+
+        R::load(&mut input.as_mut(), size).map(Rc::new)
+    }
+
     // TODO: Replace this API with a typed API
+    #[deprecated]
     pub fn get(&self, id: ResourceId) -> Option<Resource<T>> {
         if let Some(offsets) = self.resource_map.get(&id) {
             Some(Resource {
@@ -292,7 +307,7 @@ enum DecompressorState {
     Loaded(ApplicationVise),
 }
 
-type Input<T> = ByteOrdered<T, StaticEndianness<BigEndian>>;
+type Input<T> = ByteOrdered<T, Endianness>;
 
 #[derive(Copy, Clone, Debug)]
 struct ResourceOffsets {
