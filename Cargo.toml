@@ -1,7 +1,7 @@
 [package]
 name = "earthquake"
 version = "1.0.0"
-authors = ["csnover"]
+authors = ["Earthquake Project contributors"]
 description = "Open-source Director Projector reimplementation"
 homepage = "https://github.com/Earthquake-Project/earthquake-rust"
 repository = "https://github.com/Earthquake-Project/earthquake-rust"

@@ -2,7 +2,7 @@ use encoding::{all as encodings, types::{DecoderTrap, Encoding as _}};
 
 // Mappings: https://www.unicode.org/Public/MAPPINGS/VENDORS/
 
-pub trait Decoder: std::fmt::Debug {
+pub trait Decoder: std::fmt::Debug + Sync {
     /// Decodes a byte slice into a string. Invalid code sequences are replaced
     /// by the Unicode replacement character.
     fn decode(&self, text: &[u8]) -> String;

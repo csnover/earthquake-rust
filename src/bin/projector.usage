@@ -3,4 +3,3 @@ Optional arguments:
     --data: The path to movies referenced by a Projector
     --charset: The character encoding used by the movie
 Character encodings:
-    -1: Auto-detect

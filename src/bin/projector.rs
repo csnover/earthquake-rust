@@ -19,11 +19,13 @@ use qt_core::{
     QVariant,
     slot,
     SlotNoArgs,
+    TextFormat,
     TextInteractionFlag,
     WidgetAttribute,
     WindowType,
 };
 use qt_gui::{
+    QFont,
     QIcon,
     QPainter,
     QPixmap,
@@ -64,7 +66,7 @@ struct FileWidget {
     layout: QBox<QHBoxLayout>,
     input: QBox<QLineEdit>,
     browse: QBox<QPushButton>,
-    // Apparently this is held only by weak reference by the QLineEdit so it
+    // This is held only by weak reference by the QLineEdit so it
     // must be retained or else auto-completion will not work
     _completer: QBox<QCompleter>,
 }
@@ -124,24 +126,35 @@ impl InfoWidget {
             let stack = QStackedLayout::new();
             tab.set_layout(&stack);
 
-            let not_loaded = QLabel::from_q_string(&qs("No file loaded"));
-            not_loaded.set_alignment(AlignmentFlag::AlignCenter.into());
-            let not_loaded_index = stack.add_widget(&not_loaded);
+            let not_loaded_index = stack.add_widget(&{
+                let not_loaded = QLabel::from_q_string(&qs("No file loaded"));
+                not_loaded.set_contents_margins_4a(0, 0, 0, 14);
+                not_loaded.set_alignment(AlignmentFlag::AlignCenter.into());
+                not_loaded
+            });
 
             let loaded = QWidget::new_0a();
+            loaded.set_contents_margins_4a(0, 0, 0, 14);
             let layout = QVBoxLayout::new_1a(&loaded);
-            layout.set_size_constraint(SizeConstraint::SetFixedSize);
-            let loaded_index = stack.add_widget(&loaded);
-            stack.set_alignment_q_widget_q_flags_alignment_flag(&loaded, AlignmentFlag::AlignVCenter.into());
-
-            stack.set_current_index(not_loaded_index);
+            layout.add_stretch_1a(1);
 
             let file_name = QLabel::new();
-            file_name.set_style_sheet(&qs("font-weight: bold"));
+            file_name.set_text_format(TextFormat::PlainText);
+            file_name.set_font(&{
+                let font = QFont::new();
+                font.set_bold(true);
+                font
+            });
             layout.add_widget(&file_name);
 
             let kind = QLabel::new();
+            kind.set_text_format(TextFormat::PlainText);
             layout.add_widget(&kind);
+
+            layout.add_stretch_1a(1);
+
+            let loaded_index = stack.add_widget(&loaded);
+            stack.set_current_index(not_loaded_index);
 
             parent.add_tab_2a(&tab, &qs("File &info"));
 
@@ -230,6 +243,7 @@ struct Loader {
     about_license_action: QPtr<QAction>,
     dialog: QBox<QDialog>,
     file: FileWidget,
+    filename: RefCell<Option<String>>,
     tabs: TabsWidget,
     ok_button: QPtr<QPushButton>,
     cancel_button: QPtr<QPushButton>,
@@ -256,14 +270,15 @@ impl Loader {
             dialog_layout.add_widget(&buttons);
 
             let this = Rc::new(Self {
-                dialog,
                 about_box: RefCell::new(QBox::null()),
                 about_action,
                 about_license_action,
-                file,
-                tabs,
-                ok_button,
                 cancel_button,
+                dialog,
+                file,
+                filename: RefCell::new(None),
+                ok_button,
+                tabs,
             });
             this.init();
             this
@@ -330,7 +345,7 @@ impl Loader {
     fn exec(&self) -> Option<String> {
         unsafe {
             if self.dialog.exec() == DialogCode::Accepted.to_int() {
-                Some(String::new())
+                self.filename.borrow().clone()
             } else {
                 None
             }
@@ -347,6 +362,9 @@ impl Loader {
         self.tabs.options.data_dir.browse
             .clicked()
             .connect(&self.slot_on_data_dir_browse());
+        self.ok_button
+            .clicked()
+            .connect(&self.slot_on_accept());
         self.cancel_button
             .clicked()
             .connect(&self.slot_on_cancel());
@@ -384,8 +402,9 @@ impl Loader {
             actions
         };
 
-        let text = format!("<div>© {}Earthquake Project contributors</div>{}",
+        let text = format!("<div>© {}{}</div>{}",
             copyright_year,
+            env!("CARGO_PKG_AUTHORS"),
             actions,
         );
 
@@ -460,6 +479,7 @@ impl Loader {
 
         layout.add_widget(&{
             let version_label = QLabel::from_q_string(&qs(version()));
+            version_label.set_text_format(TextFormat::PlainText);
             version_label.set_text_interaction_flags(TextInteractionFlag::TextBrowserInteraction.into());
             version_label.set_alignment(AlignmentFlag::AlignHCenter.into());
             version_label
@@ -518,6 +538,11 @@ impl Loader {
         if !path_str.is_empty() {
             self.validate_input(path_str.to_std_string());
         }
+    }
+
+    #[slot(SlotNoArgs)]
+    unsafe fn on_accept(self: &Rc<Self>) {
+        self.dialog.accept()
     }
 
     #[slot(SlotNoArgs)]
@@ -586,7 +611,10 @@ impl Loader {
         };
 
         if is_valid {
-            self.file.input.set_text(&qs(chosen_path));
+            self.file.input.set_text(&qs(&chosen_path));
+            *self.filename.borrow_mut() = Some(chosen_path);
+        } else {
+            *self.filename.borrow_mut() = None;
         }
 
         self.tabs.tabs.set_tab_enabled(self.tabs.options.tab_index, is_valid);
@@ -611,8 +639,7 @@ fn main() -> AResult<()> {
     let files = args.free()?;
 
     QApplication::init(|_| unsafe {
-        let icon = QIcon::from_q_string(&qs("resources/icon.png"));
-        QApplication::set_window_icon(&icon);
+        QApplication::set_window_icon(&QIcon::from_q_string(&qs("resources/icon.png")));
         let filename = if files.is_empty() {
             let ask = Loader::new();
             ask.exec()
