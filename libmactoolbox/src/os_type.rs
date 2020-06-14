@@ -12,8 +12,8 @@ pub struct OSType([u8; 4]);
 
 impl OSType {
     #[must_use]
-    pub fn new(os_type: [u8; 4]) -> OSType {
-        OSType(os_type)
+    pub fn new(os_type: [u8; 4]) -> Self {
+        Self(os_type)
     }
 
     #[inline]
@@ -33,13 +33,13 @@ impl OSType {
 
 impl From<u32> for OSType {
     fn from(value: u32) -> Self {
-        OSType(value.to_be_bytes())
+        Self(value.to_be_bytes())
     }
 }
 
 impl Default for OSType {
     fn default() -> Self {
-        OSType::new([0; 4])
+        Self::new([0; 4])
     }
 }
 
