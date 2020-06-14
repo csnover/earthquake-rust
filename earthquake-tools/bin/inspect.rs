@@ -1,3 +1,15 @@
+// https://github.com/rust-lang/cargo/issues/5034
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::non_ascii_literal,
+    clippy::verbose_bit_mask,
+)]
+#![warn(rust_2018_idioms)]
+
 use anyhow::{bail, Result as AResult};
 use libearthquake::{
     collections::{
@@ -60,12 +72,12 @@ fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>, inspect_data
 
 fn read_file(filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
     match detect(filename)? {
-        FileType::Projector(p, s) => read_projector(p, s, filename, data_dir, inspect_data),
-        FileType::Movie(m, s) => read_movie(m, s, inspect_data),
+        FileType::Projector(p, s) => read_projector(&p, s, filename, data_dir, inspect_data),
+        FileType::Movie(m, s) => read_movie(&m, s, inspect_data),
     }
 }
 
-fn read_movie(info: MovieDetectionInfo, mut stream: SharedStream<File>, inspect_data: bool) -> AResult<()> {
+fn read_movie(info: &MovieDetectionInfo, mut stream: SharedStream<File>, inspect_data: bool) -> AResult<()> {
     println!("{:?}", info);
     if inspect_data {
         match info.kind() {
@@ -105,7 +117,7 @@ fn inspect_riff(stream: &mut SharedStream<File>) -> AResult<()> {
     Ok(())
 }
 
-fn read_projector(info: ProjectorDetectionInfo<File>, mut stream: SharedStream<File>, filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
+fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<File>, filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
     println!("{:?}", info);
     match info.movie() {
         MovieInfo::D3Win(movies) => {
@@ -117,11 +129,11 @@ fn read_projector(info: ProjectorDetectionInfo<File>, mut stream: SharedStream<F
                 }
             }
         },
-        MovieInfo::Internal { stream, offset, .. } => {
+        MovieInfo::Internal { stream: int_stream, offset, .. } => {
             println!("Internal movie at {}", offset);
-            let mut stream = stream.clone();
-            stream.seek(SeekFrom::Start(u64::from(*offset)))?;
-            inspect_riff_container(&mut stream, inspect_data)?;
+            let mut int_stream = int_stream.clone();
+            int_stream.seek(SeekFrom::Start(u64::from(*offset)))?;
+            inspect_riff_container(&mut int_stream, inspect_data)?;
         },
         MovieInfo::External(filenames) => {
             for filename in filenames {
@@ -159,7 +171,7 @@ fn read_projector(info: ProjectorDetectionInfo<File>, mut stream: SharedStream<F
             } else {
                 match detect_data_fork(filename)? {
                     FileType::Projector(..) => bail!("Embedded movie looped back to projector"),
-                    FileType::Movie(m, s) => read_movie(m, s, inspect_data)?,
+                    FileType::Movie(m, s) => read_movie(&m, s, inspect_data)?,
                 };
             }
         },

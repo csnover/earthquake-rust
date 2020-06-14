@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{
     System,
-    string::StringReadExt,
+    string::ReadExt,
 };
 use derive_more::{Deref, DerefMut, Index, IndexMut, IntoIterator};
 use libcommon::{

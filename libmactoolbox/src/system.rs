@@ -12,10 +12,12 @@ impl System {
         // instead
     }
 
+    #[must_use]
     pub fn instance() -> &'static System {
         &INSTANCE
     }
 
+    #[must_use]
     pub fn decoder(&self) -> &'static dyn Decoder {
         self.decoder
     }

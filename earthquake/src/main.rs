@@ -1,3 +1,14 @@
+// https://github.com/rust-lang/cargo/issues/5034
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::non_ascii_literal,
+    clippy::verbose_bit_mask,
+)]
+#![warn(rust_2018_idioms)]
 #![windows_subsystem = "windows"]
 
 use anyhow::Result as AResult;
@@ -286,6 +297,64 @@ impl Loader {
         }
     }
 
+    unsafe fn about_logo() -> cpp_core::CppBox<QPixmap> {
+        let logo = QPixmap::from_q_string(&qs(":/logo.png"));
+        logo.set_device_pixel_ratio(2.0);
+
+        let paint = QPainter::new_1a(&logo);
+        let mut x = 383;
+        let y = 197;
+        for (index, version) in env!("CARGO_PKG_VERSION").split('.').take(2).enumerate() {
+            if index != 0 {
+                if version == "0" {
+                    break;
+                }
+                let dot = QPixmap::from_q_string(&qs(":/logo-dot.png"));
+                dot.set_device_pixel_ratio(2.0);
+                paint.draw_pixmap_2_int_q_pixmap(x, y, &dot);
+                x += dot.width() / dot.device_pixel_ratio() as i32;
+            }
+            let digit = QPixmap::from_q_string(&qs(format!(":/logo-{}.png", version)));
+            digit.set_device_pixel_ratio(2.0);
+            paint.draw_pixmap_2_int_q_pixmap(x, y, &digit);
+            x += digit.width() / digit.device_pixel_ratio() as i32;
+        }
+
+        logo
+    }
+
+    unsafe fn about_text() -> String {
+        let copyright_year = option_env!("VERGEN_COMMIT_DATE").map_or_else(String::new, |date| {
+            date.split('-').next().unwrap().to_string() + " "
+        });
+
+        let actions = {
+            let mut actions = String::new();
+            let has_homepage = option_env!("CARGO_PKG_HOMEPAGE").is_some();
+            if has_homepage || option_env!("CARGO_PKG_REPOSITORY").is_some() {
+                actions += r#"<hr><div>"#;
+                if let Some(homepage) = option_env!("CARGO_PKG_HOMEPAGE") {
+                    actions += &format!(r#"<a style="color: black" href="{}">Home page</a>"#, homepage);
+                }
+                if let Some(repository) = option_env!("CARGO_PKG_REPOSITORY") {
+                    if has_homepage {
+                        actions += " &nbsp;·&nbsp; ";
+                    }
+                    actions += &format!(r#"<a style="color: black" href="{0}">Repository</a> &nbsp;·&nbsp;
+                        <a style="color: black" href="{0}/issues/new">Report a bug</a>"#, repository);
+                }
+                actions += r"</div>";
+            }
+            actions
+        };
+
+        format!("<div>© {}{}</div>{}",
+            copyright_year,
+            env!("CARGO_PKG_AUTHORS"),
+            actions,
+        )
+    }
+
     unsafe fn build_file_box(parent: &QBoxLayout) -> FileWidget {
         let layout = QVBoxLayout::new_0a();
         layout.set_spacing(2);
@@ -379,36 +448,6 @@ impl Loader {
 
     #[slot(SlotNoArgs)]
     unsafe fn on_about(self: &Rc<Self>) {
-        let copyright_year = option_env!("VERGEN_COMMIT_DATE").map_or_else(String::new, |date| {
-            date.split('-').next().unwrap().to_string() + " "
-        });
-
-        let actions = {
-            let mut actions = String::new();
-            let has_homepage = option_env!("CARGO_PKG_HOMEPAGE").is_some();
-            if has_homepage || option_env!("CARGO_PKG_REPOSITORY").is_some() {
-                actions += r#"<hr><div>"#;
-                if let Some(homepage) = option_env!("CARGO_PKG_HOMEPAGE") {
-                    actions += &format!(r#"<a style="color: black" href="{}">Home page</a>"#, homepage);
-                }
-                if let Some(repository) = option_env!("CARGO_PKG_REPOSITORY") {
-                    if has_homepage {
-                        actions += " &nbsp;·&nbsp; ";
-                    }
-                    actions += &format!(r#"<a style="color: black" href="{0}">Repository</a> &nbsp;·&nbsp;
-                        <a style="color: black" href="{0}/issues/new">Report a bug</a>"#, repository);
-                }
-                actions += r"</div>";
-            }
-            actions
-        };
-
-        let text = format!("<div>© {}{}</div>{}",
-            copyright_year,
-            env!("CARGO_PKG_AUTHORS"),
-            actions,
-        );
-
         if let Ok(message_box) = self.about_box.try_borrow() {
             if !message_box.is_null() {
                 message_box.show();
@@ -436,32 +475,6 @@ impl Loader {
 
         message_box.set_style_sheet(&qs("* { color: black; background: white; }"));
 
-        let logo = {
-            let logo = QPixmap::from_q_string(&qs(":/logo.png"));
-            logo.set_device_pixel_ratio(2.0);
-
-            let paint = QPainter::new_1a(&logo);
-            let mut x = 383;
-            let y = 197;
-            for (index, version) in env!("CARGO_PKG_VERSION").split('.').take(2).enumerate() {
-                if index != 0 {
-                    if version == "0" {
-                        break;
-                    }
-                    let dot = QPixmap::from_q_string(&qs(":/logo-dot.png"));
-                    dot.set_device_pixel_ratio(2.0);
-                    paint.draw_pixmap_2_int_q_pixmap(x, y, &dot);
-                    x += dot.width() / dot.device_pixel_ratio() as i32;
-                }
-                let digit = QPixmap::from_q_string(&qs(format!(":/logo-{}.png", version)));
-                digit.set_device_pixel_ratio(2.0);
-                paint.draw_pixmap_2_int_q_pixmap(x, y, &digit);
-                x += digit.width() / digit.device_pixel_ratio() as i32;
-            }
-
-            logo
-        };
-
         let layout = QVBoxLayout::new_0a();
         layout.set_size_constraint(SizeConstraint::SetFixedSize);
         layout.set_contents_margins_4a(0, 0, 0, 10);
@@ -469,7 +482,7 @@ impl Loader {
 
         layout.add_widget(&{
             let about_label = QLabel::new();
-            about_label.set_pixmap(&logo);
+            about_label.set_pixmap(&Self::about_logo());
             about_label.set_contents_margins_1a(&{
                 let margins = about_label.contents_margins();
                 margins.set_bottom(2);
@@ -487,7 +500,7 @@ impl Loader {
         });
 
         layout.add_widget(&{
-            let about_text_label = QLabel::from_q_string(&qs(text));
+            let about_text_label = QLabel::from_q_string(&qs(Self::about_text()));
             about_text_label.set_alignment(AlignmentFlag::AlignHCenter.into());
             about_text_label
         });
@@ -569,7 +582,9 @@ impl Loader {
     }
 
     unsafe fn validate_input(self: &Rc<Self>, chosen_path: String) {
-        let is_valid = if !chosen_path.is_empty() {
+        let is_valid = if chosen_path.is_empty() {
+            false
+        } else {
             match detect(&chosen_path) {
                 Ok(info) => {
                     match info {
@@ -607,8 +622,6 @@ impl Loader {
                     false
                 },
             }
-        } else {
-            false
         };
 
         if is_valid {

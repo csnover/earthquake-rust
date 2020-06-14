@@ -19,7 +19,7 @@ use libmactoolbox::{
     resources::string_list::StringList as StringListResource,
     rsid,
     script_manager::ScriptCode,
-    string::StringReadExt,
+    string::ReadExt,
 };
 use std::{path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
 
@@ -421,8 +421,8 @@ mod pe {
         LittleEndian,
         ReadBytesExt,
         Reader,
+        ReadExt,
         SeekFrom,
-        StringReadExt,
     };
 
     fn find_resource_segment_offset<T: Reader>(input: &mut T, num_sections: u16) -> Option<(u32, u32)> {

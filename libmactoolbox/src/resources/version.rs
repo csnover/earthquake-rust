@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result as AResult};
 use crate::{
     script_manager::CountryCode,
-    string::StringReadExt,
+    string::ReadExt,
 };
 use libcommon::{
     Reader,
@@ -35,6 +35,7 @@ pub struct Version {
 }
 
 impl Version {
+    #[must_use]
     pub fn country_code(&self) -> CountryCode {
         self.country_code
     }

@@ -112,6 +112,7 @@ impl<T: Reader> MacBinary<T> {
         Ok(Self::build(data, &header, Version::V1))
     }
 
+    #[must_use]
     pub fn data_fork(&self) -> Option<SharedStream<T>> {
         if self.data_fork_start == self.data_fork_end {
             None
@@ -120,12 +121,12 @@ impl<T: Reader> MacBinary<T> {
         }
     }
 
-    #[allow(dead_code)]
     #[must_use]
     pub fn name(&self) -> &String {
         &self.name
     }
 
+    #[must_use]
     pub fn resource_fork(&self) -> Option<SharedStream<T>> {
         if self.resource_fork_start == self.resource_fork_end {
             None

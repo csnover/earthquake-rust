@@ -14,14 +14,17 @@ pub struct AppleDouble<T: Reader> {
 }
 
 impl<T: Reader> AppleDouble<T> {
+    #[must_use]
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
 
+    #[must_use]
     pub fn data_fork(&self) -> Option<SharedStream<T>> {
         self.data_fork.clone()
     }
 
+    #[must_use]
     pub fn resource_fork(&self) -> Option<SharedStream<T>> {
         self.resource_fork.clone()
     }

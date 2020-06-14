@@ -1,3 +1,4 @@
+// https://github.com/rust-lang/cargo/issues/5034
 #![warn(clippy::pedantic)]
 #![allow(
     clippy::cast_possible_truncation,
@@ -7,6 +8,7 @@
     clippy::non_ascii_literal,
     clippy::verbose_bit_mask,
 )]
+#![warn(rust_2018_idioms)]
 
 pub mod collections;
 pub mod detection;

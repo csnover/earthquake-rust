@@ -1,3 +1,15 @@
+// https://github.com/rust-lang/cargo/issues/5034
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::non_ascii_literal,
+    clippy::verbose_bit_mask,
+)]
+#![warn(rust_2018_idioms)]
+
 mod apple_double;
 mod application_vise;
 mod mac_binary;

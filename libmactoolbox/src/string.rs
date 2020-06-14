@@ -1,6 +1,6 @@
-use byteorder::{ByteOrder};
+use byteorder::ByteOrder;
 use libcommon::encodings::Decoder;
-use std::{io::{Error, ErrorKind, Read, Result as IoResult}};
+use std::io::{Error, ErrorKind, Read, Result as IoResult};
 
 fn read_pascal_int<T: Read + ?Sized>(decoder: &dyn Decoder, reader: &mut T, size: usize) -> IoResult<String> {
     let mut result = Vec::with_capacity(size);
@@ -10,7 +10,7 @@ fn read_pascal_int<T: Read + ?Sized>(decoder: &dyn Decoder, reader: &mut T, size
     }
 }
 
-pub trait StringReadExt: Read {
+pub trait ReadExt: Read {
     #[inline]
     fn read_c_str(&mut self, decoder: &dyn Decoder) -> IoResult<String> {
         let mut result = Vec::with_capacity(16);
@@ -56,7 +56,7 @@ pub trait StringReadExt: Read {
     }
 }
 
-impl<T: Read + ?Sized> StringReadExt for T {}
+impl<T: Read + ?Sized> ReadExt for T {}
 
 #[cfg(test)]
 mod test {

@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use libcommon::{encodings::MAC_ROMAN, Reader};
-use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::StringReadExt};
+use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::ReadExt};
 use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::Rc};
 
 #[derive(Debug)]
@@ -144,7 +144,7 @@ impl<T: Reader> ResourceFile<T> {
 
     // TODO: Replace this API with a typed API
     #[deprecated]
-    pub fn get(&self, id: ResourceId) -> Option<Resource<T>> {
+    pub fn get(&self, id: ResourceId) -> Option<Resource<'_, T>> {
         if let Some(offsets) = self.resource_map.get(&id) {
             Some(Resource {
                 id,
@@ -175,7 +175,7 @@ impl<T: Reader> ResourceFile<T> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Resource<T>> {
+    pub fn iter(&self) -> impl Iterator<Item = Resource<'_, T>> {
         self.resource_map.iter().map(move |(k, v)| Resource {
             id: *k,
             owner: self,
