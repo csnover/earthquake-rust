@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Result as AResult};
+use crate::{
+    script_manager::CountryCode,
+    string::StringReadExt,
+};
 use libcommon::{
     Reader,
     Resource,
-};
-use libmactoolbox::{
-    script_manager::CountryCode,
-    string::StringReadExt,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;

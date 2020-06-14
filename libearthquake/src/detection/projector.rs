@@ -6,7 +6,6 @@ use crate::{
     collections::riff,
     detection::projector_settings::ProjectorSettings,
     panic_sample,
-    resources::apple::string_list::StringList as StringListResource,
 };
 use derive_more::Display;
 use libcommon::{
@@ -17,6 +16,7 @@ use libcommon::{
 };
 use libmactoolbox::{
     ResourceFile,
+    resources::string_list::StringList as StringListResource,
     rsid,
     script_manager::ScriptCode,
     string::StringReadExt,

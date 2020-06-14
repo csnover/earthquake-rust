@@ -3,7 +3,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{
     ensure_sample,
-    resources::{macromedia::{ByteVec, List}},
+    resources::{ByteVec, List},
 };
 use libcommon::{
     Reader,

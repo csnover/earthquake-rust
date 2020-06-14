@@ -1,13 +1,13 @@
 use anyhow::{Context, Result as AResult};
 use byteordered::{ByteOrdered, Endianness};
+use crate::{
+    System,
+    string::StringReadExt,
+};
 use derive_more::{Deref, DerefMut, Index, IndexMut, IntoIterator};
 use libcommon::{
     Reader,
     Resource,
-};
-use libmactoolbox::{
-    System,
-    string::StringReadExt,
 };
 
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut, IntoIterator)]

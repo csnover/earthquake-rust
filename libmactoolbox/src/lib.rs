@@ -2,6 +2,7 @@ mod apple_double;
 mod application_vise;
 mod mac_binary;
 mod os_type;
+pub mod resources;
 mod resource_file;
 mod resource_id;
 pub mod script_manager;
