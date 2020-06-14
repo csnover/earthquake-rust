@@ -1,0 +1,27 @@
+[package]
+name = "earthquake"
+version = "1.0.0"
+authors = ["Earthquake Project contributors"]
+description = "Plays Macromedia Director movies"
+homepage = "https://github.com/Earthquake-Project/earthquake-rust"
+repository = "https://github.com/Earthquake-Project/earthquake-rust"
+readme = "../README.md"
+license = "Apache-2.0"
+edition = "2018"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1.0"
+cpp_core = "0.6"
+libearthquake = { path = "../libearthquake" }
+libmactoolbox = { path = "../libmactoolbox" }
+pico-args = "0.3"
+qt_core = "0.5"
+qt_gui = "0.5"
+qt_widgets = "0.5"
+strum = "0.18"
+strum_macros = "0.18"
+
+[build-dependencies]
+qt_ritual_build = "0.5"
+vergen = "3"

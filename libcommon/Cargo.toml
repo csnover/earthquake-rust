@@ -1,0 +1,15 @@
+[package]
+name = "libcommon"
+version = "1.0.0"
+authors = ["Earthquake Project contributors"]
+description = "Support library for Earthquake Project common functionality"
+homepage = "https://github.com/Earthquake-Project/earthquake-rust"
+repository = "https://github.com/Earthquake-Project/earthquake-rust"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0"
+byteorder = "1.3"
+byteordered = "0.4"
+encoding = "0.2"

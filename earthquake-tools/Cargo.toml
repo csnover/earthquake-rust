@@ -1,0 +1,25 @@
+[package]
+name = "earthquake-tools"
+version = "1.0.0"
+authors = ["Earthquake Project contributors"]
+description = "Open-source Director Projector reimplementation"
+homepage = "https://github.com/Earthquake-Project/earthquake-rust"
+repository = "https://github.com/Earthquake-Project/earthquake-rust"
+readme = "../README.md"
+license = "Apache-2.0"
+edition = "2018"
+build = "../build.rs"
+
+[[bin]]
+name = "inspect"
+path = "bin/inspect.rs"
+
+[dependencies]
+anyhow = "1.0"
+pico-args = "0.3"
+libcommon = { path = "../libcommon" }
+libearthquake = { path = "../libearthquake" }
+libmactoolbox = { path = "../libmactoolbox" }
+
+[build-dependencies]
+vergen = "3"

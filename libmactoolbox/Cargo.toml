@@ -1,0 +1,24 @@
+[package]
+name = "libmactoolbox"
+version = "1.0.0"
+authors = ["Earthquake Project contributors"]
+description = "Open-source Macintosh Toolbox reimplementation"
+homepage = "https://github.com/Earthquake-Project/earthquake-rust"
+repository = "https://github.com/Earthquake-Project/earthquake-rust"
+readme = "README.md"
+license = "Apache-2.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0"
+bitflags = "1.2"
+byteorder = "1.3"
+byteordered = "0.4"
+crc = "1.8"
+derive_more = "0.99"
+encoding = "0.2"
+libcommon = { path = "../libcommon" }
+num-derive = "0.3"
+num-traits = "0.2"
+strum = "0.18"
+strum_macros = "0.18"
