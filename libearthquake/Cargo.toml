@@ -15,7 +15,6 @@ anyhow = "1.0"
 bitflags = "1.2"
 byteorder = "1.3"
 byteordered = "0.4"
-crc = "1.8"
 derive_more = "0.99"
 libcommon = { path = "../libcommon" }
 libmactoolbox = { path = "../libmactoolbox" }
@@ -23,8 +22,6 @@ num-derive = "0.3"
 num-traits = "0.2"
 pest = "2.1"
 pest_derive = "2.1"
-strum = "0.18"
-strum_macros = "0.18"
 
 [build-dependencies]
 vergen = "3"

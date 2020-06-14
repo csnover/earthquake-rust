@@ -20,7 +20,6 @@ qt_core = "0.5"
 qt_gui = "0.5"
 qt_widgets = "0.5"
 strum = "0.18"
-strum_macros = "0.18"
 
 [build-dependencies]
 qt_ritual_build = "0.5"

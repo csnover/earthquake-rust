@@ -16,7 +16,6 @@ byteorder = "1.3"
 byteordered = "0.4"
 crc = "1.8"
 derive_more = "0.99"
-encoding = "0.2"
 libcommon = { path = "../libcommon" }
 num-derive = "0.3"
 num-traits = "0.2"
