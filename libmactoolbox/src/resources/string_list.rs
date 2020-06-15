@@ -11,7 +11,15 @@ use libcommon::{
 };
 
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut, IntoIterator)]
+#[into_iterator(owned, ref, ref_mut)]
 pub struct StringList(Vec<String>);
+
+impl StringList {
+    #[must_use]
+    pub fn into_vec(mut self) -> Vec<String> {
+        std::mem::take(&mut self.0)
+    }
+}
 
 impl Resource for StringList {
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _size: u32) -> AResult<Self> where Self: Sized {

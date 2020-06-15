@@ -21,7 +21,7 @@ use libmactoolbox::{
     script_manager::ScriptCode,
     string::ReadExt,
 };
-use std::{path::PathBuf, io::{self, Cursor, Read, Seek, SeekFrom}};
+use std::{path::PathBuf, io::{Read, Seek, SeekFrom}, rc::Rc};
 
 #[derive(Debug)]
 pub struct DetectionInfo<T: Reader> {
@@ -141,7 +141,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
         let resource_id = rsid!(os_type, 0);
-        rom.get(resource_id).unwrap().data()?
+        rom.load::<Vec<u8>>(resource_id)?
     };
 
     let (config, movie) = match version {
@@ -150,19 +150,14 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
             let num_movies = BigEndian::read_u16(&config[6..]);
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
-                // TODO: Should parse this in Resource instead of pulling it from
-                // the ROM and then pushing it into Resource?
-                let resource_id = rsid!(b"STR#", 0);
-                let external_files = rom.get(resource_id).ok_or_else(|| anyhow!("Missing external file list"))?;
-                let data = external_files.data().with_context(|| format!("Can’t read {}", resource_id))?;
-                let data_size = data.len() as u32;
-                let mut cursor = ByteOrdered::new(Cursor::new(data), Endianness::Big);
-                // TODO: May need to CHARDET the paths
-                let mut movies = Vec::with_capacity(usize::from(num_movies));
-                for filename in StringListResource::load(&mut cursor, data_size)? {
-                    movies.push(filename.replace(':', "/"));
+                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0))
+                    .with_context(|| anyhow!("Missing external file list"))?;
+                let mut movies = Rc::try_unwrap(movies)
+                    .or_else(|_| bail!("Could not take ownership of movie list"))?;
+                for filename in &mut movies {
+                    *filename = filename.replace(':', "/");
                 }
-                (config, Movie::External(movies))
+                (config, Movie::External(movies.into_vec()))
             } else {
                 // Embedded movies start at Resource ID 1024
                 (config, Movie::Embedded(num_movies))
@@ -414,10 +409,10 @@ fn internal_movie<T: Reader>(reader: &mut SharedStream<T>, offset: u32) -> AResu
 }
 
 mod pe {
+    use std::io;
     use super::{
         AResult,
         ByteOrder,
-        io,
         LittleEndian,
         ReadBytesExt,
         Reader,

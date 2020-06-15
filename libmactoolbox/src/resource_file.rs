@@ -142,39 +142,6 @@ impl<T: Reader> ResourceFile<T> {
         R::load(&mut input.as_mut(), size).map(Rc::new)
     }
 
-    // TODO: Replace this API with a typed API
-    #[deprecated]
-    pub fn get(&self, id: ResourceId) -> Option<Resource<'_, T>> {
-        if let Some(offsets) = self.resource_map.get(&id) {
-            Some(Resource {
-                id,
-                owner: self,
-                offsets: *offsets,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn get_indexed_string(&self, id: i16, index: i16) -> String {
-        if let Some(resource) = self.get(rsid!(b"STR#", id)) {
-            let mut input = self.input.borrow_mut();
-            input.seek(SeekFrom::Start(u64::from(resource.offsets.data_offset))).unwrap();
-            let num_strings = input.read_i16().unwrap();
-            if index >= num_strings {
-                String::new()
-            } else {
-                for _ in 0..index {
-                    let size = input.read_u8().unwrap();
-                    input.skip(u64::from(size)).unwrap();
-                }
-                input.read_pascal_str(MAC_ROMAN).unwrap()
-            }
-        } else {
-            String::new()
-        }
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = Resource<'_, T>> {
         self.resource_map.iter().map(move |(k, v)| Resource {
             id: *k,
@@ -218,8 +185,8 @@ impl<T: Reader> ResourceFile<T> {
         };
 
         if let Some(resource_id) = resource_id {
-            let resource = self.get(rsid!(b"CODE", resource_id)).unwrap();
-            let resource_data = resource.data()?;
+            let resource_data = self.load::<Vec<u8>>(rsid!(b"CODE", resource_id))
+                .context("Could not find the Application VISE CODE resource")?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
                 .ok_or_else(|| anyhow!("Could not find the Application VISE shared dictionary"))?;
             self.decompressor.replace(DecompressorState::Loaded(ApplicationVise::new(shared_data.to_vec())));
