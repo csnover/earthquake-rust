@@ -12,7 +12,7 @@
 #![windows_subsystem = "windows"]
 
 use anyhow::Result as AResult;
-use cpp_core::{NullPtr, Ptr, StaticUpcast};
+use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
 use libearthquake::{
     detection::{detect, FileType, movie::Kind as MovieKind},
     name,
@@ -28,6 +28,7 @@ use qt_core::{
     QObject,
     QPtr,
     qs,
+    QString,
     QVariant,
     slot,
     SlotNoArgs,
@@ -298,7 +299,7 @@ impl Loader {
         }
     }
 
-    unsafe fn about_logo() -> cpp_core::CppBox<QPixmap> {
+    unsafe fn about_logo() -> CppBox<QPixmap> {
         let logo = QPixmap::from_q_string(&qs(":/logo.png"));
         logo.set_device_pixel_ratio(2.0);
 
@@ -551,7 +552,7 @@ impl Loader {
             NullPtr,
             FileDialogOption::ReadOnly.into());
         if !path_str.is_empty() {
-            self.validate_input(path_str.to_std_string());
+            self.validate_input(&path_str);
         }
     }
 
@@ -579,14 +580,15 @@ impl Loader {
 
     #[slot(SlotNoArgs)]
     unsafe fn on_input(self: &Rc<Self>) {
-        self.validate_input(self.file.input.text().to_std_string());
+        self.validate_input(&self.file.input.text());
     }
 
-    unsafe fn validate_input(self: &Rc<Self>, chosen_path: String) {
+    unsafe fn validate_input(self: &Rc<Self>, chosen_path: &CppBox<QString>) {
+        let std_path = chosen_path.to_std_string();
         let is_valid = if chosen_path.is_empty() {
             false
         } else {
-            match detect(&chosen_path) {
+            match detect(&std_path) {
                 Ok(info) => {
                     match info {
                         FileType::Projector(info, ..) => {
@@ -597,7 +599,7 @@ impl Loader {
                             true
                         },
                         FileType::Movie(info, ..) if info.kind() != MovieKind::Cast => {
-                            let path = Path::new(&chosen_path);
+                            let path = Path::new(&std_path);
                             self.tabs.info.file_name.set_text(&qs(path.file_stem().unwrap().to_string_lossy()));
                             self.tabs.info.kind.set_text(&qs(format!("Director {} {}", info.version(), info.kind())));
                             // TODO: Heuristic detection of character set
@@ -626,8 +628,8 @@ impl Loader {
         };
 
         if is_valid {
-            self.file.input.set_text(&qs(&chosen_path));
-            *self.filename.borrow_mut() = Some(chosen_path);
+            self.file.input.set_text(chosen_path);
+            *self.filename.borrow_mut() = Some(std_path);
         } else {
             *self.filename.borrow_mut() = None;
         }
