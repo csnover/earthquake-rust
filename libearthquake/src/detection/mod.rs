@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context, Result as AResult};
 use crate::{collections::riff, io::open_resource_fork};
 use libcommon::{Reader, SharedStream};
 use libmactoolbox::{AppleDouble, MacBinary};
-use std::{fs::File, io::{Seek, SeekFrom}};
+use std::{fs::File, io::{Seek, SeekFrom}, path::Path};
 
 // 1. D4+Mac projector: resource fork w/ projector ostype + maybe riff in data fork
 // 2. D3Mac projector: resource fork w/ projector ostype
@@ -22,24 +22,24 @@ pub enum FileType {
     Movie(movie::DetectionInfo, SharedStream<File>),
 }
 
-pub fn detect(filename: &str) -> AResult<FileType> {
-    detect_resource_fork(filename)
-        .or_else(|e| flatten_errors(detect_apple_single_or_apple_double(filename, false), &e))
-        .or_else(|e| flatten_errors(detect_mac_binary(filename, false), &e))
-        .or_else(|e| flatten_errors(detect_file(filename), &e))
+pub fn detect<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
+    detect_resource_fork(&filename)
+        .or_else(|e| flatten_errors(detect_apple_single_or_apple_double(&filename, false), &e))
+        .or_else(|e| flatten_errors(detect_mac_binary(&filename, false), &e))
+        .or_else(|e| flatten_errors(detect_file(&filename), &e))
         .context("Detection failed")
 }
 
-pub fn detect_data_fork(filename: &str) -> AResult<FileType> {
-    detect_apple_single_or_apple_double(filename, true)
-        .or_else(|e| flatten_errors(detect_mac_binary(filename, true), &e))
+pub fn detect_data_fork<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
+    detect_apple_single_or_apple_double(&filename, true)
+        .or_else(|e| flatten_errors(detect_mac_binary(&filename, true), &e))
         .or_else(|e| {
-            let file = SharedStream::new(File::open(filename).with_context(|| format!("Could not open {}", filename))?);
+            let file = SharedStream::new(File::open(&filename).with_context(|| format!("Could not open {}", filename.as_ref().display()))?);
             flatten_errors(detect_riff(file), &e)
         })
 }
 
-fn detect_apple_single_or_apple_double(filename: &str, only_data_fork: bool) -> AResult<FileType> {
+fn detect_apple_single_or_apple_double<T: AsRef<Path>>(filename: T, only_data_fork: bool) -> AResult<FileType> {
     let apple_file = AppleDouble::open(filename)?;
 
     let resource_fork = if only_data_fork {
@@ -64,9 +64,11 @@ fn detect_apple_single_or_apple_double(filename: &str, only_data_fork: bool) -> 
     }
 }
 
-fn detect_file(filename: &str) -> AResult<FileType> {
-    let file = SharedStream::new(File::open(filename).with_context(|| format!("Could not open {}", filename))?);
-    projector::detect_win(&mut file.clone())
+fn detect_file<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
+    let file = SharedStream::new(File::open(&filename)
+        .with_context(|| format!("Could not open {}", filename.as_ref().display()))?);
+
+        projector::detect_win(&mut file.clone())
         .map(|p| FileType::Projector(p, file.clone()))
         .or_else(|e| flatten_errors(detect_mac(file.clone(), None::<SharedStream<File>>), &e))
         .or_else(|e| flatten_errors(detect_riff(file), &e))
@@ -88,8 +90,10 @@ fn detect_mac(mut stream: SharedStream<File>, mut data_fork: Option<SharedStream
         })
 }
 
-fn detect_mac_binary(filename: &str, only_data_fork: bool) -> AResult<FileType> {
-    let mac_binary = MacBinary::new(File::open(filename).with_context(|| format!("Could not open {}", filename))?)?;
+fn detect_mac_binary<T: AsRef<Path>>(filename: T, only_data_fork: bool) -> AResult<FileType> {
+    let mac_binary = MacBinary::new(File::open(&filename)
+        .with_context(|| format!("Could not open {}", filename.as_ref().display()))?)?;
+
     let resource_fork = if only_data_fork {
         None
     } else {
@@ -111,12 +115,12 @@ fn detect_mac_binary(filename: &str, only_data_fork: bool) -> AResult<FileType> 
     }
 }
 
-fn detect_resource_fork(filename: &str) -> AResult<FileType> {
+fn detect_resource_fork<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
     detect_mac(
         // Using or_else here replaces the "File not found" error instead of
         // giving it an extra context
-        SharedStream::new(open_resource_fork(filename).or_else(|_| bail!("No resource fork on filesystem"))?),
-        Some(SharedStream::new(File::open(filename).context("Could not open data fork")?))
+        SharedStream::new(open_resource_fork(&filename).or_else(|_| bail!("No resource fork on filesystem"))?),
+        Some(SharedStream::new(File::open(&filename).context("Could not open data fork")?))
     )
 }
 

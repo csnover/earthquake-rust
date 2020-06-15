@@ -1,7 +1,8 @@
-use std::{fs::{File, self}, io};
+use std::{ffi::OsString, fs::{File, self}, io, path::Path};
 
-fn open_named_fork<T: AsRef<str>>(filename: T) -> io::Result<File> {
-    let path = format!("{}/..namedfork/rsrc", filename.as_ref());
+fn open_named_fork<T: AsRef<Path>>(filename: T) -> io::Result<File> {
+    let mut path = filename.as_ref().to_path_buf();
+    path.push("..namedfork/rsrc");
     let metadata = fs::metadata(&path)?;
     if metadata.len() > 0 {
         File::open(&path)
@@ -10,7 +11,17 @@ fn open_named_fork<T: AsRef<str>>(filename: T) -> io::Result<File> {
     }
 }
 
-pub fn open_resource_fork<T: AsRef<str>>(filename: T) -> io::Result<File> {
+pub fn open_resource_fork<T: AsRef<Path>>(filename: T) -> io::Result<File> {
     open_named_fork(filename.as_ref())
-        .or_else(|_| File::open(format!("{}.rsrc", filename.as_ref())))
+        .or_else(|_| File::open({
+            let mut path = filename.as_ref().to_path_buf();
+            path.set_extension({
+                path.extension().map_or(OsString::from("rsrc"), |ext| {
+                    let mut ext = ext.to_os_string();
+                    ext.push(".rsrc");
+                    ext
+                })
+            });
+            path
+        }))
 }

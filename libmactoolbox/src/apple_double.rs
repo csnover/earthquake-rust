@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteordered::ByteOrdered;
 use libcommon::{Reader, SharedStream};
-use std::{fs::File, io, path::PathBuf};
+use std::{ffi::OsString, fs::File, io, path::{Path, PathBuf}};
 use super::script_manager::decode_text;
 
 pub struct AppleDouble<T: Reader> {
@@ -31,15 +31,15 @@ impl<T: Reader> AppleDouble<T> {
 }
 
 impl AppleDouble<File> {
-    pub fn open(filename: &str) -> AResult<Self> {
+    pub fn open<U: AsRef<Path>>(filename: U) -> AResult<Self> {
         const DOUBLE_MAGIC: u32 = 0x51607;
         const SINGLE_MAGIC: u32 = 0x51600;
 
         let (found_double, mut input) = {
             let mut found_double = true;
-            let input = ByteOrdered::be(SharedStream::new(open_apple_double(filename).or_else(|_| {
+            let input = ByteOrdered::be(SharedStream::new(open_apple_double(&filename).or_else(|_| {
                 found_double = false;
-                File::open(filename)
+                File::open(&filename)
             })?));
             (found_double, input)
         };
@@ -99,7 +99,7 @@ impl AppleDouble<File> {
         }
 
         if magic == DOUBLE_MAGIC && data_fork.is_none() && found_double {
-            data_fork = if let Ok(file) = File::open(filename) {
+            data_fork = if let Ok(file) = File::open(&filename) {
                 Some(SharedStream::new(file))
             } else {
                 None
@@ -120,9 +120,12 @@ impl AppleDouble<File> {
     }
 }
 
-fn open_apple_double<T: AsRef<str>>(filename: T) -> io::Result<File> {
+fn open_apple_double<T: AsRef<Path>>(filename: T) -> io::Result<File> {
     let mut path = PathBuf::from(filename.as_ref());
-    let filename = format!("._{}", path.file_name().unwrap().to_str().unwrap());
-    path.set_file_name(filename);
+    path.set_file_name({
+        let mut file_name = OsString::from("._");
+        file_name.push(path.file_name().unwrap());
+        file_name
+    });
     File::open(path)
 }
