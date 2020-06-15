@@ -106,7 +106,7 @@ impl<T> Seek for SharedStream<T> where T: Reader {
         match new_pos {
             Some(n) if n >= self.start_pos && n <= self.end_pos => {
                 self.current_pos = n;
-                Ok(self.current_pos)
+                Ok(n - self.start_pos)
             },
             _ => Err(Error::new(ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position"))
         }
