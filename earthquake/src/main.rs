@@ -48,6 +48,7 @@ use qt_widgets::{
     q_completer::CompletionMode,
     q_dialog::DialogCode,
     q_dialog_button_box::ButtonRole,
+    q_file_dialog::Option as FileDialogOption,
     q_layout::SizeConstraint,
     q_message_box::{Icon as MBIcon, StandardButton as MBButton},
     QAction,
@@ -548,7 +549,7 @@ impl Loader {
             &self.file.input.text(),
             &qs("Projectors (*.exe *.app *.rsrc *.bin);;Movies (*.dir *.dxr *.mmm);;All files (*)"),
             NullPtr,
-            0.into());
+            FileDialogOption::ReadOnly.into());
         if !path_str.is_empty() {
             self.validate_input(path_str.to_std_string());
         }
