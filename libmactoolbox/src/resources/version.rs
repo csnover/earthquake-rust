@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result as AResult};
+use anyhow::{Context, Result as AResult};
 use crate::{
     script_manager::CountryCode,
     string::ReadExt,
@@ -52,7 +52,7 @@ impl Resource for Version {
 
         let country_code = input.read_u16()?;
         let country_code = CountryCode::from_u16(country_code)
-            .ok_or_else(|| anyhow!("Invalid country code {}", country_code))?;
+            .with_context(|| format!("Invalid country code {}", country_code))?;
 
         Ok(Self {
             version,

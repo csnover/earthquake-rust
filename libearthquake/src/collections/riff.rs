@@ -283,8 +283,8 @@ impl<T: Reader> Riff<T> {
             let size = input.read_u32::<DE>()?;
             let offset = input.read_u32::<DE>()?;
             let flags_bits = input.read_u16::<DE>()?;
-            let flags = MemoryMapFlags::from_bits(flags_bits).ok_or_else(|| {
-                anyhow!("Invalid flags in mmap entry {}: {:x}", index, flags_bits)
+            let flags = MemoryMapFlags::from_bits(flags_bits).with_context(|| {
+                format!("Invalid flags in mmap entry {}: {:x}", index, flags_bits)
             })?;
             let field_e = input.read_u16::<DE>()?;
             let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);

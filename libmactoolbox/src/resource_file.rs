@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result as AResult};
+use anyhow::{bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
@@ -42,7 +42,7 @@ impl<T: Reader> ResourceFile<T> {
                 }
 
                 let offset = i as usize * TYPE_LIST_ENTRY_SIZE + 4;
-                let entry_slice = &list.get(offset..offset + 2).ok_or_else(|| anyhow!("Premature end of resource list at {}/{}", i, num_types))?;
+                let entry_slice = &list.get(offset..offset + 2).with_context(|| format!("Premature end of resource list at {}/{}", i, num_types))?;
                 num_resources += u32::from(BigEndian::read_u16(entry_slice)) + 1;
             }
             (ByteOrdered::be(Cursor::new(list)), HashMap::with_capacity(num_resources as usize))
@@ -188,7 +188,7 @@ impl<T: Reader> ResourceFile<T> {
             let resource_data = self.load::<Vec<u8>>(rsid!(b"CODE", resource_id))
                 .context("Could not find the Application VISE CODE resource")?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
-                .ok_or_else(|| anyhow!("Could not find the Application VISE shared dictionary"))?;
+                .context("Could not find the Application VISE shared dictionary")?;
             self.decompressor.replace(DecompressorState::Loaded(ApplicationVise::new(shared_data.to_vec())));
         }
 

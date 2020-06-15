@@ -1,6 +1,6 @@
 #![allow(clippy::struct_excessive_bools)]
 
-use anyhow::{anyhow, Result as AResult};
+use anyhow::{Context, Result as AResult};
 use crate::{bail_sample, ensure_sample};
 use super::projector::{
     MacCPU,
@@ -187,7 +187,7 @@ impl ProjectorSettings {
             MacCPU::M68K
         } else {
             MacCPU::from_bits(bits[7])
-                .ok_or_else(|| anyhow!("D4+Mac PJst unknown CPU {}", bits[7]))?
+                .with_context(|| format!("D4+Mac PJst unknown CPU {}", bits[7]))?
         };
         let resize_stage           = bits[11] & 1 != 0;
         let switch_color_depth     = bits[10] & 0x40 != 0;

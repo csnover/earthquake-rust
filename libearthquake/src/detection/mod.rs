@@ -113,6 +113,8 @@ fn detect_mac_binary(filename: &str, only_data_fork: bool) -> AResult<FileType> 
 
 fn detect_resource_fork(filename: &str) -> AResult<FileType> {
     detect_mac(
+        // Using or_else here replaces the "File not found" error instead of
+        // giving it an extra context
         SharedStream::new(open_resource_fork(filename).or_else(|_| bail!("No resource fork on filesystem"))?),
         Some(SharedStream::new(File::open(filename).context("Could not open data fork")?))
     )

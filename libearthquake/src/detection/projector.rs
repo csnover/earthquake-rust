@@ -151,9 +151,9 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
                 let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0))
-                    .with_context(|| anyhow!("Missing external file list"))?;
+                    .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
-                    .or_else(|_| bail!("Could not take ownership of movie list"))?;
+                    .map_err(|_| anyhow!("Could not take ownership of movie list"))?;
                 for filename in &mut movies {
                     *filename = filename.replace(':', "/");
                 }
