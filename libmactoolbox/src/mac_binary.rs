@@ -61,17 +61,17 @@ impl<T: Reader> MacBinary<T> {
         let start_pos = data.pos()?;
         let header = {
             let mut header = [ 0; 128 ];
-            data.read_exact(&mut header).context("Not a MacBinary file; file too small")?;
+            data.read_exact(&mut header).context("File too small")?;
             data.seek(SeekFrom::Start(start_pos))?;
             header
         };
 
         if header[0] != 0 {
-            bail!("Not a MacBinary file; bad magic byte 0");
+            bail!("Bad magic byte 0");
         }
 
         if header[74] != 0 {
-            bail!("Not a MacBinary file; bad magic byte 1");
+            bail!("Bad magic byte 1");
         }
 
         if OSType::from(BigEndian::read_u32(&header[102..])) == os!(b"mBIN") {
@@ -89,24 +89,24 @@ impl<T: Reader> MacBinary<T> {
         }
 
         if header[82] != 0 {
-            bail!("Not a MacBinary file; bad magic byte 2");
+            bail!("Bad magic byte 2");
         }
 
         for byte in &header[101..=125] {
             if *byte != 0 {
-                bail!("Not a MacBinary file; bad header padding");
+                bail!("Bad header padding");
             }
         }
 
         if header[1] < 1 || header[1] > 63 {
-            bail!("Not a MacBinary file; bad filename length");
+            bail!("Bad filename length");
         }
 
         let resource_size = BigEndian::read_u32(&header[83..]);
         let data_size = BigEndian::read_u32(&header[87..]);
 
         if resource_size > 0x7f_ffff || data_size > 0x7f_ffff || (resource_size == 0 && data_size == 0) {
-            bail!("Not a MacBinary file; bad fork length");
+            bail!("Bad fork length");
         }
 
         Ok(Self::build(data, &header, Version::V1))

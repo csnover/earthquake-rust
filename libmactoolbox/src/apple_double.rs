@@ -44,24 +44,24 @@ impl AppleDouble<File> {
             (found_double, input)
         };
 
-        let magic = input.read_u32().context("Not an AppleSingle/AppleDouble file; could not read magic")?;
+        let magic = input.read_u32().context("Could not read magic")?;
         if magic != DOUBLE_MAGIC && magic != SINGLE_MAGIC {
-            bail!("Not an AppleSingle/AppleDouble file; bad magic");
+            bail!("Bad magic");
         }
 
-        let version = input.read_u32().context("Not an AppleSingle/AppleDouble file; could not read version number")?;
+        let version = input.read_u32().context("Could not read version number")?;
         if version != 0x10000 && version != 0x20000 {
-            bail!("Unknown AppleSingle/AppleDouble version {:x}", version);
+            bail!("Unknown version {:x}", version);
         }
 
         // In V1 this is an ASCII string, in V2 it is zero-filled, in all cases
         // we do not care about it
-        input.skip(16).context("Could not seek past AppleSingle/AppleDouble home file system name")?;
+        input.skip(16).context("Could not seek past home file system name")?;
 
-        let num_entries = input.read_u16().context("Could not read number of AppleSingle/AppleDouble entries")?;
+        let num_entries = input.read_u16().context("Could not read number of entries")?;
 
         if num_entries == 0 {
-            bail!("AppleSingle/AppleDouble file has no resource entries");
+            bail!("No resource entries");
         }
 
         let mut data_fork = None;
@@ -70,12 +70,12 @@ impl AppleDouble<File> {
         let mut name_script_code = 0;
 
         for index in 0..num_entries {
-            let entry_id = input.read_u32().with_context(|| format!("Could not read ID of AppleSingle/AppleDouble entry {}", index))?;
-            let offset = input.read_u32().with_context(|| format!("Could not read offset of AppleSingle/AppleDouble entry {}", index))?;
-            let length = input.read_u32().with_context(|| format!("Could not read length of AppleSingle/AppleDouble entry {}", index))?;
+            let entry_id = input.read_u32().with_context(|| format!("Could not read ID of entry {}", index))?;
+            let offset = input.read_u32().with_context(|| format!("Could not read offset of entry {}", index))?;
+            let length = input.read_u32().with_context(|| format!("Could not read length of entry {}", index))?;
 
             match entry_id {
-                0 => bail!("Invalid ID 0 for AppleSingle/AppleDouble entry {}", index),
+                0 => bail!("Invalid ID 0 for entry {}", index),
                 1 => {
                     data_fork = Some(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
                 },
@@ -87,15 +87,15 @@ impl AppleDouble<File> {
                 },
                 9 => {
                     let mut finder_info = ByteOrdered::be(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
-                    finder_info.skip(26).context("Could not seek to AppleSingle/AppleDouble filename script code")?;
-                    name_script_code = finder_info.read_u8().context("Could not read AppleSingle/AppleDouble script code")?;
+                    finder_info.skip(26).context("Could not seek to filename script code")?;
+                    name_script_code = finder_info.read_u8().context("Could not read script code")?;
                 },
                 _ => {},
             };
         }
 
         if resource_fork.is_none() {
-            bail!("AppleSingle/AppleDouble missing resource fork");
+            bail!("Missing resource fork");
         }
 
         if magic == DOUBLE_MAGIC && data_fork.is_none() && found_double {

@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result as AResult};
+use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
@@ -24,7 +24,7 @@ impl<T: Reader> ResourceFile<T> {
         let map_offset = input.read_u32().context("Can’t read map offset")?;
 
         input.seek(SeekFrom::Start(u64::from(map_offset) + RESOURCE_MAP_OFFSETS_OFFSET))
-            .with_context(|| format!("Bad resource map offset {}", map_offset))?;
+            .map_err(|_| anyhow!("Bad resource map offset {}", map_offset))?;
         let types_offset = u64::from(map_offset + u32::from(input.read_u16().context("Can’t read types offset")?));
         let names_offset = map_offset + u32::from(input.read_u16().context("Can’t read names offset")?);
         let num_types = input.read_u16()? + 1;
