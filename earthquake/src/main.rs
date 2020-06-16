@@ -13,6 +13,7 @@
 
 use anyhow::Result as AResult;
 use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
+use fluent_ergonomics::FluentErgo;
 use libearthquake::{
     detection::{detect, FileType, movie::Kind as MovieKind},
     name,
@@ -25,6 +26,7 @@ use qt_core::{
     q_init_resource,
     AlignmentFlag,
     QBox,
+    QLocale,
     QObject,
     QPtr,
     qs,
@@ -76,6 +78,19 @@ use qt_widgets::{
 use std::{cell::RefCell, env, path::{Path, PathBuf}, process::exit, rc::Rc};
 use strum::VariantNames;
 
+// TODO: This imperative style of translation does not handle the case where the
+// locale changes; it should register widgets so that they can be re-translated
+// on the fly instead by re-setting their text.
+macro_rules! tr {
+    ($l: expr, $msgid: expr) => ({ $l.tr($msgid, None).unwrap_or_else(|e| e.to_string()) });
+    ($l: expr, $msgid: expr, $args: tt) => ({ $l.tr($msgid, Some(&::fluent::fluent_args!$args)).unwrap_or_else(|e| e.to_string()) });
+}
+
+macro_rules! qtr {
+    ($l: expr, $msgid: expr) => ({ &::qt_core::qs(&tr!($l, $msgid)) });
+    ($l: expr, $msgid: expr, $args: tt) => ({ &::qt_core::qs(&tr!($l, $msgid, $args)) });
+}
+
 struct FileWidget {
     layout: QBox<QHBoxLayout>,
     input: QBox<QLineEdit>,
@@ -86,7 +101,7 @@ struct FileWidget {
 }
 
 impl FileWidget {
-    pub fn new(for_directory: bool) -> Self {
+    pub fn new(l: &FluentErgo, for_directory: bool) -> Self {
         unsafe {
             let layout = QHBoxLayout::new_0a();
 
@@ -101,18 +116,16 @@ impl FileWidget {
             completer.set_completion_mode(CompletionMode::PopupCompletion);
             input.set_completer(&completer);
 
-            let file_name = if for_directory { "data" } else { "movie.dxr" };
+            let key = if for_directory { "data-dir" } else { "file-load" };
 
-            input.set_placeholder_text(&qs(if cfg!(windows) {
-                format!(r"C:\path\to\{}", file_name)
-            } else {
-                format!("/path/to/{}", file_name)
-            }));
+            input.set_placeholder_text(qtr!(l, &format!("{}_placeholder", key), [
+                "os" => env::consts::OS
+            ]));
 
             layout.add_widget_2a(&input, 1);
             layout.set_spacing(4);
 
-            let browse = QPushButton::from_q_string(&qs(if for_directory { "B&rowse" } else { "&Browse" }));
+            let browse = QPushButton::from_q_string(qtr!(l, &format!("{}_browse-action", key)));
             layout.add_widget(&browse);
 
             Self {
@@ -134,14 +147,14 @@ struct InfoWidget {
 }
 
 impl InfoWidget {
-    fn new(parent: &QTabWidget) -> InfoWidget {
+    fn new(l: &FluentErgo, parent: &QTabWidget) -> InfoWidget {
         unsafe {
             let tab = QWidget::new_0a();
             let stack = QStackedLayout::new();
             tab.set_layout(&stack);
 
             let not_loaded_index = stack.add_widget(&{
-                let not_loaded = QLabel::from_q_string(&qs("No file loaded"));
+                let not_loaded = QLabel::from_q_string(qtr!(l, "no-file-loaded"));
                 not_loaded.set_contents_margins_4a(0, 0, 0, 14);
                 not_loaded.set_alignment(AlignmentFlag::AlignCenter.into());
                 not_loaded
@@ -170,7 +183,7 @@ impl InfoWidget {
             let loaded_index = stack.add_widget(&loaded);
             stack.set_current_index(not_loaded_index);
 
-            parent.add_tab_2a(&tab, &qs("File &info"));
+            parent.add_tab_2a(&tab, qtr!(l, "tabs_file-info"));
 
             InfoWidget {
                 stack,
@@ -190,16 +203,16 @@ struct OptionsWidget {
 }
 
 impl OptionsWidget {
-    fn new(parent: &QTabWidget) -> OptionsWidget {
+    fn new(l: &FluentErgo, parent: &QTabWidget) -> OptionsWidget {
         unsafe {
             let tab = QWidget::new_0a();
             let layout = QFormLayout::new_0a();
             tab.set_layout(&layout);
-            let tab_index = parent.add_tab_2a(&tab, &qs("&Options"));
+            let tab_index = parent.add_tab_2a(&tab, qtr!(l, "tabs_options"));
             parent.set_tab_enabled(tab_index, false);
 
-            let charset = Self::build_charset_box(&layout);
-            let data_dir = Self::build_data_box(&layout);
+            let charset = Self::build_charset_box(l, &layout);
+            let data_dir = Self::build_data_box(l, &layout);
 
             OptionsWidget {
                 tab_index,
@@ -209,19 +222,19 @@ impl OptionsWidget {
         }
     }
 
-    unsafe fn build_charset_box(parent: &QFormLayout) -> QBox<QComboBox> {
+    unsafe fn build_charset_box(l: &FluentErgo, parent: &QFormLayout) -> QBox<QComboBox> {
         let charset = QComboBox::new_0a();
         charset.set_size_adjust_policy(SizeAdjustPolicy::AdjustToContentsOnFirstShow);
         for (value, &key) in ScriptCode::VARIANTS.iter().enumerate() {
             charset.add_item_q_string_q_variant(&qs(key), &QVariant::from_int(value as i32));
         }
-        parent.add_row_q_string_q_widget(&qs("&Character set:"), &charset);
+        parent.add_row_q_string_q_widget(qtr!(l, "charset_label"), &charset);
         charset
     }
 
-    unsafe fn build_data_box(parent: &QFormLayout) -> FileWidget {
-        let file_widget = FileWidget::new(true);
-        let label = QLabel::from_q_string(&qs("&Data directory:"));
+    unsafe fn build_data_box(l: &FluentErgo, parent: &QFormLayout) -> FileWidget {
+        let file_widget = FileWidget::new(l, true);
+        let label = QLabel::from_q_string(qtr!(l, "data-dir_label"));
         parent.add_row_q_widget_q_layout(&label, &file_widget.layout);
         label.set_buddy(&file_widget.input);
         file_widget
@@ -235,11 +248,11 @@ struct TabsWidget {
 }
 
 impl TabsWidget {
-    fn new(parent: &QBoxLayout) -> TabsWidget {
+    fn new(l: &FluentErgo, parent: &QBoxLayout) -> TabsWidget {
         unsafe {
             let tabs = QTabWidget::new_0a();
-            let info = InfoWidget::new(&tabs);
-            let options = OptionsWidget::new(&tabs);
+            let info = InfoWidget::new(l, &tabs);
+            let options = OptionsWidget::new(l, &tabs);
             parent.add_widget(&tabs);
 
             TabsWidget {
@@ -258,6 +271,7 @@ struct Loader {
     dialog: QBox<QDialog>,
     file: FileWidget,
     filename: RefCell<Option<String>>,
+    l: Rc<FluentErgo>,
     tabs: TabsWidget,
     ok_button: QPtr<QPushButton>,
     cancel_button: QPtr<QPushButton>,
@@ -270,17 +284,17 @@ impl StaticUpcast<QObject> for Loader {
 }
 
 impl Loader {
-    fn new() -> Rc<Self> {
+    fn new(l: Rc<FluentErgo>) -> Rc<Self> {
         unsafe {
             let (dialog, dialog_layout) = Self::build_window();
-            let (about_action, about_license_action) = Self::build_menu(&dialog);
-            let file = Self::build_file_box(&dialog_layout);
-            let tabs = TabsWidget::new(&dialog_layout);
+            let (about_action, about_license_action) = Self::build_menu(l.as_ref(), &dialog);
+            let file = Self::build_file_box(l.as_ref(), &dialog_layout);
+            let tabs = TabsWidget::new(l.as_ref(), &dialog_layout);
 
             let buttons = QDialogButtonBox::new();
-            let ok_button = buttons.add_button_q_string_button_role(&qs("&Play"), ButtonRole::AcceptRole);
+            let ok_button = buttons.add_button_q_string_button_role(qtr!(l, "play-action"), ButtonRole::AcceptRole);
             ok_button.set_disabled(true);
-            let cancel_button = buttons.add_button_q_string_button_role(&qs("&Quit"), ButtonRole::RejectRole);
+            let cancel_button = buttons.add_button_q_string_button_role(qtr!(l, "quit-action"), ButtonRole::RejectRole);
             dialog_layout.add_widget(&buttons);
 
             let this = Rc::new(Self {
@@ -291,6 +305,7 @@ impl Loader {
                 dialog,
                 file,
                 filename: RefCell::new(None),
+                l,
                 ok_button,
                 tabs,
             });
@@ -325,7 +340,7 @@ impl Loader {
         logo
     }
 
-    unsafe fn about_text() -> String {
+    unsafe fn about_text(l: &FluentErgo) -> String {
         let copyright_year = option_env!("VERGEN_COMMIT_DATE").map_or_else(String::new, |date| {
             date.split('-').next().unwrap().to_string() + " "
         });
@@ -336,46 +351,56 @@ impl Loader {
             if has_homepage || option_env!("CARGO_PKG_REPOSITORY").is_some() {
                 actions += r#"<hr><div>"#;
                 if let Some(homepage) = option_env!("CARGO_PKG_HOMEPAGE") {
-                    actions += &format!(r#"<a style="color: black" href="{}">Home page</a>"#, homepage);
+                    actions += &format!(
+                        r#"<a style="color: black" href="{}">{}</a>"#,
+                        homepage,
+                        tr!(l, "about_home-page-link"),
+                    );
                 }
                 if let Some(repository) = option_env!("CARGO_PKG_REPOSITORY") {
                     if has_homepage {
                         actions += " &nbsp;·&nbsp; ";
                     }
-                    actions += &format!(r#"<a style="color: black" href="{0}">Repository</a> &nbsp;·&nbsp;
-                        <a style="color: black" href="{0}/issues/new">Report a bug</a>"#, repository);
+                    actions += &format!(r#"<a style="color: black" href="{0}">{1}</a> &nbsp;·&nbsp;
+                        <a style="color: black" href="{0}/issues/new">{2}</a>"#,
+                        repository,
+                        tr!(l, "about_repository-link"),
+                        tr!(l, "about_report-bug-link"),
+                    );
                 }
                 actions += r"</div>";
             }
             actions
         };
 
-        format!("<div>© {}{}</div>{}",
-            copyright_year,
-            env!("CARGO_PKG_AUTHORS"),
+        format!("<div>{}</div>{}",
+            tr!(l, "about_copyright", [
+                "year" => copyright_year,
+                "author" => env!("CARGO_PKG_AUTHORS")
+            ]),
             actions,
         )
     }
 
-    unsafe fn build_file_box(parent: &QBoxLayout) -> FileWidget {
+    unsafe fn build_file_box(l: &FluentErgo, parent: &QBoxLayout) -> FileWidget {
         let layout = QVBoxLayout::new_0a();
         layout.set_spacing(2);
 
-        let label = QLabel::from_q_string(&qs("Movie or projector &file:"));
+        let label = QLabel::from_q_string(qtr!(l, "file-load_label"));
         layout.add_widget(&label);
-        let file_widget = FileWidget::new(false);
+        let file_widget = FileWidget::new(l, false);
         layout.add_layout_1a(&file_widget.layout);
         label.set_buddy(&file_widget.input);
         parent.add_layout_1a(&layout);
         file_widget
     }
 
-    unsafe fn build_menu(parent: &QBox<QDialog>) -> (QPtr<QAction>, QPtr<QAction>) {
+    unsafe fn build_menu(l: &FluentErgo, parent: &QBox<QDialog>) -> (QPtr<QAction>, QPtr<QAction>) {
         let menu_bar = QMenuBar::new_1a(parent);
         menu_bar.set_native_menu_bar(true);
-        let menu = menu_bar.add_menu_q_string(&qs("&Help"));
-        let about_action = menu.add_action_q_string(&qs(format!("&About {}", name(false))));
-        let about_license_action = menu.add_action_q_string(&qs("About &License"));
+        let menu = menu_bar.add_menu_q_string(qtr!(l, "help-menu"));
+        let about_action = menu.add_action_q_string(qtr!(l, "help-menu_about", [ "app_name" => name(false) ]));
+        let about_license_action = menu.add_action_q_string(qtr!(l, "help-menu_about-license"));
         about_license_action.set_menu_role(MenuRole::AboutQtRole);
         (about_action, about_license_action)
     }
@@ -395,7 +420,7 @@ impl Loader {
         unsafe {
             let message_box = QMessageBox::from_icon2_q_string_q_flags_standard_button_q_widget(
                 MBIcon::Warning,
-                &qs("Detection failed"),
+                qtr!(self.l, "detection-failed_error"),
                 &qs(message),
                 MBButton::Ok.into(),
                 &self.dialog,
@@ -406,8 +431,11 @@ impl Loader {
             }
 
             if let Some(url) = option_env!("CARGO_PKG_REPOSITORY") {
-                let url = format!("{}/issues/new", url);
-                message_box.set_informative_text(&qs(format!("If you think this file is a valid Director movie or projector, please <a href=\"{}\">send a sample</a>.", url)));
+                message_box.set_informative_text(qtr!(
+                    self.l,
+                    "detection-failed_message-html",
+                    [ "url" => format!("{}/issues/new", url) ]
+                ));
             }
 
             message_box.exec();
@@ -472,7 +500,7 @@ impl Loader {
 
         if cfg!(target_os = "macos") {
         } else {
-            message_box.set_window_title(&qs(format!("About {}", name(false))));
+            message_box.set_window_title(qtr!(self.l, "about_window-title", [ "app_name" => name(false) ]));
         }
 
         message_box.set_style_sheet(&qs("* { color: black; background: white; }"));
@@ -502,7 +530,7 @@ impl Loader {
         });
 
         layout.add_widget(&{
-            let about_text_label = QLabel::from_q_string(&qs(Self::about_text()));
+            let about_text_label = QLabel::from_q_string(&qs(Self::about_text(self.l.as_ref())));
             about_text_label.set_alignment(AlignmentFlag::AlignHCenter.into());
             about_text_label
         });
@@ -523,21 +551,13 @@ impl Loader {
             date.split('-').next().unwrap().to_string() + " "
         });
 
-        let license = format!(r#"<b>Copyright {}{}</b><br>
-        <br>
-        <span style="font-weight: normal">
-        Licensed under the Apache License, Version 2.0 (the "License");
-        you may not use this file except in compliance with the License.
-        You may obtain a copy of the License at<br>
-        <br>
-        <a href="https://www.apache.org/licenses/LICENSE-2.0">https://www.apache.org/licenses/LICENSE-2.0</a><br>
-        <br>
-        Unless required by applicable law or agreed to in writing, software
-        distributed under the License is distributed on an "AS IS" BASIS,
-        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-        See the License for the specific language governing permissions and
-        limitations under the License.
-        </span>"#, copyright_year, "Earthquake Project contributors");
+        let license = format!(r#"<b>{}</b><br><br><span style="font-weight: normal">{}</span>"#,
+            tr!(self.l, "license_copyright", [
+                "maybe_year" => copyright_year,
+                "author" => env!("CARGO_PKG_AUTHORS")
+            ]),
+            tr!(self.l, "license_license-html")
+        );
 
         QMessageBox::about(&self.dialog, &qs(name(false)), &qs(license));
     }
@@ -546,9 +566,13 @@ impl Loader {
     unsafe fn on_browse(self: &Rc<Self>) {
         let path_str = QFileDialog::get_open_file_name_6a(
             &self.dialog,
-            &qs("Find projector or movie"),
+            qtr!(self.l, "file-load_browse-title"),
             &self.file.input.text(),
-            &qs("Projectors (*.exe *.app *.rsrc *.bin);;Movies (*.dir *.dxr *.mmm);;All files (*)"),
+            &qs(format!("{} (*.exe *.app *.rsrc *.bin);;{} (*.dir *.dxr *.mmm);;{} (*)",
+                tr!(self.l, "file-load_browse-projector-file-type"),
+                tr!(self.l, "file-load_browse-movies-file-type"),
+                tr!(self.l, "file-load_browse-all-files-file-type"),
+            )),
             NullPtr,
             FileDialogOption::ReadOnly.into());
         if !path_str.is_empty() {
@@ -570,7 +594,7 @@ impl Loader {
     unsafe fn on_data_dir_browse(self: &Rc<Self>) {
         let path_str = QFileDialog::get_existing_directory_3a(
             &self.dialog,
-            &qs("Find data directory"),
+            qtr!(self.l, "data-dir_browse-title"),
             &self.tabs.options.data_dir.input.text(),
         );
         if !path_str.is_empty() {
@@ -592,8 +616,15 @@ impl Loader {
                 Ok(info) => {
                     match info {
                         FileType::Projector(info, ..) => {
-                            self.tabs.info.file_name.set_text(&qs(info.name().unwrap_or(&String::from("Unknown"))));
-                            self.tabs.info.kind.set_text(&qs(format!("Director {} for {} projector", info.version(), info.config().platform())));
+                            self.tabs.info.file_name.set_text(&qs(info.name().unwrap_or(&tr!(self.l, "file-info_unknown-file-name"))));
+                            self.tabs.info.kind.set_text(qtr!(
+                                self.l,
+                                "file-info_projector-file-kind",
+                                [
+                                    "version" => info.version().to_string(),
+                                    "platform" => info.config().platform().to_string()
+                                ]
+                            ));
                             // TODO: Heuristic detection of character set
                             self.tabs.options.charset.set_current_index(0);
                             true
@@ -601,13 +632,20 @@ impl Loader {
                         FileType::Movie(info, ..) if info.kind() != MovieKind::Cast => {
                             let path = Path::new(&std_path);
                             self.tabs.info.file_name.set_text(&qs(path.file_stem().unwrap().to_string_lossy()));
-                            self.tabs.info.kind.set_text(&qs(format!("Director {} {}", info.version(), info.kind())));
+                            self.tabs.info.kind.set_text(qtr!(
+                                self.l,
+                                "file-info_movie-file-kind",
+                                [
+                                    "version" => info.version().to_string(),
+                                    "kind" => info.kind().to_string()
+                                ]
+                            ));
                             // TODO: Heuristic detection of character set
                             self.tabs.options.charset.set_current_index(0);
                             true
                         },
                         _ => {
-                            self.detection_failure("Cannot play cast libraries.", None);
+                            self.detection_failure(&tr!(self.l, "file-info_error-cannot-play-cast"), None);
                             false
                         }
                     }
@@ -657,9 +695,22 @@ fn main() -> AResult<()> {
 
     QApplication::init(|_| unsafe {
         q_init_resource!("resources");
+
+        let mut localizer = FluentErgo::new(&{
+            let qt_languages = QLocale::system().ui_languages();
+            let mut languages = Vec::with_capacity(qt_languages.size() as usize);
+            for lang in qt_languages.static_upcast::<qt_core::QListOfQString>().iter() {
+                languages.push(lang.to_std_string().parse::<unic_langid::LanguageIdentifier>().unwrap());
+            }
+            languages.push("en-US".parse().unwrap());
+            languages
+        }[..]);
+        // TODO: Add lazy-loading of other locales
+        localizer.add_from_text("en-US".parse().unwrap(), include_str!("../locales/en-US/main.ftl").to_owned()).unwrap();
+
         QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png")));
         let filename = if files.is_empty() {
-            let ask = Loader::new();
+            let ask = Loader::new(Rc::new(localizer));
             ask.exec()
         } else {
             Some(files[0].clone())

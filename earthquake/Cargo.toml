@@ -13,6 +13,8 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0"
 cpp_core = "0.6"
+fluent = "0.11"
+fluent-ergonomics = "0.2"
 libearthquake = { path = "../libearthquake" }
 libmactoolbox = { path = "../libmactoolbox" }
 pico-args = "0.3"
@@ -20,6 +22,7 @@ qt_core = "0.5"
 qt_gui = "0.5"
 qt_widgets = "0.5"
 strum = "0.18"
+unic-langid = "0.8"
 
 [build-dependencies]
 qt_ritual_build = "0.5"
