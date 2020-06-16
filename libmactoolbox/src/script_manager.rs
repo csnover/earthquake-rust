@@ -153,7 +153,7 @@ impl CountryCode {
 }
 
 #[derive(Copy, Clone, Debug, EnumVariantNames, FromPrimitive)]
-#[strum(serialize_all = "title_case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum ScriptCode {
     Roman = 0,
     Japanese,

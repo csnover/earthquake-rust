@@ -226,7 +226,7 @@ impl OptionsWidget {
         let charset = QComboBox::new_0a();
         charset.set_size_adjust_policy(SizeAdjustPolicy::AdjustToContentsOnFirstShow);
         for (value, &key) in ScriptCode::VARIANTS.iter().enumerate() {
-            charset.add_item_q_string_q_variant(&qs(key), &QVariant::from_int(value as i32));
+            charset.add_item_q_string_q_variant(qtr!(l, &format!("charset_{}", key)), &QVariant::from_int(value as i32));
         }
         parent.add_row_q_string_q_widget(qtr!(l, "charset_label"), &charset);
         charset
