@@ -79,6 +79,7 @@ fn detect_file<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
         .map_err(|e| anyhow!("Could not open {}: {}", filename.as_ref().display(), e))?);
 
         projector::detect_win(&mut file.clone())
+        .map_err(|e| anyhow!("Not a Director for Windows file: {}", e))
         .map(|p| FileType::Projector(p, file.clone()))
         .or_else(|e| flatten_errors(detect_mac(file.clone(), None::<SharedStream<File>>), &e))
         .or_else(|e| flatten_errors(detect_riff(file), &e))
