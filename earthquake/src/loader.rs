@@ -363,15 +363,30 @@ impl Loader {
     }
 
     unsafe fn build_file_box(l: &FluentErgo, parent: &QBoxLayout) -> FileWidget {
-        let layout = QVBoxLayout::new_0a();
-        layout.set_spacing(2);
+        let layout = QHBoxLayout::new_0a();
+        parent.add_layout_1a(&layout);
+
+        let selector_layout = QVBoxLayout::new_0a();
+        selector_layout.set_spacing(2);
 
         let label = QLabel::from_q_string(qtr!(l, "file-load_label"));
-        layout.add_widget(&label);
+        selector_layout.add_widget(&label);
         let file_widget = FileWidget::new(l, false);
-        layout.add_layout_1a(&file_widget.layout);
+        selector_layout.add_layout_1a(&file_widget.layout);
         label.set_buddy(&file_widget.input);
-        parent.add_layout_1a(&layout);
+        layout.add_layout_1a(&selector_layout);
+
+        layout.insert_widget_3a(0, &{
+            let label = QLabel::new();
+            let icon = QPixmap::from_q_string(&qs(":/icon.png"));
+            let max_dim = selector_layout.minimum_size().height();
+            label.set_maximum_size_2a(max_dim, max_dim);
+            label.set_pixmap(&icon);
+            label.set_scaled_contents(true);
+            label.set_contents_margins_4a(0, 0, 0, 0);
+            label
+        }, 0);
+
         file_widget
     }
 
