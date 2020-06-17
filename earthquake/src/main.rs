@@ -70,7 +70,7 @@ fn main() -> AResult<()> {
         for (value, &key) in ScriptCode::VARIANTS.iter().enumerate() {
             println!("    {:2}: {}", value, tr!(localizer, &format!("charset_{}", key)));
         }
-        exit(1);
+        exit(0);
     }
 
     let charset = args.opt_value_from_str::<_, i32>("--charset")?.map(|v| ScriptCode::from_i32(v).unwrap_or(ScriptCode::Roman));
