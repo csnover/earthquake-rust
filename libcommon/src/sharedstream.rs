@@ -139,6 +139,7 @@ mod tests {
 
         let mut stream = SharedStream::with_bounds(data, IN_START as u64, IN_START as u64 + IN_SIZE as u64);
         stream.seek(SeekFrom::Start(OUT_START as u64)).unwrap();
+        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), OUT_START as u64);
 
         let mut stream2 = stream.clone();
         let size = stream.read_to_end(&mut out).unwrap();
