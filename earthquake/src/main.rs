@@ -11,12 +11,15 @@
 #![warn(rust_2018_idioms)]
 #![windows_subsystem = "windows"]
 
+mod engine;
 mod loader;
 
 use anyhow::Result as AResult;
+use engine::Engine;
 use fluent_ergonomics::FluentErgo;
 use libmactoolbox::script_manager::ScriptCode;
 use loader::Loader;
+use num_traits::FromPrimitive;
 use pico_args::Arguments;
 use qt_core::{
     q_init_resource,
@@ -44,6 +47,8 @@ macro_rules! qtr {
 }
 
 fn main() -> AResult<()> {
+    q_init_resource!("resources");
+
     let mut args = Arguments::from_env();
 
     let mut localizer = FluentErgo::new(&unsafe {
@@ -55,7 +60,7 @@ fn main() -> AResult<()> {
         languages.push("en-US".parse().unwrap());
         languages
     }[..]);
-    // TODO: Add lazy-loading of other locales
+    // TODO: Add lazy-loading of other locales, maybe via q_init_resource
     localizer.add_from_text("en-US".parse().unwrap(), include_str!("../locales/en-US/main.ftl").to_owned()).unwrap();
 
     if args.contains("--help") {
@@ -68,24 +73,24 @@ fn main() -> AResult<()> {
         exit(1);
     }
 
-    let _data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
-    let _charset = args.opt_value_from_str::<_, i32>("--charset")?;
-    let files = args.free()?;
+    let charset = args.opt_value_from_str::<_, i32>("--charset")?.map(|v| ScriptCode::from_i32(v).unwrap_or(ScriptCode::Roman));
+    let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
+    let args_files = args.free()?;
 
-    QApplication::init(|_| unsafe {
-        q_init_resource!("resources");
-        QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png")));
-        let filename = if files.is_empty() {
-            let ask = Loader::new(Rc::new(localizer));
-            ask.exec()
+    QApplication::init(|app| {
+        unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
+
+        let files = if args_files.is_empty() {
+            Loader::new(Rc::new(localizer)).exec().map_or_else(Vec::new, |filename| vec![filename])
         } else {
-            Some(files[0].clone())
+            args_files
         };
 
-        if filename.is_some() {
-            QApplication::exec()
-        } else {
+        if files.is_empty() {
             0
+        } else {
+            let mut engine = Engine::new(app, charset, data_dir, files);
+            engine.exec()
         }
     })
 }

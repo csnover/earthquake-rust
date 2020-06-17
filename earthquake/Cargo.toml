@@ -17,6 +17,7 @@ fluent = "0.11"
 fluent-ergonomics = "0.2"
 libearthquake = { path = "../libearthquake" }
 libmactoolbox = { path = "../libmactoolbox" }
+num-traits = "0.2"
 pico-args = "0.3"
 qt_core = "0.5"
 qt_gui = "0.5"
