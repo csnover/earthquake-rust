@@ -1,5 +1,0 @@
-Usage: {} [--data <dir>] [--charset <number>] [<exe/cxr/dxr ...>]
-Optional arguments:
-    --data: The path to movies referenced by a Projector
-    --charset: The character encoding used by the movie
-Character encodings:

@@ -38,6 +38,13 @@ charset_vietnamese = Vietnamese
 charset_sindhi = Sindhi
 charset_uninterpreted-symbols = Uninterpreted Symbols
 
+cli_usage =
+    Usage: {$exe} [--data <dir>] [--charset <number>] [<exe/cxr/dxr ...>]
+    Optional arguments:
+        --data: The path to movies referenced by a Projector
+        --charset: The character encoding used by the movie
+    Character encodings:
+
 data-dir_label = &Data directory:
 data-dir_placeholder = {$os ->
     [windows] C:\path\to\data
