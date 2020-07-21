@@ -121,11 +121,21 @@ impl Resource for Dict {
 
 #[derive(Debug, Deref, Index)]
 pub struct RiffContainer<T: Reader> {
-    riff: Riff<T>,
+    riff: Rc<Riff<T>>,
     #[deref]
     #[index]
     file_list: List<ChunkFile>,
     file_dict: Dict,
+}
+
+impl<T: Reader> Clone for RiffContainer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            riff: self.riff.clone(),
+            file_list: self.file_list.clone(),
+            file_dict: self.file_dict.clone(),
+        }
+    }
 }
 
 impl <T: Reader> RiffContainer<T> {
@@ -135,7 +145,7 @@ impl <T: Reader> RiffContainer<T> {
         let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict"))).context("Bad Dict chunk")?;
 
         Ok(Self {
-            riff,
+            riff: Rc::new(riff),
             file_list: Rc::try_unwrap(file_list).unwrap(),
             file_dict: Rc::try_unwrap(file_dict).unwrap(),
         })

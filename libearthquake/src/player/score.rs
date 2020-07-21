@@ -1,10 +1,8 @@
-use crate::{
-    types::{
-        Unk16,
-        Unk32,
-        Unk8,
-        UnkPtr,
-    },
+use libcommon::{
+    Unk16,
+    Unk32,
+    Unk8,
+    UnkPtr,
 };
 use libmactoolbox::{
     Rect,

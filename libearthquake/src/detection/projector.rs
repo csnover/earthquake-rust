@@ -1,9 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use byteordered::{ByteOrdered, Endianness};
 use crate::{
-    collections::riff,
+    collections::riff_container::RiffContainer,
     detection::projector_settings::ProjectorSettings,
     panic_sample,
 };
@@ -11,7 +10,6 @@ use derive_more::Display;
 use libcommon::{
     encodings::WIN_ROMAN,
     Reader,
-    Resource,
     SharedStream,
 };
 use libmactoolbox::{
@@ -29,7 +27,21 @@ pub struct DetectionInfo<T: Reader> {
     charset: Option<ScriptCode>,
     version: Version,
     movie: Movie<T>,
+    system_resources: Option<Vec<u8>>,
     config: ProjectorSettings,
+}
+
+impl<T: Reader> Clone for DetectionInfo<T> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            charset: self.charset,
+            version: self.version,
+            movie: self.movie.clone(),
+            system_resources: None,
+            config: self.config,
+        }
+    }
 }
 
 impl<T: Reader> DetectionInfo<T> {
@@ -44,6 +56,11 @@ impl<T: Reader> DetectionInfo<T> {
     }
 
     #[must_use]
+    pub fn system_resources(&self) -> Option<&Vec<u8>> {
+        self.system_resources.as_ref()
+    }
+
+    #[must_use]
     pub fn version(&self) -> Version {
         self.version
     }
@@ -54,7 +71,7 @@ impl<T: Reader> DetectionInfo<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct D3WinMovie {
     pub filename: String,
     pub offset: u32,
@@ -65,16 +82,22 @@ pub struct D3WinMovie {
 pub enum Movie<T: Reader> {
     Embedded(u16),
     D3Win(Vec<D3WinMovie>),
-    // The offset of an internal movie needs to be stored separately from the
-    // stream because there are offsets inside a RIFF which are absolute to the
-    // beginning of the file, not the RIFF block, so the stream needs to be the
-    // entire “file”, which might actually be embedded inside of a MacBinary or
-    // AppleSingle file.
-    Internal { stream: SharedStream<T>, offset: u32, size: u32 },
+    Internal(RiffContainer<T>),
     External(Vec<String>),
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq)]
+impl<T: Reader> Clone for Movie<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Movie::Embedded(id) => Movie::Embedded(*id),
+            Movie::D3Win(movies) => Movie::D3Win(movies.clone()),
+            Movie::Internal(container) => Movie::Internal(container.clone()),
+            Movie::External(movies) => Movie::External(movies.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum WinVersion {
     #[display(fmt = "3")]
     Win3,
@@ -101,7 +124,7 @@ impl std::fmt::Display for MacCPU {
     }
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, Copy, PartialEq)]
 pub enum Platform {
     #[display(fmt = "Mac {}", _0)]
     Mac(MacCPU),
@@ -109,7 +132,7 @@ pub enum Platform {
     Win(WinVersion),
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, PartialOrd)]
 pub enum Version {
     #[display(fmt = "3")]
     D3,
@@ -201,7 +224,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
                     if mismatch {
                         bail!(
                             "Projector data fork version {} does not match resource fork version {}",
-                            data_version.map_or_else(|| "None".to_string(), |v| format!("{}", v)),
+                            data_version.map_or_else(|| "None".to_string(), |v| v.to_string()),
                             version
                         );
                     }
@@ -225,18 +248,19 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
         charset: None,
         version,
         movie,
+        system_resources: None,
         config,
     })
 }
 
 fn d3_win_movie_info<T: Reader>(input: &mut T, i: u16) -> AResult<(u32, String)> {
     let size = input.read_u32::<LittleEndian>()
-        .with_context(|| format!("Can’t read external movie {} size", i))?;
+        .with_context(|| format!("Can’t read movie {} size", i))?;
     let filename = {
         let filename = input.read_pascal_str(WIN_ROMAN)
-            .with_context(|| format!("Can’t read external movie {} filename", i))?;
+            .with_context(|| format!("Can’t read movie {} filename", i))?;
         let path = input.read_pascal_str(WIN_ROMAN)
-            .with_context(|| format!("Can’t read external movie {} path", i))?;
+            .with_context(|| format!("Can’t read movie {} path", i))?;
 
         let mut pathbuf = PathBuf::from(path.replace('\\', "/"));
         pathbuf.push(filename);
@@ -245,9 +269,12 @@ fn d3_win_movie_info<T: Reader>(input: &mut T, i: u16) -> AResult<(u32, String)>
     Ok((size, filename))
 }
 
+const HEADER_SIZE: u32 = 8;
+const SETTINGS_SIZE: u32 = 12;
+
 pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<DetectionInfo<T>> {
     const MZ: u16 = 0x4d5a;
-    const HEADER_SIZE: u32 = 8;
+
     if input.read_u16::<BigEndian>().context("Can’t read magic")? != MZ {
         bail!("Not a Windows executable");
     }
@@ -262,13 +289,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
     let mut version = if let Some(version) = data_version(&header[0..4]) {
         version
     } else {
-        let checksum: u8 = header[0]
-            .wrapping_add(header[1])
-            .wrapping_add(header[2])
-            .wrapping_add(header[3])
-            .wrapping_add(header[4])
-            .wrapping_add(header[5])
-            .wrapping_add(header[6]);
+        let checksum = header[0..7].iter().fold(0_u8, |c, &v| c.wrapping_add(v));
 
         if checksum != 0 {
             bail!("Bad Director 3 for Windows checksum");
@@ -278,7 +299,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
     };
 
     let (platform, name) = get_exe_info(input)?;
-    let (config, movie) = if version == Version::D3 {
+    let (config, movie, system_resources) = if version == Version::D3 {
         input.seek(SeekFrom::Start(u64::from(offset + 7)))?;
         let config = ProjectorSettings::parse_win(version, platform, &header[0..7])?;
         let num_movies = LittleEndian::read_u16(&header);
@@ -299,13 +320,15 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
                     offset,
                     size,
                 });
+                input.skip(u64::from(size))
+                    .with_context(|| format!("Could not skip to internal movie {}", i + 1))?;
             }
             Movie::D3Win(movies)
         };
 
-        (config, movie)
+        (config, movie, None)
     } else {
-        input.seek(SeekFrom::Start(u64::from(offset + 8)))
+        input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE)))
             .context("Can’t seek to Projector settings")?;
 
         let settings_offset = match version {
@@ -314,21 +337,20 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
                 // A Cidade Virtual has more stuff in PJ93 than other samples
                 // in the corpus, so it is not possible to just walk forward by
                 // a fixed amount
-                const SETTINGS_SIZE: u32 = 12;
                 let end_offset = input.read_u32::<LittleEndian>()
                     .context("Can’t read offset of first system file")?;
                 end_offset - SETTINGS_SIZE
             },
-            Version::D5 | Version::D6 => {
+            Version::D5 | Version::D6 | Version::D7 => {
                 offset + HEADER_SIZE
             },
-            Version::D7 => todo!(),
         };
 
         input.seek(SeekFrom::Start(u64::from(settings_offset)))
             .context("Can’t seek to Projector settings data")?;
 
-        let mut buffer = [ 0; 12 ];
+        // SETTINGS_SIZE for D7 is actually only 8
+        let mut buffer = [ 0; SETTINGS_SIZE as usize ];
         input.read_exact(&mut buffer).context("Can’t read Projector settings data")?;
 
         // TODO: Maybe there is a better way to differentiate between D5 and D6,
@@ -339,7 +361,11 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
             version = Version::D6;
         }
 
-        (ProjectorSettings::parse_win(version, platform, &buffer)?, internal_movie(input, LittleEndian::read_u32(&header[4..]))?)
+        (
+            ProjectorSettings::parse_win(version, platform, &buffer)?,
+            internal_movie(input, LittleEndian::read_u32(&header[4..]))?,
+            get_projector_rsrc(input, offset, version)?
+        )
     };
 
     Ok(DetectionInfo {
@@ -348,6 +374,7 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
         charset: None,
         version,
         movie,
+        system_resources,
         config,
     })
 }
@@ -397,15 +424,76 @@ fn get_exe_info<T: Reader>(input: &mut T) -> AResult<(Platform, Option<String>)>
     }
 }
 
+fn get_projector_rsrc<T: Reader>(mut input: &mut SharedStream<T>, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
+    let (rsrc_offset, rsrc_size) = match version {
+        Version::D3 => unreachable!(),
+        Version::D4 => {
+            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + 8)))
+                .context("Can’t seek to PROJECTR.RSR offset")?;
+            let rsrc_offset = input.read_u32::<LittleEndian>()
+                .context("Can’t read PROJECTR.RSR offset")?;
+            let next_offset = input.read_u32::<LittleEndian>()
+                .context("Can’t read fourth system file offset")?;
+            let size = next_offset - rsrc_offset;
+            (rsrc_offset, size)
+        },
+        Version::D5 => {
+            const DRIVERS_HEADER_SIZE: u32 = 8;
+            const DRIVER_ENTRY_SIZE: u32 = 0x204;
+            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + DRIVER_ENTRY_SIZE * 2)))
+                .context("Can’t seek to PROJECTR.RSR offset")?;
+            let rsrc_offset = input.read_u32::<LittleEndian>()
+                .context("Can’t read PROJECTOR.RSR offset")?;
+            input.skip(u64::from(DRIVER_ENTRY_SIZE - 4))
+                .context("Can’t skip to fourth system file offset")?;
+            let next_offset = input.read_u32::<LittleEndian>()
+                .context("Can’t read fourth system file offset")?;
+            let size = next_offset - rsrc_offset;
+            (rsrc_offset, size)
+        },
+        Version::D6 => {
+            const DRIVERS_HEADER_SIZE: u32 = 8;
+            const DRIVER_ENTRY_SIZE: u32 = 0x208;
+            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + DRIVER_ENTRY_SIZE * 2)))
+                .context("Can’t seek to PROJECTR.RSR offset")?;
+            let rsrc_offset = input.read_u32::<LittleEndian>()
+                .context("Can’t read PROJECTOR.RSR offset")?;
+            let size = input.read_u32::<LittleEndian>()
+                .context("Can’t read PROJECTOR.RSR size")?;
+            (rsrc_offset, size)
+        },
+        Version::D7 => {
+            const DRIVERS_HEADER_SIZE: u32 = 8;
+            // SETTINGS_SIZE here is actually only 8
+
+            // Driver entries here are:
+            // 0x4 offset, 0x4 size, 0x21 basename, 0xb ext
+            //
+            // There is no PROJECTR.RSR in D7 -- resources are now native PE
+            // resources inside the embedded DLLs. So figure out how to make
+            // that work, ha ha ugh.
+            const DRIVER_ENTRY_SIZE: u32 = 0x3c;
+            todo!()
+        },
+    };
+
+    let mut system_resources = Vec::with_capacity(rsrc_size as usize);
+    input.seek(SeekFrom::Start(u64::from(rsrc_offset)))
+        .context("Can’t seek to PROJECTR.RSR")?;
+    input.take(u64::from(rsrc_size)).read_to_end(&mut system_resources)
+        .context("Can’t read PROJECTR.RSR")?;
+
+    Ok(Some(system_resources))
+}
+
 fn internal_movie<T: Reader>(reader: &mut SharedStream<T>, offset: u32) -> AResult<Movie<T>> {
     reader.seek(SeekFrom::Start(u64::from(offset)))
         .with_context(|| format!("Bad RIFF offset {}", offset))?;
-    let info = riff::detect(reader).with_context(|| format!("Can’t detect RIFF at {}", offset))?;
-    Ok(Movie::Internal {
-        stream: reader.clone(),
-        offset,
-        size: info.size()
-    })
+
+    let container = RiffContainer::new(reader.clone())
+        .with_context(|| format!("Can’t detect RIFF at {}", offset))?;
+
+    Ok(Movie::Internal(container))
 }
 
 mod pe {

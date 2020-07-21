@@ -18,7 +18,6 @@ use libearthquake::{
     },
     detection::{
         detect,
-        detect_data_fork,
         FileType,
         movie::{
             DetectionInfo as MovieDetectionInfo,
@@ -88,11 +87,12 @@ fn read_movie(info: &MovieDetectionInfo, mut stream: SharedStream<File>, inspect
     Ok(())
 }
 
-fn inspect_riff_container(stream: &mut SharedStream<File>, inspect_data: bool) -> AResult<()> {
-    let riff_container = RiffContainer::new(stream.clone())?;
-
+fn inspect_riff_container(riff_container: &RiffContainer<File>, inspect_data: bool) -> AResult<()> {
     for index in 0..riff_container.len() {
-        println!("\nFile {}: {}", index + 1, riff_container.filename(index).unwrap().to_string_lossy());
+        if inspect_data {
+            println!();
+        }
+        println!("File {}: {}", index + 1, riff_container.filename(index).unwrap().to_string_lossy());
         if inspect_data && riff_container.kind(index).unwrap() != ChunkFileKind::Xtra {
             match riff_container.load_file(index) {
                 Ok(riff) => {
@@ -129,11 +129,9 @@ fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<
                 }
             }
         },
-        MovieInfo::Internal { stream: int_stream, offset, .. } => {
-            println!("Internal movie at {}", offset);
-            let mut int_stream = int_stream.clone();
-            int_stream.seek(SeekFrom::Start(u64::from(*offset)))?;
-            inspect_riff_container(&mut int_stream, inspect_data)?;
+        MovieInfo::Internal(container) => {
+            println!("Internal movie");
+            inspect_riff_container(container, inspect_data)?;
         },
         MovieInfo::External(filenames) => {
             for filename in filenames {
@@ -169,7 +167,7 @@ fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<
             if info.version() == ProjectorVersion::D3 {
                 read_embedded_movie(*num_movies, stream, inspect_data)?;
             } else {
-                match detect_data_fork(filename)? {
+                match detect(filename)? {
                     FileType::Projector(..) => bail!("Embedded movie looped back to projector"),
                     FileType::Movie(m, s) => read_movie(&m, s, inspect_data)?,
                 };

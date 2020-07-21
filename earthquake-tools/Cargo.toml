@@ -19,7 +19,7 @@ anyhow = "1.0"
 pico-args = "0.3"
 libcommon = { path = "../libcommon" }
 libearthquake = { path = "../libearthquake" }
-libmactoolbox = { path = "../libmactoolbox" }
+libmactoolbox = { path = "../libmactoolbox", features = [] }
 
 [build-dependencies]
 vergen = "3"

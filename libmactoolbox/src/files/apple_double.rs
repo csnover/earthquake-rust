@@ -1,9 +1,10 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteordered::ByteOrdered;
+use crate::script_manager::decode_text;
 use libcommon::{Reader, SharedStream};
 use std::{ffi::OsString, fs::File, io, path::{Path, PathBuf}};
-use super::script_manager::decode_text;
 
+#[derive(Debug)]
 pub struct AppleDouble<T: Reader> {
     name: Option<String>,
     /// For AppleSingle these both point to the same thing,
@@ -14,35 +15,13 @@ pub struct AppleDouble<T: Reader> {
 }
 
 impl<T: Reader> AppleDouble<T> {
-    #[must_use]
-    pub fn name(&self) -> Option<&String> {
-        self.name.as_ref()
-    }
-
-    #[must_use]
-    pub fn data_fork(&self) -> Option<SharedStream<T>> {
-        self.data_fork.clone()
-    }
-
-    #[must_use]
-    pub fn resource_fork(&self) -> Option<SharedStream<T>> {
-        self.resource_fork.clone()
-    }
-}
-
-impl AppleDouble<File> {
-    pub fn open<U: AsRef<Path>>(filename: U) -> AResult<Self> {
+    pub fn new(data: T, double_data: Option<T>) -> AResult<Self> {
         const DOUBLE_MAGIC: u32 = 0x51607;
         const SINGLE_MAGIC: u32 = 0x51600;
 
-        let (found_double, mut input) = {
-            let mut found_double = true;
-            let input = ByteOrdered::be(SharedStream::new(open_apple_double(&filename).or_else(|_| {
-                found_double = false;
-                File::open(&filename)
-            })?));
-            (found_double, input)
-        };
+        let found_double = double_data.is_some();
+        let data = SharedStream::new(double_data.unwrap_or(data));
+        let mut input = ByteOrdered::be(data.clone());
 
         let magic = input.read_u32().context("Could not read magic")?;
         if magic != DOUBLE_MAGIC && magic != SINGLE_MAGIC {
@@ -99,11 +78,7 @@ impl AppleDouble<File> {
         }
 
         if magic == DOUBLE_MAGIC && data_fork.is_none() && found_double {
-            data_fork = if let Ok(file) = File::open(&filename) {
-                Some(SharedStream::new(file))
-            } else {
-                None
-            };
+            data_fork = Some(data);
         }
 
         let name = if let Some(mut name_input) = name_input {
@@ -118,10 +93,31 @@ impl AppleDouble<File> {
             resource_fork,
         })
     }
+
+    #[must_use]
+    pub fn data_fork(&self) -> Option<&SharedStream<T>> {
+        self.data_fork.as_ref()
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
+    #[must_use]
+    pub fn resource_fork(&self) -> Option<&SharedStream<T>> {
+        self.resource_fork.as_ref()
+    }
 }
 
-fn open_apple_double<T: AsRef<Path>>(filename: T) -> io::Result<File> {
-    let mut path = PathBuf::from(filename.as_ref());
+impl AppleDouble<File> {
+    pub fn open(path: impl AsRef<Path>) -> AResult<Self> {
+        Self::new(File::open(&path)?, open_apple_double(&path).ok())
+    }
+}
+
+fn open_apple_double(path: impl AsRef<Path>) -> io::Result<File> {
+    let mut path = PathBuf::from(path.as_ref());
     path.set_file_name({
         let mut file_name = OsString::from("._");
         file_name.push(path.file_name().unwrap());

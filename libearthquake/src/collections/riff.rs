@@ -49,7 +49,7 @@ impl<'a, T: Reader> Iter<'a, T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Riff<T: Reader> {
     // TODO: This is needed to convert a Riff chunk back to its owner filename,
     // but not enough information is recorded currently to actually do this.

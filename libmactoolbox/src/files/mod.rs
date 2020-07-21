@@ -1,3 +1,8 @@
+mod apple_double;
+mod mac_binary;
+
+pub use apple_double::AppleDouble;
+pub use mac_binary::MacBinary;
 use std::{ffi::OsString, fs::{File, self}, io, path::Path};
 
 fn open_named_fork<T: AsRef<Path>>(filename: T) -> io::Result<File> {
@@ -16,7 +21,7 @@ pub fn open_resource_fork<T: AsRef<Path>>(filename: T) -> io::Result<File> {
         .or_else(|_| File::open({
             let mut path = filename.as_ref().to_path_buf();
             path.set_extension({
-                path.extension().map_or(OsString::from("rsrc"), |ext| {
+                path.extension().map_or_else(|| OsString::from("rsrc"), |ext| {
                     let mut ext = ext.to_os_string();
                     ext.push(".rsrc");
                     ext

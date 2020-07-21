@@ -1,5 +1,12 @@
 use crate::Reader;
-use std::{cell::RefCell, io::{Error, ErrorKind, Read, Result, Seek, SeekFrom}, rc::Rc};
+use derive_more::Deref;
+use std::{
+    cell::RefCell,
+    fs::File,
+    io::{BufReader, Error, ErrorKind, Read, Result, Seek, SeekFrom},
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 type Inner<T> = Rc<RefCell<T>>;
 
@@ -11,8 +18,8 @@ pub struct SharedStream<T: Reader + ?Sized> {
     end_pos: u64,
 }
 
-impl<T> From<Rc<RefCell<T>>> for SharedStream<T> where T: Reader {
-    fn from(input: Rc<RefCell<T>>) -> Self {
+impl<T> From<Inner<T>> for SharedStream<T> where T: Reader {
+    fn from(input: Inner<T>) -> Self {
         let (start_pos, end_pos) = input_bounds(&mut *input.borrow_mut()).unwrap();
 
         Self {
@@ -118,6 +125,26 @@ fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
     let end_pos = input.seek(SeekFrom::End(0))?;
     input.seek(SeekFrom::Start(start_pos))?;
     Ok((start_pos, end_pos))
+}
+
+#[derive(Clone, Deref)]
+pub struct SharedFile {
+    #[deref]
+    inner: SharedStream<BufReader<File>>,
+    path: PathBuf,
+}
+
+impl SharedFile {
+    pub fn new(file: File, path: impl AsRef<Path>) -> Self {
+        Self {
+            inner: SharedStream::new(BufReader::new(file)),
+            path: path.as_ref().into(),
+        }
+    }
+
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Ok(Self::new(File::open(&path)?, path))
+    }
 }
 
 #[cfg(test)]

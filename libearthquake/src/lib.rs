@@ -12,10 +12,9 @@
 
 pub mod collections;
 pub mod detection;
-pub mod io;
 pub mod player;
 pub mod resources;
-pub(crate) mod types;
+pub mod vfs;
 
 #[must_use]
 pub fn name(with_version: bool) -> String {

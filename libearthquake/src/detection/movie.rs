@@ -7,7 +7,7 @@ use libmactoolbox::{
     rsid,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DetectionInfo {
     pub(crate) os_type_endianness: Endianness,
     pub(crate) data_endianness: Endianness,
@@ -43,7 +43,7 @@ impl DetectionInfo {
     }
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq)]
+#[derive(Clone, Copy, Debug, Display, PartialEq)]
 pub enum Kind {
     Accelerator,
     Embedded,
@@ -51,7 +51,7 @@ pub enum Kind {
     Cast,
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, PartialOrd)]
 pub enum Version {
     #[display(fmt = "3")]
     D3,

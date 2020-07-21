@@ -12,6 +12,7 @@ pub struct ResourceFile<T: Reader> {
     input: RefCell<Input<T>>,
     decompressor: RefCell<DecompressorState>,
     resource_map: HashMap<ResourceId, ResourceOffsets>,
+    counts: HashMap<OSType, u16>,
 }
 
 impl<T: Reader> ResourceFile<T> {
@@ -48,6 +49,8 @@ impl<T: Reader> ResourceFile<T> {
             (ByteOrdered::be(Cursor::new(list)), HashMap::with_capacity(num_resources as usize))
         };
 
+        let mut counts = HashMap::with_capacity(num_types as usize);
+
         let mut last_code_id = 0;
         for i in 0..num_types {
             let os_type = type_list.read_os_type::<BigEndian>()
@@ -56,6 +59,8 @@ impl<T: Reader> ResourceFile<T> {
                 .with_context(|| format!("Can’t read number of resources for {}", os_type))?;
             let table_offset = types_offset + u64::from(type_list.read_u16()
                 .with_context(|| format!("Can’t read resource table offset for {}", os_type))?);
+
+            counts.insert(os_type, num_resources + 1);
 
             input.seek(SeekFrom::Start(table_offset))
                 .with_context(|| format!("Bad offset {} for {} resource list", table_offset, os_type))?;
@@ -108,6 +113,7 @@ impl<T: Reader> ResourceFile<T> {
             input: RefCell::new(input),
             decompressor: RefCell::new(DecompressorState::Waiting(last_code_id)),
             resource_map,
+            counts,
         })
     }
 
@@ -120,12 +126,11 @@ impl<T: Reader> ResourceFile<T> {
     /// Returns `true` if the resource file contains the resource with the given
     /// ID.
     pub fn contains_type(&self, os_type: OSType) -> bool {
-        for resource_id in self.resource_map.keys() {
-            if resource_id.0 == os_type {
-                return true;
-            }
-        }
-        false
+        self.counts.get(&os_type).is_some()
+    }
+
+    pub fn count(&self, os_type: OSType) -> u16 {
+        *self.counts.get(&os_type).unwrap_or(&0)
     }
 
     pub fn load<R: 'static + libcommon::Resource>(&self, id: ResourceId) -> AResult<Rc<R>> {

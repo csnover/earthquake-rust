@@ -10,37 +10,69 @@
 )]
 #![warn(rust_2018_idioms)]
 
-mod apple_double;
 mod application_vise;
-mod mac_binary;
+#[cfg(feature = "dialogs")]
+mod dialogs;
+mod files;
 mod os_type;
 pub mod resources;
 mod resource_file;
 mod resource_id;
+mod resource_manager;
+#[cfg(feature = "quickdraw")]
+mod quickdraw;
 pub mod script_manager;
 pub mod string;
 mod system;
 
-pub use apple_double::*;
+#[deprecated]
+pub use files::AppleDouble;
 pub use application_vise::*;
-pub use mac_binary::*;
+#[deprecated]
+pub use files::MacBinary;
 pub use os_type::*;
 pub use resource_file::*;
 pub use resource_id::*;
+pub use resource_manager::*;
 pub use system::System;
+use anyhow::Result as AResult;
+use byteordered::{ByteOrdered, Endianness};
+use libcommon::{Reader, Resource};
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Point {
     pub x: i16,
     pub y: i16,
 }
 
-#[derive(Default)]
+impl Resource for Point {
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32) -> AResult<Self> where Self: Sized {
+        assert_eq!(size, 4);
+        Ok(Self {
+            x: input.read_i16()?,
+            y: input.read_i16()?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Rect {
     pub top: i16,
     pub left: i16,
     pub bottom: i16,
     pub right: i16,
+}
+
+impl Resource for Rect {
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32) -> AResult<Self> where Self: Sized {
+        assert_eq!(size, 8);
+        Ok(Self {
+            top: input.read_i16()?,
+            left: input.read_i16()?,
+            bottom: input.read_i16()?,
+            right: input.read_i16()?,
+        })
+    }
 }
 
 // TODO

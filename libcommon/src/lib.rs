@@ -12,12 +12,21 @@
 
 pub mod encodings;
 mod resource;
-mod sharedstream;
+mod shared_stream;
+pub mod vfs;
 
 pub use resource::Resource;
-pub use sharedstream::SharedStream;
+pub use shared_stream::{SharedFile, SharedStream};
 
+use anyhow::{anyhow, Context, Error as AError, Result as AResult};
 use std::{fmt, io};
+
+pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
+    for error in chained_error.chain() {
+        result = result.context(anyhow!("{}", error));
+    }
+    result
+}
 
 pub trait Reader: io::Read + io::Seek + fmt::Debug {
     fn skip(&mut self, pos: u64) -> io::Result<u64> {
@@ -29,3 +38,18 @@ pub trait Reader: io::Read + io::Seek + fmt::Debug {
     }
 }
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UnkHnd(u32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct UnkPtr(u32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Unk32(u32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Unk16(u16);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Unk8(u8);

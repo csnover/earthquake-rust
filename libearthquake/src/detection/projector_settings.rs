@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result as AResult};
 use crate::{bail_sample, ensure_sample};
+use derive_more::Deref;
 use super::projector::{
     MacCPU,
     Platform,
@@ -9,7 +10,7 @@ use super::projector::{
     WinVersion,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 /// The strategy used when there is not enough memory to load an accelerator
 /// into memory.
 /// TODO: The existence of this configuration option makes absolutely no sense
@@ -25,7 +26,7 @@ pub enum AccelMode {
     Chunk,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum D3PlatformSettings {
     Mac {
         /// Playback of the first movie will not begin until the mouse is
@@ -46,7 +47,7 @@ pub enum D3PlatformSettings {
     },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct D3Settings {
     /// Loop movies instead of exiting after the last movie is finished
     /// playing.
@@ -63,12 +64,12 @@ pub struct D3Settings {
 
 impl D3Settings {
     #[must_use]
-    pub fn use_external_files(&self) -> bool {
+    pub fn use_external_files(self) -> bool {
         self.use_external_files
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct D4Settings {
     /// Center the stage on the screen instead of putting it at the top-left
     /// corner. This value is exposed by Lingo, so it has to be stored for
@@ -92,8 +93,11 @@ pub struct D4Settings {
     show_title_bar: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Deref)]
 pub struct D5Settings {
+    #[deref]
+    base: D4Settings,
+
     /// The projector was created using optimisation which creates duplicate
     /// cast members.
     /// TODO: This is not exposed to Lingo, so it may not be necessary to
@@ -101,8 +105,11 @@ pub struct D5Settings {
     duplicate_cast: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Deref)]
 pub struct D6Settings {
+    #[deref]
+    base: D4Settings,
+
     /// The movie in the projector has been compressed.
     compressed: bool,
 
@@ -114,15 +121,15 @@ pub struct D6Settings {
     has_network_xtras: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum PerVersionSettings {
     D3(D3Settings),
     D4(D4Settings),
-    D5(D4Settings, D5Settings),
-    D6(D4Settings, D6Settings),
+    D5(D5Settings),
+    D6(D6Settings),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ProjectorSettings {
     /// Resize the stage when a new movie plays instead of keeping the
     /// stage the same size as the first movie.
@@ -161,6 +168,7 @@ impl ProjectorSettings {
         }
 
         // Sanity check: these bits cannot normally be changed by an author
+        // (but may be different for Education editions)
         ensure_sample!(bits[0..=1] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 0-1");
         ensure_sample!(bits[4..=5] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 4-5");
         ensure_sample!(bits[8] == 0, "Unexpected D4+Mac PJst byte 8");
@@ -219,12 +227,13 @@ impl ProjectorSettings {
                     switch_color_depth,
                     platform,
                     full_screen: bits[6] & 2 != 0,
-                    per_version: PerVersionSettings::D5(D4Settings {
-                        center_stage_on_screen,
-                        play_every_movie,
-                        play_in_background,
-                        show_title_bar,
-                    }, D5Settings {
+                    per_version: PerVersionSettings::D5(D5Settings {
+                        base: D4Settings {
+                            center_stage_on_screen,
+                            play_every_movie,
+                            play_in_background,
+                            show_title_bar,
+                        },
                         duplicate_cast: bits[6] & 1 != 0,
                     }),
                 }
@@ -235,12 +244,13 @@ impl ProjectorSettings {
                     switch_color_depth,
                     platform,
                     full_screen: bits[6] & 2 != 0,
-                    per_version: PerVersionSettings::D6(D4Settings {
-                        center_stage_on_screen,
-                        play_every_movie,
-                        play_in_background,
-                        show_title_bar,
-                    }, D6Settings {
+                    per_version: PerVersionSettings::D6(D6Settings {
+                        base: D4Settings {
+                            center_stage_on_screen,
+                            play_every_movie,
+                            play_in_background,
+                            show_title_bar,
+                        },
                         compressed: bits[6] & 1 != 0,
                         has_xtras: bits[6] & 0x80 != 0,
                         has_network_xtras: bits[6] & 0x40 != 0,
@@ -311,12 +321,13 @@ impl ProjectorSettings {
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
                 platform,
-                per_version: PerVersionSettings::D5(D4Settings {
-                    center_stage_on_screen: true,
-                    play_every_movie:       bits[4] & 1 != 0,
-                    play_in_background:     bits[4] & 2 != 0,
-                    show_title_bar:         bits[4] & 8 != 0,
-                }, D5Settings {
+                per_version: PerVersionSettings::D5(D5Settings {
+                    base: D4Settings {
+                        center_stage_on_screen: true,
+                        play_every_movie:       bits[4] & 1 != 0,
+                        play_in_background:     bits[4] & 2 != 0,
+                        show_title_bar:         bits[4] & 8 != 0,
+                    },
                     duplicate_cast:         bits[0] & 1 != 0,
                 }),
             },
@@ -325,13 +336,14 @@ impl ProjectorSettings {
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
                 platform,
-                per_version: PerVersionSettings::D6(D4Settings {
-                    center_stage_on_screen: true,
-                    play_every_movie:       bits[4] & 1 != 0,
-                    play_in_background:     bits[4] & 2 != 0,
-                    // different from D5 starting here
-                    show_title_bar:         bits[4] & 8 != 0,
-                }, D6Settings {
+                per_version: PerVersionSettings::D6(D6Settings {
+                    base: D4Settings {
+                        center_stage_on_screen: true,
+                        play_every_movie:       bits[4] & 1 != 0,
+                        play_in_background:     bits[4] & 2 != 0,
+                        // different from D5 starting here
+                        show_title_bar:         bits[4] & 8 != 0,
+                    },
                     compressed:             bits[0] & 1 != 0,
                     // TODO: Other bytes are 0xff when this is enabled; not sure
                     // if this is garbage or actually has significance

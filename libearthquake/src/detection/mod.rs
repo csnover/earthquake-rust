@@ -3,9 +3,8 @@ pub mod projector;
 pub mod projector_settings;
 
 use anyhow::{anyhow, bail, Context, Result as AResult};
-use crate::{collections::riff, io::open_resource_fork};
-use libcommon::{Reader, SharedStream};
-use libmactoolbox::{AppleDouble, MacBinary};
+use crate::{collections::riff, vfs::Native};
+use libcommon::{flatten_errors, Reader, SharedStream, vfs::VirtualFileSystem};
 use std::{fs::File, io::{Seek, SeekFrom}, path::Path};
 
 // 1. D4+Mac projector: resource fork w/ projector ostype + maybe riff in data fork
@@ -16,135 +15,59 @@ use std::{fs::File, io::{Seek, SeekFrom}, path::Path};
 // 6. D4+Win projector: executable w/ standard projector header
 // 7. D3Win & D4+Win movie: riff w/ specific subtype
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FileType {
     Projector(projector::DetectionInfo<File>, SharedStream<File>),
     Movie(movie::DetectionInfo, SharedStream<File>),
 }
 
-pub fn detect<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
-    ensure_exists(&filename).and_then(|_|
-        detect_resource_fork(&filename)
-            .or_else(|e| flatten_errors(detect_apple_single_or_apple_double(&filename, false), &e))
-            .or_else(|e| flatten_errors(detect_mac_binary(&filename, false), &e))
-            .or_else(|e| flatten_errors(detect_file(&filename), &e))
-    ).context("Detection failed")
+pub fn detect<T: AsRef<Path>>(path: T) -> AResult<FileType> {
+    ensure_exists(&path).and_then(|_| {
+        Native::new().open(path)
+    }).and_then(|file| {
+        file.resource_fork().context("No resource fork")
+            .and_then(|rf| detect_mac(rf.clone(), file.data_fork().map(SharedStream::clone)))
+            .or_else(|ref e| {
+                flatten_errors(file.data_fork().context("No data fork").and_then(|df| {
+                    projector::detect_win(&mut df.clone())
+                        .map_err(|e| anyhow!("Not a Director for Windows file: {}", e))
+                        .map(|p| FileType::Projector(p, df.clone()))
+                        .or_else(|e| flatten_errors(detect_mac(df.clone(), None::<SharedStream<File>>), &e))
+                        .or_else(|e| flatten_errors(detect_riff(df.clone()), &e))
+                }), e)
+            })
+    }).context("Detection failed")
 }
 
 fn ensure_exists<T: AsRef<Path>>(filename: T) -> AResult<()> {
     if !filename.as_ref().metadata()?.is_file() {
-        return Err(anyhow!("{} is not a file", filename.as_ref().display()))
+        bail!("{} is not a file", filename.as_ref().display())
     }
 
     Ok(())
 }
 
-pub fn detect_data_fork<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
-    detect_apple_single_or_apple_double(&filename, true)
-        .or_else(|e| flatten_errors(detect_mac_binary(&filename, true), &e))
-        .or_else(|e| {
-            let file = SharedStream::new(File::open(&filename).map_err(|e| anyhow!("Could not open {}: {}", filename.as_ref().display(), e))?);
-            flatten_errors(detect_riff(file), &e)
-        })
-}
-
-fn detect_apple_single_or_apple_double<T: AsRef<Path>>(filename: T, only_data_fork: bool) -> AResult<FileType> {
-    let apple_file = AppleDouble::open(filename)
-        .map_err(|e| anyhow!("Not an AppleSingle/AppleDouble file: {}", e))?;
-
-    let resource_fork = if only_data_fork {
-        None
-    } else {
-        apple_file.resource_fork()
-    };
-
-    if let Some(resource_fork) = resource_fork {
-        detect_mac(resource_fork, apple_file.data_fork())
-            .or_else(|e| {
-                if let Some(data_fork) = apple_file.data_fork() {
-                    flatten_errors(detect_riff(data_fork), &e)
-                } else {
-                    Err(e)
-                }
-            })
-    } else if let Some(data_fork) = apple_file.data_fork() {
-        detect_riff(data_fork)
-    } else {
-        bail!("No data in AppleSingle/AppleDouble file")
-    }
-}
-
-fn detect_file<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
-    let file = SharedStream::new(File::open(&filename)
-        .map_err(|e| anyhow!("Could not open {}: {}", filename.as_ref().display(), e))?);
-
-        projector::detect_win(&mut file.clone())
-        .map_err(|e| anyhow!("Not a Director for Windows file: {}", e))
-        .map(|p| FileType::Projector(p, file.clone()))
-        .or_else(|e| flatten_errors(detect_mac(file.clone(), None::<SharedStream<File>>), &e))
-        .or_else(|e| flatten_errors(detect_riff(file), &e))
-}
-
-fn detect_mac(mut stream: SharedStream<File>, mut data_fork: Option<SharedStream<File>>) -> AResult<FileType> {
-    let start_pos = stream.pos()?;
-    projector::detect_mac(&mut stream, data_fork.as_mut())
+fn detect_mac(mut resource_fork: SharedStream<File>, mut data_fork: Option<SharedStream<File>>) -> AResult<FileType> {
+    let start_pos = resource_fork.pos()?;
+    projector::detect_mac(&mut resource_fork, data_fork.as_mut())
         .map(|p| {
-            stream.seek(SeekFrom::Start(start_pos)).unwrap();
-            FileType::Projector(p, stream.clone())
+            resource_fork.seek(SeekFrom::Start(start_pos)).unwrap();
+            FileType::Projector(p, resource_fork.clone())
         })
-        .or_else(|e| {
-            stream.seek(SeekFrom::Start(start_pos)).unwrap();
-            flatten_errors(movie::detect_mac(&mut stream).map(|m| {
-                stream.seek(SeekFrom::Start(start_pos)).unwrap();
-                FileType::Movie(m, stream)
-            }), &e)
+        .or_else(|ref e| {
+            resource_fork.seek(SeekFrom::Start(start_pos)).unwrap();
+            flatten_errors(movie::detect_mac(&mut resource_fork).map(|m| {
+                resource_fork.seek(SeekFrom::Start(start_pos)).unwrap();
+                FileType::Movie(m, resource_fork)
+            }), e)
         })
         .map_err(|e| anyhow!("Not a Director for Mac file: {}", e))
 }
 
-fn detect_mac_binary<T: AsRef<Path>>(filename: T, only_data_fork: bool) -> AResult<FileType> {
-    let mac_binary = MacBinary::new(File::open(&filename)?)
-        .map_err(|e| anyhow!("Not a MacBinary file: {}", e))?;
-
-    let resource_fork = if only_data_fork {
-        None
-    } else {
-        mac_binary.resource_fork()
-    };
-
-    if let Some(resource_fork) = resource_fork {
-        detect_mac(resource_fork, mac_binary.data_fork()).or_else(|e| {
-            if let Some(data_fork) = mac_binary.data_fork() {
-                flatten_errors(detect_riff(data_fork), &e)
-            } else {
-                Err(e)
-            }
-        })
-    } else if let Some(data_fork) = mac_binary.data_fork() {
-        detect_riff(data_fork)
-    } else {
-        bail!("No data in MacBinary file")
-    }
-}
-
-fn detect_resource_fork<T: AsRef<Path>>(filename: T) -> AResult<FileType> {
-    detect_mac(
-        SharedStream::new(open_resource_fork(&filename).map_err(|e| anyhow!("Could not open resource fork: {}", e))?),
-        Some(SharedStream::new(File::open(&filename).map_err(|e| anyhow!("Could not open data fork: {}", e))?))
-    )
-}
-
-fn detect_riff(mut stream: SharedStream<File>) -> AResult<FileType> {
-    let start_pos = stream.pos()?;
-    riff::detect(&mut stream).and_then(|m| {
-        stream.seek(SeekFrom::Start(start_pos))?;
-        Ok(FileType::Movie(m, stream))
+fn detect_riff(mut data_fork: SharedStream<File>) -> AResult<FileType> {
+    let start_pos = data_fork.pos()?;
+    riff::detect(&mut data_fork).and_then(|m| {
+        data_fork.seek(SeekFrom::Start(start_pos))?;
+        Ok(FileType::Movie(m, data_fork))
     })
-}
-
-fn flatten_errors<T>(mut result: AResult<T>, chained_error: &anyhow::Error) -> AResult<T> {
-    for error in chained_error.chain() {
-        result = result.context(anyhow!("{}", error));
-    }
-    result
 }
