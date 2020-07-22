@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Result as AResult};
 use byteordered::ByteOrdered;
 use crate::script_manager::decode_text;
 use libcommon::{Reader, SharedStream};
-use std::{ffi::OsString, fs::File, io, path::{Path, PathBuf}};
 
 #[derive(Debug)]
 pub struct AppleDouble<T: Reader> {
@@ -108,20 +107,4 @@ impl<T: Reader> AppleDouble<T> {
     pub fn resource_fork(&self) -> Option<&SharedStream<T>> {
         self.resource_fork.as_ref()
     }
-}
-
-impl AppleDouble<File> {
-    pub fn open(path: impl AsRef<Path>) -> AResult<Self> {
-        Self::new(File::open(&path)?, open_apple_double(&path).ok())
-    }
-}
-
-fn open_apple_double(path: impl AsRef<Path>) -> io::Result<File> {
-    let mut path = PathBuf::from(path.as_ref());
-    path.set_file_name({
-        let mut file_name = OsString::from("._");
-        file_name.push(path.file_name().unwrap());
-        file_name
-    });
-    File::open(path)
 }

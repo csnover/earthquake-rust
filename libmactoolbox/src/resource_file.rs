@@ -2,9 +2,14 @@ use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
-use libcommon::{encodings::MAC_ROMAN, Reader};
 use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::ReadExt};
-use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::Rc};
+use derive_more::{Constructor, Display};
+use libcommon::{encodings::MAC_ROMAN, Reader};
+use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::Rc, sync::atomic::{Ordering, AtomicI16}};
+
+#[derive(Clone, Constructor, Copy, Debug, Display, Eq, PartialEq)]
+pub struct RefNum(i16);
+static REF_NUM: AtomicI16 = AtomicI16::new(1);
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
@@ -13,6 +18,7 @@ pub struct ResourceFile<T: Reader> {
     decompressor: RefCell<DecompressorState>,
     resource_map: HashMap<ResourceId, ResourceOffsets>,
     counts: HashMap<OSType, u16>,
+    reference_number: RefNum,
 }
 
 impl<T: Reader> ResourceFile<T> {
@@ -114,6 +120,7 @@ impl<T: Reader> ResourceFile<T> {
             decompressor: RefCell::new(DecompressorState::Waiting(last_code_id)),
             resource_map,
             counts,
+            reference_number: RefNum(REF_NUM.fetch_add(1, Ordering::Relaxed)),
         })
     }
 
@@ -147,12 +154,8 @@ impl<T: Reader> ResourceFile<T> {
         R::load(&mut input.as_mut(), size).map(Rc::new)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Resource<'_, T>> {
-        self.resource_map.iter().map(move |(k, v)| Resource {
-            id: *k,
-            owner: self,
-            offsets: *v,
-        })
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = ResourceId> + 'a {
+        self.resource_map.keys().copied()
     }
 
     /// Returns the name embedded in the Resource File. For applications, this
@@ -161,6 +164,10 @@ impl<T: Reader> ResourceFile<T> {
         let mut input = self.input.borrow_mut();
         input.seek(SeekFrom::Start(0x30)).ok()?;
         input.read_pascal_str(MAC_ROMAN).ok()
+    }
+
+    pub fn reference_number(&self) -> RefNum {
+        self.reference_number
     }
 
     fn build_resource_data(&self, offsets: &ResourceOffsets) -> AResult<Vec<u8>> {
@@ -201,45 +208,6 @@ impl<T: Reader> ResourceFile<T> {
             decompressor.decompress(&data).context("Decompression failure")
         } else {
             unreachable!();
-        }
-    }
-}
-
-#[derive(Debug)]
-/// A resource from a Resource File.
-pub struct Resource<'a, T: Reader> {
-    id: ResourceId,
-    owner: &'a ResourceFile<T>,
-    offsets: ResourceOffsets,
-}
-
-impl<'a, T: Reader> Resource<'a, T> {
-    /// Returns the resource’s data.
-    pub fn data(&self) -> AResult<Vec<u8>> {
-        self.owner.build_resource_data(&self.offsets).with_context(|| format!("Can’t read {}", self.id))
-    }
-
-    /// Returns the resource’s flags.
-    #[must_use]
-    pub fn flags(&self) -> ResourceFlags {
-        self.offsets.flags
-    }
-
-    /// Returns the resources’s ID.
-    #[must_use]
-    pub fn id(&self) -> ResourceId {
-        self.id
-    }
-
-    /// Returns the resource’s name.
-    #[must_use]
-    pub fn name(&self) -> Option<String> {
-        if let Some(name_offset) = self.offsets.name_offset {
-            let mut input = self.owner.input.borrow_mut();
-            input.seek(SeekFrom::Start(u64::from(name_offset))).ok()?;
-            Some(input.read_pascal_str(MAC_ROMAN).ok()?)
-        } else {
-            None
         }
     }
 }

@@ -1,14 +1,25 @@
 use anyhow::Result as AResult;
-use crate::{Reader, SharedStream};
-use std::{fs::File, path::{Path, PathBuf}};
+use crate::Reader;
+use std::path::Path;
 
-pub trait VirtualFileSystem<T: Reader> {
-    fn open(&self, path: impl AsRef<Path>) -> AResult<Box<dyn VirtualFile<T>>>;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForkKind {
+    Data,
+    Resource,
 }
 
-pub trait VirtualFile<T: Reader> {
-    fn data_fork(&self) -> Option<&SharedStream<T>>;
-    fn name(&self) -> Option<PathBuf>;
+pub trait VirtualFileSystem {
+    fn open<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>>;
+    fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>>;
+}
+
+pub trait VirtualFile : Reader {
+    /// The original name of the file, which may come from internal file
+    /// metadata.
+    fn name(&self) -> Option<&Path> {
+        Some(self.path())
+    }
+
+    /// The path of the file on disk.
     fn path(&self) -> &Path;
-    fn resource_fork(&self) -> Option<&SharedStream<T>>;
 }

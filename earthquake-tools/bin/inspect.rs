@@ -27,14 +27,14 @@ use libearthquake::{
             DetectionInfo as ProjectorDetectionInfo,
             Movie as MovieInfo,
             Version as ProjectorVersion,
-        },
+        }, Detection,
     },
     name,
 };
-use libcommon::SharedStream;
-use libmactoolbox::ResourceFile;
+use libcommon::{Reader, vfs::VirtualFileSystem};
+use libmactoolbox::{ResourceFile, vfs::HostFileSystem};
 use pico_args::Arguments;
-use std::{env, fs::File, io::{Seek, SeekFrom}, path::{Path, PathBuf}, process::exit};
+use std::{env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
 
 fn main() -> AResult<()> {
     println!("{} file inspector", name(true));
@@ -56,38 +56,17 @@ fn main() -> AResult<()> {
     Ok(())
 }
 
-fn read_embedded_movie(num_movies: u16, stream: SharedStream<File>, inspect_data: bool) -> AResult<()> {
-    println!("{} embedded movies", num_movies);
-
-    if inspect_data {
-        let rom = ResourceFile::new(stream)?;
-        for resource in rom.iter() {
-            println!("{} {:?}", resource.id(), resource.flags());
-        }
+fn inspect_riff(stream: &mut impl Reader) -> AResult<()> {
+    let riff = Riff::new(stream)?;
+    for resource in riff.iter() {
+        println!("{}", resource);
     }
 
     Ok(())
 }
 
-fn read_file(filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
-    match detect(filename)? {
-        FileType::Projector(p, s) => read_projector(&p, s, filename, data_dir, inspect_data),
-        FileType::Movie(m, s) => read_movie(&m, s, inspect_data),
-    }
-}
-
-fn read_movie(info: &MovieDetectionInfo, mut stream: SharedStream<File>, inspect_data: bool) -> AResult<()> {
-    println!("{:?}", info);
-    if inspect_data {
-        match info.kind() {
-            MovieKind::Movie | MovieKind::Cast => inspect_riff(&mut stream)?,
-            MovieKind::Accelerator | MovieKind::Embedded => read_embedded_movie(1, stream, inspect_data)?,
-        }
-    }
-    Ok(())
-}
-
-fn inspect_riff_container(riff_container: &RiffContainer<File>, inspect_data: bool) -> AResult<()> {
+fn inspect_riff_container(stream: impl Reader, inspect_data: bool) -> AResult<()> {
+    let riff_container = RiffContainer::new(stream)?;
     for index in 0..riff_container.len() {
         if inspect_data {
             println!();
@@ -108,16 +87,59 @@ fn inspect_riff_container(riff_container: &RiffContainer<File>, inspect_data: bo
     Ok(())
 }
 
-fn inspect_riff(stream: &mut SharedStream<File>) -> AResult<()> {
-    let riff = Riff::new(stream.clone())?;
-    for resource in riff.iter() {
-        println!("{}", resource);
+fn read_embedded_movie(num_movies: u16, stream: impl Reader, inspect_data: bool) -> AResult<()> {
+    println!("{} embedded movies", num_movies);
+
+    if inspect_data {
+        let rom = ResourceFile::new(stream)?;
+        for resource_id in rom.iter() {
+            println!("{}", resource_id);
+        }
     }
 
     Ok(())
 }
 
-fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<File>, filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
+fn read_file(filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> AResult<()> {
+    let fs = HostFileSystem::new();
+    let Detection { info, resource_fork, data_fork } = detect(&fs, filename)?;
+    match info {
+        FileType::Projector(p) => read_projector(
+            &fs,
+            &p,
+            if p.version() == ProjectorVersion::D3 {
+                resource_fork.or(data_fork)
+            } else {
+                data_fork
+            }.unwrap(),
+            filename,
+            data_dir,
+            inspect_data
+        )?,
+        FileType::Movie(m) => read_movie(&m, resource_fork.or(data_fork).unwrap(), inspect_data)?,
+    }
+    Ok(())
+}
+
+fn read_movie(info: &MovieDetectionInfo, mut stream: impl Reader, inspect_data: bool) -> AResult<()> {
+    println!("{:?}", info);
+    if inspect_data {
+        match info.kind() {
+            MovieKind::Movie | MovieKind::Cast => inspect_riff(&mut stream)?,
+            MovieKind::Accelerator | MovieKind::Embedded => read_embedded_movie(1, stream, inspect_data)?,
+        }
+    }
+    Ok(())
+}
+
+fn read_projector(
+    fs: &impl VirtualFileSystem,
+    info: &ProjectorDetectionInfo,
+    mut stream: impl Reader,
+    filename: &str,
+    data_dir: Option<&PathBuf>,
+    inspect_data: bool
+) -> AResult<()> {
     println!("{:?}", info);
     match info.movie() {
         MovieInfo::D3Win(movies) => {
@@ -129,9 +151,10 @@ fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<
                 }
             }
         },
-        MovieInfo::Internal(container) => {
-            println!("Internal movie");
-            inspect_riff_container(container, inspect_data)?;
+        MovieInfo::Internal(offset) => {
+            println!("Internal movie at {}", offset);
+            stream.seek(SeekFrom::Start(u64::from(*offset)))?;
+            inspect_riff_container(stream, inspect_data)?;
         },
         MovieInfo::External(filenames) => {
             for filename in filenames {
@@ -167,9 +190,9 @@ fn read_projector(info: &ProjectorDetectionInfo<File>, mut stream: SharedStream<
             if info.version() == ProjectorVersion::D3 {
                 read_embedded_movie(*num_movies, stream, inspect_data)?;
             } else {
-                match detect(filename)? {
-                    FileType::Projector(..) => bail!("Embedded movie looped back to projector"),
-                    FileType::Movie(m, s) => read_movie(&m, s, inspect_data)?,
+                match detect(fs, filename)? {
+                    Detection { info: FileType::Projector(..), .. } => bail!("Embedded movie looped back to projector"),
+                    Detection { info: FileType::Movie(m), resource_fork, data_fork } => read_movie(&m, resource_fork.or(data_fork).unwrap(), inspect_data)?,
                 };
             }
         },

@@ -3,19 +3,13 @@ use byteorder::{ByteOrder, BigEndian};
 use crate::{OSType, os, script_manager::decode_text};
 use crc::crc16::checksum_x25;
 use libcommon::{Reader, SharedStream};
-use std::{fs::File, io::{Cursor, SeekFrom}, path::Path};
+use std::io::{Cursor, SeekFrom};
 
 #[derive(Debug)]
 pub struct MacBinary<T: Reader> {
     name: String,
     data_fork: Option<SharedStream<T>>,
     resource_fork: Option<SharedStream<T>>,
-}
-
-impl MacBinary<File> {
-    pub fn open(path: impl AsRef<Path>) -> AResult<Self> {
-        Self::new(File::open(path)?)
-    }
 }
 
 impl<T: Reader> MacBinary<T> {
@@ -166,11 +160,11 @@ mod tests {
         let bin = MacBinary::new(data).unwrap();
         assert_eq!(bin.name, "File I/O TextFile");
         let mut fork_data = Vec::new();
-        bin.data_fork().unwrap().clone().read_to_end(&mut fork_data);
+        bin.data_fork().unwrap().clone().read_to_end(&mut fork_data).unwrap();
         assert_eq!(fork_data, &DATA[128..197]);
 
         fork_data.clear();
-        bin.resource_fork().unwrap().clone().read_to_end(&mut fork_data);
+        bin.resource_fork().unwrap().clone().read_to_end(&mut fork_data).unwrap();
         assert_eq!(fork_data, &DATA[256..542]);
     }
 }

@@ -17,7 +17,8 @@ mod loader;
 use anyhow::Result as AResult;
 use engine::Engine;
 use fluent_ergonomics::FluentErgo;
-use libmactoolbox::script_manager::ScriptCode;
+use libearthquake::detection::detect;
+use libmactoolbox::{vfs::HostFileSystem, script_manager::ScriptCode};
 use loader::Loader;
 use num_traits::FromPrimitive;
 use pico_args::Arguments;
@@ -81,9 +82,12 @@ fn main() -> AResult<()> {
         unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
 
         let files = if args_files.is_empty() {
-            Loader::new(Rc::new(localizer)).exec().map_or_else(Vec::new, |filename| vec![filename])
+            Loader::new(Rc::new(localizer)).exec().map_or_else(Vec::new, |file| vec![file])
         } else {
-            args_files
+            let fs = HostFileSystem::new();
+            args_files.iter().filter_map(|filename| {
+                detect(&fs, &filename).map_or(None, |info| Some((filename.clone(), info.info)))
+            }).collect()
         };
 
         if files.is_empty() {

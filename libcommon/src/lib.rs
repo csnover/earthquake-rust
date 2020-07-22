@@ -12,11 +12,12 @@
 
 pub mod encodings;
 mod resource;
+// TODO: use positioned_io crate?
 mod shared_stream;
 pub mod vfs;
 
 pub use resource::Resource;
-pub use shared_stream::{SharedFile, SharedStream};
+pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
 use std::{fmt, io};
@@ -29,12 +30,27 @@ pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> ARes
 }
 
 pub trait Reader: io::Read + io::Seek + fmt::Debug {
-    fn skip(&mut self, pos: u64) -> io::Result<u64> {
-        self.seek(io::SeekFrom::Current(pos as i64))
+    fn is_empty(&mut self) -> io::Result<bool> {
+        Ok(self.len()? == 0)
+    }
+
+    fn len(&mut self) -> io::Result<u64> {
+        let pos = self.pos()?;
+        let end = self.seek(io::SeekFrom::End(0))?;
+        self.seek(io::SeekFrom::Start(pos))?;
+        Ok(end)
     }
 
     fn pos(&mut self) -> io::Result<u64> {
         self.seek(io::SeekFrom::Current(0))
+    }
+
+    fn reset(&mut self) -> io::Result<u64> {
+        self.seek(io::SeekFrom::Start(0))
+    }
+
+    fn skip(&mut self, pos: u64) -> io::Result<u64> {
+        self.seek(io::SeekFrom::Current(pos as i64))
     }
 }
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}

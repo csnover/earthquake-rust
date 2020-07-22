@@ -55,7 +55,7 @@ pub struct Riff<T: Reader> {
     // but not enough information is recorded currently to actually do this.
     id: Identity,
 
-    input: ByteOrdered<SharedStream<T>, byteordered::Endianness>,
+    input: RefCell<ByteOrdered<SharedStream<T>, byteordered::Endianness>>,
 
     /// Index for O(1) access of RIFF chunks by index.
     memory_map: MemoryMap,
@@ -67,28 +67,8 @@ pub struct Riff<T: Reader> {
 }
 
 impl<T: Reader> Riff<T> {
-    pub fn new(mut input: SharedStream<T>) -> AResult<Self> {
-        let info = detect(&mut input)?;
-
-        let (memory_map, resource_map) = {
-            if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {
-                Self::init::<_, LittleEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Little {
-                Self::init::<_, BigEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Big {
-                Self::init::<_, BigEndian, BigEndian>(&mut input)?
-            } else {
-                unreachable!();
-            }
-        };
-
-        Ok(Self {
-            id: Identity::Parent,
-            input: ByteOrdered::runtime(input, info.data_endianness()),
-            memory_map,
-            resource_map,
-            info
-        })
+    pub fn new(input: T) -> AResult<Self> {
+        Self::with_identity(Identity::Parent, SharedStream::new(input))
     }
 
     #[must_use]
@@ -123,7 +103,7 @@ impl<T: Reader> Riff<T> {
                 .map_err(|_| anyhow!("Invalid data type for index {}", index));
         }
 
-        let mut input = self.input.clone();
+        let mut input = self.input.borrow_mut();
         input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
             .with_context(|| format!("Could not seek to RIFF index {}", index))?;
 
@@ -138,13 +118,10 @@ impl<T: Reader> Riff<T> {
         let entry = self.memory_map.get(index)
             .with_context(|| format!("Invalid RIFF index {}", index))?;
 
-        let mut input = self.input.clone().into_inner();
-        input.seek(SeekFrom::Start(u64::from(entry.offset)))?;
-
-        Self::new(input).map(|mut riff| {
-            riff.id = Identity::Child(index);
-            riff
-        })
+        let mut input = self.input.borrow_mut().inner_mut().clone();
+        input.seek(SeekFrom::Start(u64::from(entry.offset)))
+            .with_context(|| format!("Invalid RIFF offset {} for index {}", entry.offset, index))?;
+        Self::with_identity(Identity::Child(index), input)
     }
 
     pub fn make_free(&mut self, index: ChunkIndex) {
@@ -254,7 +231,8 @@ impl<T: Reader> Riff<T> {
         let map_offset = input.read_u32::<DE>()?;
         // imap contains the reference to the active mmap chunk for the file
         // along with some other unknown data which we can ignore for now
-        input.seek(SeekFrom::Start(u64::from(map_offset)))?;
+        input.seek(SeekFrom::Start(u64::from(map_offset)))
+            .context("Could not seek to mmap")?;
 
         let os_type = input.read_os_type::<OE>()?;
         if os_type != os!(b"mmap") {
@@ -314,7 +292,8 @@ impl<T: Reader> Riff<T> {
         // where it was not expected, but we just always look since there is no
         // reason to have a separate code path for container RIFFs
         let resource_map = if let Some(offset) = resource_map_offset {
-            input.seek(SeekFrom::Start(u64::from(offset)))?;
+            input.seek(SeekFrom::Start(u64::from(offset)))
+                .context("Could not seek to KEY*")?;
             Self::read_keys::<R, OE, DE>(input)?
         } else {
             ResourceMap::new()
@@ -353,9 +332,33 @@ impl<T: Reader> Riff<T> {
 
         Ok(resource_map)
     }
+
+    fn with_identity(id: Identity, mut input: SharedStream<T>) -> AResult<Self> {
+        let info = detect(&mut input)?;
+
+        let (memory_map, resource_map) = {
+            if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {
+                Self::init::<_, LittleEndian, LittleEndian>(&mut input)?
+            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Little {
+                Self::init::<_, BigEndian, LittleEndian>(&mut input)?
+            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Big {
+                Self::init::<_, BigEndian, BigEndian>(&mut input)?
+            } else {
+                unreachable!();
+            }
+        };
+
+        Ok(Self {
+            id,
+            input: RefCell::new(ByteOrdered::runtime(input, info.data_endianness())),
+            memory_map,
+            resource_map,
+            info
+        })
+    }
 }
 
-pub fn detect<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
+pub fn detect(reader: &mut impl Reader) -> AResult<DetectionInfo> {
     let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).context("Not a Director RIFF"),

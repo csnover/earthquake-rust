@@ -15,6 +15,7 @@ anyhow = "1.0"
 cpp_core = "0.6"
 fluent = "0.11"
 fluent-ergonomics = "0.2"
+libcommon = { path = "../libcommon" }
 libearthquake = { path = "../libearthquake" }
 libmactoolbox = { path = "../libmactoolbox" }
 num-traits = "0.2"

@@ -14,7 +14,6 @@ pub mod collections;
 pub mod detection;
 pub mod player;
 pub mod resources;
-pub mod vfs;
 
 #[must_use]
 pub fn name(with_version: bool) -> String {

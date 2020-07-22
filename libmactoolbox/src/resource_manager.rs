@@ -1,68 +1,74 @@
-use anyhow::{anyhow, bail, Result as AResult};
+use anyhow::{anyhow, bail, Context, Result as AResult};
 use crate::{
-    files::{AppleDouble, MacBinary, open_resource_fork},
     OSType,
     ResourceFile,
-    ResourceId
+    ResourceId,
+    resource_file::RefNum, rsid, resources::string_list::StringList,
 };
-use libcommon::{Reader, Resource, SharedFile};
-use std::{fs::File, path::Path, rc::Rc};
+use libcommon::{Resource, vfs::{VirtualFile, VirtualFileSystem}};
+use std::{io::Cursor, path::Path, rc::Rc};
 
-#[derive(Default)]
-pub struct ResourceManager {
+pub struct ResourceManager<'vfs> {
+    fs: &'vfs dyn VirtualFileSystem,
     current_file: usize,
-    files: Vec<ResourceFile<Box<dyn Reader>>>,
+    files: Vec<ResourceFile<Box<dyn VirtualFile + 'vfs>>>,
+    system: Option<ResourceFile<Cursor<Vec<u8>>>>,
 }
 
-impl ResourceManager {
+impl <'vfs> ResourceManager<'vfs> {
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn add_resource<T: Resource>(&mut self, resource: T) -> AResult<()> {
-        todo!();
-    }
-
-    pub fn add_resource_file(&mut self, file: ResourceFile<Box<dyn Reader>>) {
-        self.files.push(file);
-        self.current_file = self.files.len();
-    }
-
-    pub fn close_resource_file(&mut self, index: i16) -> AResult<()> {
-        if index >= 0 && self.files.len() < (index as usize) {
-            self.files.remove(index as usize);
-            Ok(())
-        } else {
-            bail!("Invalid resource file index");
+    pub fn new(fs: &'vfs dyn VirtualFileSystem, system: Option<Vec<u8>>) -> Self {
+        Self {
+            fs,
+            current_file: 0,
+            files: Vec::new(),
+            system: system.map(|data| ResourceFile::new(Cursor::new(data)).unwrap()),
         }
+    }
+
+    /// `CloseResFile`
+    pub fn close_resource_file(&mut self, ref_num: RefNum) -> AResult<()> {
+        for (index, file) in self.files.iter().enumerate() {
+            if file.reference_number() == ref_num {
+                self.files.remove(index);
+                return Ok(());
+            }
+        }
+
+        bail!("Invalid resource file index");
     }
 
     /// `Count1Resources`
     #[must_use]
     pub fn count_one_resources(&self, kind: OSType) -> u16 {
-        // Setting current file to 0 normally searches the System file, but
-        // there is no System file
         if self.current_file == 0 {
-            return 0;
+            self.system.as_ref().map_or(0, |file| file.count(kind))
+        } else {
+            let file = self.files.get(self.current_file - 1).expect("current_file invalid");
+            file.count(kind)
         }
-
-        let file = self.files.get(self.current_file - 1).expect("current_file invalid");
-        file.count(kind)
     }
 
     /// `CountResources`
     #[must_use]
     pub fn count_resources(&self, kind: OSType) -> u16 {
-        self.files.iter().fold(0, |count, file| count + file.count(kind))
+        self.system.as_ref().map_or(0, |file| file.count(kind))
+        + self.files.iter().fold(0, |count, file| count + file.count(kind))
     }
 
-    pub fn get_string(&self, id: i16) -> Option<String> {
-        todo!();
+    /// `GetString`
+    pub fn get_string(&self, id: i16) -> Option<Rc<String>> {
+        // TODO: User Information Resources
+        self.get_resource::<String>(rsid!(b"STR ", id)).unwrap_or(None)
     }
 
+    /// `GetIndString`
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<String> {
-        todo!();
+        self.get_resource::<StringList>(rsid!(b"STR#", id))
+            .unwrap_or(None)
+            .map(|list| {
+                list.get(index as usize).unwrap_or(&String::new()).to_owned()
+            })
     }
 
     pub fn get_indexed_resource<T: Resource>(&self, index: i16) -> Option<T> {
@@ -83,18 +89,25 @@ impl ResourceManager {
 
     /// `Get1Resource`
     pub fn get_one_resource<T: Resource + 'static>(&self, id: ResourceId) -> AResult<Option<Rc<T>>> {
-        // Setting current file to 0 normally searches the System file, but
-        // there is no System file
         if self.current_file == 0 {
-            return Ok(None)
-        }
-
-        let file = self.files.get(self.current_file - 1).expect("current_file invalid");
-        Ok(if file.contains(id) {
-            Some(file.load::<T>(id)?)
+            self.system
+                .as_ref()
+                .ok_or_else(|| anyhow!("no system file"))
+                .and_then(|file| Ok({
+                    if file.contains(id) {
+                        Some(file.load::<T>(id)?)
+                    } else {
+                        None
+                    }
+                }))
         } else {
-            None
-        })
+            let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
+            Ok(if file.contains(id) {
+                Some(file.load::<T>(id)?)
+            } else {
+                None
+            })
+        }
     }
 
     /// `GetResource`
@@ -105,38 +118,40 @@ impl ResourceManager {
             }
         }
 
+        if let Some(file) = &self.system {
+            if file.contains(id) {
+                return file.load::<R>(id).map(Some);
+            }
+        }
+
         Ok(None)
     }
 
     /// `OpenResFile`
-    pub fn open_resource_file(&mut self, filename: impl AsRef<Path>) -> AResult<()> {
-        // let file = open_resource_fork(&filename)
-        //     .map(|file| SharedFile::new(file, &filename))
-        //     .or_else(|_|
-        //         AppleDouble::open(&filename)?
-        //             .resource_fork()
-        //             .ok_or_else(|| anyhow!("missing resource fork"))
-        //             .map(|s| s.clone())
-        //     )
-        //     .or_else(|_|
-        //         MacBinary::open(&filename)?
-        //             .resource_fork()
-        //             .ok_or_else(|| anyhow!("missing resource fork"))
-        //             .map(|s| s.clone())
-        //     )?;
-
-        // self.files.push(ResourceFile::new(Box::new(file) as Box<dyn Reader>)?);
-        // self.current_file = self.files.len();
-        Ok(())
+    pub fn open_resource_file(&mut self, path: impl AsRef<Path>) -> AResult<()> {
+        self.fs.open_resource_fork(&path)
+            .and_then(|file| {
+                let res_file = ResourceFile::new(file)?;
+                self.files.push(res_file);
+                self.current_file = self.files.len();
+                Ok(())
+            })
     }
 
     /// `UseResFile`
-    pub fn use_resource_file(&mut self, index: i16) -> AResult<()> {
-        if index >= 0 && (index as usize) <= self.files.len() {
-            self.current_file = index as usize;
-            Ok(())
-        } else {
-            bail!("Invalid resource file number {}", index)
+    pub fn use_resource_file(&mut self, ref_num: RefNum) -> AResult<()> {
+        if ref_num == RefNum::new(0) {
+            self.current_file = 0;
+            return Ok(());
         }
+
+        for (index, file) in self.files.iter().enumerate() {
+            if file.reference_number() == ref_num {
+                self.current_file = index;
+                return Ok(());
+            }
+        }
+
+        bail!("Invalid resource file number {}", ref_num)
     }
 }

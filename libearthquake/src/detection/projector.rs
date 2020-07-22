@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::{
-    collections::riff_container::RiffContainer,
+    collections::riff::detect as detect_riff,
     detection::projector_settings::ProjectorSettings,
     panic_sample,
 };
@@ -10,7 +10,6 @@ use derive_more::Display;
 use libcommon::{
     encodings::WIN_ROMAN,
     Reader,
-    SharedStream,
 };
 use libmactoolbox::{
     ResourceFile,
@@ -19,34 +18,26 @@ use libmactoolbox::{
     script_manager::ScriptCode,
     string::ReadExt,
 };
-use std::{path::PathBuf, io::{Read, Seek, SeekFrom}, rc::Rc};
+use std::{path::PathBuf, io::{Read, SeekFrom}, rc::Rc};
 
-#[derive(Debug)]
-pub struct DetectionInfo<T: Reader> {
+#[derive(Clone, Debug)]
+pub struct DetectionInfo {
     name: Option<String>,
     charset: Option<ScriptCode>,
     version: Version,
-    movie: Movie<T>,
+    movie: Movie,
     system_resources: Option<Vec<u8>>,
     config: ProjectorSettings,
 }
 
-impl<T: Reader> Clone for DetectionInfo<T> {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            charset: self.charset,
-            version: self.version,
-            movie: self.movie.clone(),
-            system_resources: None,
-            config: self.config,
-        }
-    }
-}
-
-impl<T: Reader> DetectionInfo<T> {
+impl DetectionInfo {
     #[must_use]
-    pub fn movie(&self) -> &Movie<T> {
+    pub fn config(&self) -> &ProjectorSettings {
+        &self.config
+    }
+
+    #[must_use]
+    pub fn movie(&self) -> &Movie {
         &self.movie
     }
 
@@ -64,11 +55,6 @@ impl<T: Reader> DetectionInfo<T> {
     pub fn version(&self) -> Version {
         self.version
     }
-
-    #[must_use]
-    pub fn config(&self) -> &ProjectorSettings {
-        &self.config
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -78,23 +64,17 @@ pub struct D3WinMovie {
     pub size: u32,
 }
 
-#[derive(Debug)]
-pub enum Movie<T: Reader> {
+#[derive(Clone, Debug)]
+pub enum Movie {
+    /// The number of movies embedded as resources in a Director 3 Mac
+    /// projector.
     Embedded(u16),
+    /// Movies embedded in a Director 3 Windows projector.
     D3Win(Vec<D3WinMovie>),
-    Internal(RiffContainer<T>),
+    /// The offset of a RIFF container embedded in a Director 4+ projector.
+    Internal(u32),
+    /// External movies referenced by a Director 3 projector.
     External(Vec<String>),
-}
-
-impl<T: Reader> Clone for Movie<T> {
-    fn clone(&self) -> Self {
-        match self {
-            Movie::Embedded(id) => Movie::Embedded(*id),
-            Movie::D3Win(movies) => Movie::D3Win(movies.clone()),
-            Movie::Internal(container) => Movie::Internal(container.clone()),
-            Movie::External(movies) => Movie::External(movies.clone()),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq)]
@@ -146,7 +126,7 @@ pub enum Version {
     D7,
 }
 
-pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option<&mut SharedStream<U>>) -> AResult<DetectionInfo<U>> {
+pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) -> AResult<DetectionInfo> {
     let rom = ResourceFile::new(resource_fork)?;
 
     let version = if rom.contains(rsid!(b"PJ97", 0)) && rom.contains(rsid!(b"PJst", 0)) {
@@ -187,7 +167,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
             }
         },
         Version::D4 | Version::D5 | Version::D6 => {
-            if let Some(data_fork) = data_fork {
+            if let Some(mut data_fork) = data_fork {
                 // TODO: Seems like some pre-release version of Director 4
                 // created projectors with no PJxx in the data fork. In these
                 // ones the CPU flag appears to always be zero. Then before GM
@@ -230,9 +210,9 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
                     }
 
                     let riff_offset = BigEndian::read_u32(&buffer[4..]);
-                    (config, internal_movie(data_fork, riff_offset)?)
+                    (config, internal_movie(&mut data_fork, riff_offset)?)
                 } else {
-                    (config, internal_movie(data_fork, 0)?)
+                    (config, internal_movie(&mut data_fork, 0)?)
                 }
             } else {
                 bail!("No data fork; can’t get offset of internal movie");
@@ -253,7 +233,7 @@ pub fn detect_mac<T: Reader, U: Reader>(resource_fork: &mut T, data_fork: Option
     })
 }
 
-fn d3_win_movie_info<T: Reader>(input: &mut T, i: u16) -> AResult<(u32, String)> {
+fn d3_win_movie_info(input: &mut impl Reader, i: u16) -> AResult<(u32, String)> {
     let size = input.read_u32::<LittleEndian>()
         .with_context(|| format!("Can’t read movie {} size", i))?;
     let filename = {
@@ -272,7 +252,7 @@ fn d3_win_movie_info<T: Reader>(input: &mut T, i: u16) -> AResult<(u32, String)>
 const HEADER_SIZE: u32 = 8;
 const SETTINGS_SIZE: u32 = 12;
 
-pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<DetectionInfo<T>> {
+pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
     const MZ: u16 = 0x4d5a;
 
     if input.read_u16::<BigEndian>().context("Can’t read magic")? != MZ {
@@ -306,14 +286,14 @@ pub fn detect_win<T: Reader>(mut input: &mut SharedStream<T>) -> AResult<Detecti
         let movie = if config.d3().unwrap().use_external_files() {
             let mut movies = Vec::with_capacity(usize::from(num_movies));
             for i in 0..num_movies {
-                let (_, filename) = d3_win_movie_info(&mut input, i)?;
+                let (_, filename) = d3_win_movie_info(input.by_ref(), i)?;
                 movies.push(filename);
             }
             Movie::External(movies)
         } else {
             let mut movies = Vec::with_capacity(usize::from(num_movies));
             for i in 0..num_movies {
-                let (size, filename) = d3_win_movie_info(&mut input, i)?;
+                let (size, filename) = d3_win_movie_info(input.by_ref(), i)?;
                 let offset = input.pos()? as u32;
                 movies.push(D3WinMovie {
                     filename,
@@ -391,7 +371,7 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
     }
 }
 
-fn get_exe_info<T: Reader>(input: &mut T) -> AResult<(Platform, Option<String>)> {
+fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> {
     input.seek(SeekFrom::Start(0x3c))?;
     let exe_header_offset = input.read_u16::<LittleEndian>()?;
     input.seek(SeekFrom::Start(u64::from(exe_header_offset)))?;
@@ -424,7 +404,7 @@ fn get_exe_info<T: Reader>(input: &mut T) -> AResult<(Platform, Option<String>)>
     }
 }
 
-fn get_projector_rsrc<T: Reader>(mut input: &mut SharedStream<T>, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
+fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
     let (rsrc_offset, rsrc_size) = match version {
         Version::D3 => unreachable!(),
         Version::D4 => {
@@ -486,14 +466,14 @@ fn get_projector_rsrc<T: Reader>(mut input: &mut SharedStream<T>, offset: u32, v
     Ok(Some(system_resources))
 }
 
-fn internal_movie<T: Reader>(reader: &mut SharedStream<T>, offset: u32) -> AResult<Movie<T>> {
+fn internal_movie(reader: &mut impl Reader, offset: u32) -> AResult<Movie> {
     reader.seek(SeekFrom::Start(u64::from(offset)))
         .with_context(|| format!("Bad RIFF offset {}", offset))?;
 
-    let container = RiffContainer::new(reader.clone())
+    detect_riff(reader)
         .with_context(|| format!("Can’t detect RIFF at {}", offset))?;
 
-    Ok(Movie::Internal(container))
+    Ok(Movie::Internal(offset))
 }
 
 mod pe {
@@ -508,7 +488,7 @@ mod pe {
         SeekFrom,
     };
 
-    fn find_resource_segment_offset<T: Reader>(input: &mut T, num_sections: u16) -> Option<(u32, u32)> {
+    fn find_resource_segment_offset(input: &mut impl Reader, num_sections: u16) -> Option<(u32, u32)> {
         for _ in 0..num_sections {
             let mut section = [ 0; 40 ];
             input.read_exact(&mut section).ok()?;
@@ -520,7 +500,7 @@ mod pe {
         None
     }
 
-    pub(super) fn read_product_name<T: Reader>(input: &mut T) -> Option<String> {
+    pub(super) fn read_product_name(input: &mut impl Reader) -> Option<String> {
         const VERSION_INFO_TYPE: u32 = 0x10;
         const VERSION_INFO_ID: u32 = 1;
         const VERSION_INFO_LANG: u32 = 1033;
@@ -533,7 +513,7 @@ mod pe {
         read_version_struct(input).ok()?
     }
 
-    fn read_version_struct<T: Reader>(input: &mut T) -> AResult<Option<String>> {
+    fn read_version_struct(input: &mut impl Reader) -> AResult<Option<String>> {
         const FIXED_HEADER_WORD_SIZE: usize = 3;
         let start = input.pos()?;
         let size = input.read_u16::<LittleEndian>()?;
@@ -574,7 +554,7 @@ mod pe {
         }
     }
 
-    fn seek_to_directory_entry<T: Reader>(input: &mut T, from_offset: u32, id: u32) -> io::Result<()> {
+    fn seek_to_directory_entry(input: &mut impl Reader, from_offset: u32, id: u32) -> io::Result<()> {
         const ENTRY_SIZE: usize = 8;
         input.skip(12)?;
         let skip_entries = input.read_u16::<LittleEndian>()?;
@@ -595,13 +575,13 @@ mod pe {
         Err(io::ErrorKind::InvalidData.into())
     }
 
-    fn seek_to_resource_data<T: Reader>(input: &mut T, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
+    fn seek_to_resource_data(input: &mut impl Reader, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
         let offset = input.read_u32::<LittleEndian>()?;
         input.seek(SeekFrom::Start(u64::from(offset - virtual_address + raw_offset)))?;
         Ok(())
     }
 
-    fn seek_to_resource_segment<T: Reader>(input: &mut T) -> io::Result<(u32, u32)> {
+    fn seek_to_resource_segment(input: &mut impl Reader) -> io::Result<(u32, u32)> {
         input.skip(2)?;
         let num_sections = input.read_u16::<LittleEndian>()?;
         input.skip(12)?;

@@ -8,7 +8,6 @@ use crate::{
 use libcommon::{
     Reader,
     Resource,
-    SharedStream,
 };
 use libmactoolbox::{
     os,
@@ -139,8 +138,8 @@ impl<T: Reader> Clone for RiffContainer<T> {
 }
 
 impl <T: Reader> RiffContainer<T> {
-    pub fn new(input: SharedStream<T>) -> AResult<Self> {
-        let riff = Riff::new(input)?;
+    pub fn new(input: T) -> AResult<Self> {
+        let riff = Riff::new(input).context("Bad RIFF container")?;
         let file_list = riff.load::<List<ChunkFile>>(riff.first_of_kind(os!(b"List"))).context("Bad List chunk")?;
         let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict"))).context("Bad Dict chunk")?;
 

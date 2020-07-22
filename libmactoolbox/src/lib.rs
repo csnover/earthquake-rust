@@ -24,6 +24,7 @@ mod quickdraw;
 pub mod script_manager;
 pub mod string;
 mod system;
+pub mod vfs;
 
 #[deprecated]
 pub use files::AppleDouble;

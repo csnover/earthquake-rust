@@ -1,10 +1,7 @@
 use crate::Reader;
-use derive_more::Deref;
 use std::{
     cell::RefCell,
-    fs::File,
-    io::{BufReader, Error, ErrorKind, Read, Result, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    io::{Error, ErrorKind, Read, Result, Seek, SeekFrom},
     rc::Rc,
 };
 
@@ -18,9 +15,13 @@ pub struct SharedStream<T: Reader + ?Sized> {
     end_pos: u64,
 }
 
+// TODO: This is hella questionable
 impl<T> From<Inner<T>> for SharedStream<T> where T: Reader {
     fn from(input: Inner<T>) -> Self {
-        let (start_pos, end_pos) = input_bounds(&mut *input.borrow_mut()).unwrap();
+        let (start_pos, end_pos) = {
+            let mut input = input.borrow_mut();
+            (input.pos().unwrap(), input.len().unwrap())
+        };
 
         Self {
             inner: input,
@@ -31,9 +32,11 @@ impl<T> From<Inner<T>> for SharedStream<T> where T: Reader {
     }
 }
 
+// TODO: This is hella questionable
 impl<T> From<T> for SharedStream<T> where T: Reader {
     fn from(mut input: T) -> Self {
-        let (start_pos, end_pos) = input_bounds(&mut input).unwrap();
+        let start_pos = input.pos().unwrap();
+        let end_pos = input.len().unwrap();
 
         Self {
             inner: Rc::new(RefCell::new(input)),
@@ -45,8 +48,13 @@ impl<T> From<T> for SharedStream<T> where T: Reader {
 }
 
 impl<T> SharedStream<T> where T: Reader {
-    pub fn new(input: T) -> Self {
-        Self::from(input)
+    pub fn new(mut input: T) -> Self {
+        Self {
+            start_pos: 0,
+            current_pos: input.pos().unwrap(),
+            end_pos: input.len().unwrap(),
+            inner: Rc::new(RefCell::new(input)),
+        }
     }
 
     pub fn with_bounds(input: T, start_pos: u64, end_pos: u64) -> Self {
@@ -117,33 +125,6 @@ impl<T> Seek for SharedStream<T> where T: Reader {
             },
             _ => Err(Error::new(ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position"))
         }
-    }
-}
-
-fn input_bounds<T>(input: &mut T) -> Result<(u64, u64)> where T: Reader {
-    let start_pos = input.pos()?;
-    let end_pos = input.seek(SeekFrom::End(0))?;
-    input.seek(SeekFrom::Start(start_pos))?;
-    Ok((start_pos, end_pos))
-}
-
-#[derive(Clone, Deref)]
-pub struct SharedFile {
-    #[deref]
-    inner: SharedStream<BufReader<File>>,
-    path: PathBuf,
-}
-
-impl SharedFile {
-    pub fn new(file: File, path: impl AsRef<Path>) -> Self {
-        Self {
-            inner: SharedStream::new(BufReader::new(file)),
-            path: path.as_ref().into(),
-        }
-    }
-
-    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Ok(Self::new(File::open(&path)?, path))
     }
 }
 

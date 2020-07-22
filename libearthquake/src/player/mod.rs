@@ -5,7 +5,8 @@ use crate::{
     detection::{detect, FileType},
 };
 use libmactoolbox::{Point, Rect};
-use std::time::Instant;
+use std::{path::{Path, PathBuf}, time::Instant};
+use libcommon::vfs::VirtualFileSystem;
 
 pub struct Player {
     gray_rgn: Rect,
@@ -14,19 +15,19 @@ pub struct Player {
     last_mouse_move: Instant,
     last_mouse_pos: Point,
     file_type: FileType,
-    path: String,
+    path: PathBuf,
 }
 
 impl Player {
-    pub fn open(path: &str) -> AResult<Self> {
+    pub fn open(fs: &impl VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Self> {
         let now = Instant::now();
 
-        let file_type = detect(path)?;
+        let file_type = detect(fs, &path)?.info;
 
         Ok(Self {
             gray_rgn: Rect::default(),
             file_type,
-            path: path.to_string(),
+            path: path.as_ref().to_path_buf(),
             last_mouse_down: now,
             last_key_down: now,
             last_mouse_move: now,

@@ -118,7 +118,7 @@ impl ApplicationVise {
     /// Determines whether the given data is compressed by Application VISE.
     #[must_use]
     pub fn is_compressed(data: &[u8]) -> bool {
-        data.len() > 4 && &data[0..4] == b"\xa8\x9f\x00\x0c"
+        data.len() >= 4 && &data[0..4] == b"\xa8\x9f\x00\x0c"
     }
 
     /// Checks whether the given data is valid according to the embedded

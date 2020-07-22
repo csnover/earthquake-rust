@@ -3,11 +3,11 @@ use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
 use crate::{qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libearthquake::{
-    detection::{detect, FileType, movie::Kind as MovieKind},
+    detection::{detect, FileType, movie::Kind as MovieKind, Detection},
     name,
     version,
 };
-use libmactoolbox::script_manager::ScriptCode;
+use libmactoolbox::{vfs::HostFileSystem, script_manager::ScriptCode};
 use qt_core::{
     q_dir::Filter as DirFilter,
     AlignmentFlag,
@@ -238,6 +238,7 @@ pub(crate) struct Loader {
     about_box: RefCell<QBox<QDialog>>,
     about_action: QPtr<QAction>,
     about_license_action: QPtr<QAction>,
+    detection: RefCell<Option<FileType>>,
     dialog: QBox<QDialog>,
     file: FileWidget,
     filename: RefCell<Option<String>>,
@@ -272,9 +273,10 @@ impl Loader {
                 about_action,
                 about_license_action,
                 cancel_button,
+                detection: RefCell::default(),
                 dialog,
                 file,
-                filename: RefCell::new(None),
+                filename: RefCell::default(),
                 l,
                 ok_button,
                 tabs,
@@ -284,10 +286,11 @@ impl Loader {
         }
     }
 
-    pub fn exec(&self) -> Option<String> {
+    pub fn exec(&self) -> Option<(String, FileType)> {
         unsafe {
-            if self.dialog.exec() == DialogCode::Accepted.to_int() {
-                self.filename.borrow().clone()
+            // TODO: This is garbage code
+            if self.dialog.exec() == DialogCode::Accepted.to_int() && self.filename.borrow().is_some() {
+                Some((self.filename.borrow().clone().unwrap(), self.detection.borrow().clone().unwrap()))
             } else {
                 None
             }
@@ -593,14 +596,16 @@ impl Loader {
     }
 
     unsafe fn validate_input(self: &Rc<Self>, chosen_path: &CppBox<QString>) {
+        let fs = HostFileSystem::new();
         let std_path = chosen_path.to_std_string();
         let is_valid = if chosen_path.is_empty() {
             false
         } else {
-            match detect(&std_path) {
-                Ok(info) => {
+            match detect(&fs, &std_path) {
+                Ok(Detection { info, .. }) => {
+                    *self.detection.borrow_mut() = Some(info.to_owned());
                     match info {
-                        FileType::Projector(info, ..) => {
+                        FileType::Projector(info) => {
                             self.tabs.info.file_name.set_text(&qs(info.name().unwrap_or(&tr!(self.l, "file-info_unknown-file-name"))));
                             self.tabs.info.kind.set_text(qtr!(
                                 self.l,
