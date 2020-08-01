@@ -1,11 +1,11 @@
-use anyhow::{anyhow, bail, Context, Result as AResult};
+use anyhow::{anyhow, bail, Context, ensure, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::ReadExt};
 use derive_more::{Constructor, Display};
 use libcommon::{encodings::MAC_ROMAN, Reader};
-use std::{cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::Rc, sync::atomic::{Ordering, AtomicI16}};
+use std::{any::Any, cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
 #[derive(Clone, Constructor, Copy, Debug, Display, Eq, PartialEq)]
 pub struct RefNum(i16);
@@ -106,7 +106,8 @@ impl<T: Reader> ResourceFile<T> {
                 resource_map.insert(resource_id, ResourceOffsets {
                     name_offset,
                     data_offset,
-                    flags
+                    flags,
+                    data: RefCell::new(None),
                 });
             }
 
@@ -144,6 +145,13 @@ impl<T: Reader> ResourceFile<T> {
         let entry = self.resource_map.get(&id)
             .with_context(|| format!("Resource {} not found", id))?;
 
+        ensure!(!entry.flags.contains(ResourceFlags::COMPRESSED), "Resource {} uses unsupported compression", id);
+
+        if let Some(data) = entry.data.borrow().as_ref().and_then(Weak::upgrade) {
+            return data.downcast::<R>()
+                .map_err(|_| anyhow!("Invalid data type for resource {}", id));
+        }
+
         let mut input = self.input.try_borrow_mut()?;
         input.seek(SeekFrom::Start(u64::from(entry.data_offset)))
             .with_context(|| format!("Could not seek to resource {}", id))?;
@@ -151,7 +159,30 @@ impl<T: Reader> ResourceFile<T> {
         let size = input.read_u32()
             .with_context(|| format!("Could not read size of resource {}", id))?;
 
-        R::load(&mut input.as_mut(), size).map(Rc::new)
+        let is_vise_compressed = {
+            let mut sig = [0; 4];
+            input.read_exact(&mut sig).ok();
+            input.seek(SeekFrom::Start(u64::from(entry.data_offset) + 4))
+                .with_context(|| format!("Could not seek to resource {}", id))?;
+            ApplicationVise::is_compressed(&sig)
+        };
+
+        if is_vise_compressed {
+            let data = {
+                let mut compressed_data = Vec::with_capacity(size as usize);
+                input.as_mut().take(u64::from(size)).read_to_end(&mut compressed_data)?;
+                self.decompress(&compressed_data)
+                    .with_context(|| format!("Could not decompress resource {}", id))?
+            };
+            let decompressed_size = data.len() as u32;
+            R::load(&mut ByteOrdered::new(Cursor::new(data), Endianness::Big), decompressed_size)
+        } else {
+            R::load(&mut input.as_mut(), size)
+        }.map(|resource| {
+            let resource = Rc::new(resource);
+            *entry.data.borrow_mut() = Some(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
+            resource
+        })
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = ResourceId> + 'a {
@@ -168,24 +199,6 @@ impl<T: Reader> ResourceFile<T> {
 
     pub fn reference_number(&self) -> RefNum {
         self.reference_number
-    }
-
-    fn build_resource_data(&self, offsets: &ResourceOffsets) -> AResult<Vec<u8>> {
-        let mut data = {
-            let mut input = self.input.borrow_mut();
-
-            input.seek(SeekFrom::Start(u64::from(offsets.data_offset)))?;
-            let size = input.read_u32()?;
-            let mut data = Vec::with_capacity(size as usize);
-            input.as_mut().take(u64::from(size)).read_to_end(&mut data)?;
-            data
-        };
-
-        if ApplicationVise::is_compressed(&data) {
-            data = self.decompress(&data)?;
-        }
-
-        Ok(data)
     }
 
     fn decompress(&self, data: &[u8]) -> AResult<Vec<u8>> {
@@ -250,11 +263,12 @@ enum DecompressorState {
 
 type Input<T> = ByteOrdered<T, Endianness>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct ResourceOffsets {
     name_offset: Option<u32>,
     data_offset: u32,
     flags: ResourceFlags,
+    data: RefCell<Option<Weak<dyn Any>>>,
 }
 
 #[cfg(test)]
