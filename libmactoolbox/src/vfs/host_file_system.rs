@@ -147,3 +147,7 @@ fn open_resource_fork(path: impl AsRef<Path>) -> io::Result<File> {
     open_named_fork(path.as_ref())
         .or_else(|_| open_file_with_ext(path, "rsrc"))
 }
+
+mod tests {
+    // TODO
+}
