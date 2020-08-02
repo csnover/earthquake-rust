@@ -244,27 +244,27 @@ mod tests {
     #![allow(clippy::wildcard_imports)]
     use super::*;
 
-    const SHARED: &'_ [u8] = include!("./tests/data/application_vise/shared.in");
+    const SHARED: &'_ [u8] = include_bytes!("./tests/data/application_vise/shared.bin");
 
     #[test]
     fn decompress_data1() {
-        const DATA: &'_ [u8] = include!("./tests/data/application_vise/data1.in");
-        const EXPECTED: &'_ [u8] = include!("./tests/data/application_vise/data1.expected.in");
+        const DATA: &'_ [u8] = include_bytes!("./tests/data/application_vise/data1.bin");
+        const EXPECTED: &'_ [u8] = include_bytes!("./tests/data/application_vise/data1.expected.bin");
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), EXPECTED);
     }
 
     #[test]
     fn decompress_data2() {
-        const DATA: &'_ [u8] = include!("./tests/data/application_vise/data2.in");
-        const EXPECTED: &'_ [u8] = include!("./tests/data/application_vise/data2.expected.in");
+        const DATA: &'_ [u8] = include_bytes!("./tests/data/application_vise/data2.bin");
+        const EXPECTED: &'_ [u8] = include_bytes!("./tests/data/application_vise/data2.expected.bin");
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), EXPECTED);
     }
 
     #[test]
     fn decompress_empty() {
-        const DATA: &'_ [u8] = include!("./tests/data/application_vise/data0.in");
+        const DATA: &'_ [u8] = include_bytes!("./tests/data/application_vise/data0.bin");
         let expected = [0_u8; 68].to_vec();
         let vise = ApplicationVise::new(SHARED.to_vec());
         assert_eq!(vise.decompress(&DATA).unwrap(), expected);
@@ -272,13 +272,13 @@ mod tests {
 
     #[test]
     fn find_shared_data() {
-        const DATA: &'_ [u8] = include!("./tests/data/application_vise/code.in");
+        const DATA: &'_ [u8] = include_bytes!("./tests/data/application_vise/code.bin");
         assert_eq!(ApplicationVise::find_shared_data(&DATA).unwrap(), &DATA[62..]);
     }
 
     #[test]
     fn validate() {
-        const DATA: &'_ [u8] = include!("./tests/data/application_vise/data0.in");
+        const DATA: &'_ [u8] = include_bytes!("./tests/data/application_vise/data0.bin");
         ApplicationVise::validate(&DATA).unwrap();
     }
 }
