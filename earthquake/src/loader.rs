@@ -634,10 +634,10 @@ impl Loader {
                             self.tabs.options.charset.set_current_index(0);
                             true
                         },
-                        _ => {
+                        FileType::Movie(..) => {
                             self.detection_failure(&tr!(self.l, "file-info_error-cannot-play-cast"), None);
                             false
-                        }
+                        },
                     }
                 },
                 Err(e) => {
