@@ -301,7 +301,7 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
                     size,
                 });
                 input.skip(u64::from(size))
-                    .with_context(|| format!("Could not skip to internal movie {}", i + 1))?;
+                    .with_context(|| format!("Can’t skip to internal movie {}", i + 1))?;
             }
             Movie::D3Win(movies)
         };

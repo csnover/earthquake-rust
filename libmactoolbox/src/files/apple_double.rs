@@ -22,21 +22,21 @@ impl<T: Reader> AppleDouble<T> {
         let data = SharedStream::new(double_data.unwrap_or(data));
         let mut input = ByteOrdered::be(data.clone());
 
-        let magic = input.read_u32().context("Could not read magic")?;
+        let magic = input.read_u32().context("Can’t read magic")?;
         if magic != DOUBLE_MAGIC && magic != SINGLE_MAGIC {
             bail!("Bad magic");
         }
 
-        let version = input.read_u32().context("Could not read version number")?;
+        let version = input.read_u32().context("Can’t read version number")?;
         if version != 0x10000 && version != 0x20000 {
             bail!("Unknown version {:x}", version);
         }
 
         // In V1 this is an ASCII string, in V2 it is zero-filled, in all cases
         // we do not care about it
-        input.skip(16).context("Could not seek past home file system name")?;
+        input.skip(16).context("Can’t seek past home file system name")?;
 
-        let num_entries = input.read_u16().context("Could not read number of entries")?;
+        let num_entries = input.read_u16().context("Can’t read number of entries")?;
 
         if num_entries == 0 {
             bail!("No resource entries");
@@ -48,9 +48,9 @@ impl<T: Reader> AppleDouble<T> {
         let mut name_script_code = 0;
 
         for index in 0..num_entries {
-            let entry_id = input.read_u32().with_context(|| format!("Could not read ID of entry {}", index))?;
-            let offset = input.read_u32().with_context(|| format!("Could not read offset of entry {}", index))?;
-            let length = input.read_u32().with_context(|| format!("Could not read length of entry {}", index))?;
+            let entry_id = input.read_u32().with_context(|| format!("Can’t read ID of entry {}", index))?;
+            let offset = input.read_u32().with_context(|| format!("Can’t read offset of entry {}", index))?;
+            let length = input.read_u32().with_context(|| format!("Can’t read length of entry {}", index))?;
 
             match entry_id {
                 0 => bail!("Invalid ID 0 for entry {}", index),
@@ -65,8 +65,8 @@ impl<T: Reader> AppleDouble<T> {
                 },
                 9 => {
                     let mut finder_info = ByteOrdered::be(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
-                    finder_info.skip(26).context("Could not seek to filename script code")?;
-                    name_script_code = finder_info.read_u8().context("Could not read script code")?;
+                    finder_info.skip(26).context("Can’t seek to filename script code")?;
+                    name_script_code = finder_info.read_u8().context("Can’t read script code")?;
                 },
                 _ => {},
             };

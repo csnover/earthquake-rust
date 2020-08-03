@@ -154,16 +154,16 @@ impl<T: Reader> ResourceFile<T> {
 
         let mut input = self.input.try_borrow_mut()?;
         input.seek(SeekFrom::Start(u64::from(entry.data_offset)))
-            .with_context(|| format!("Could not seek to resource {}", id))?;
+            .with_context(|| format!("Can’t seek to resource {}", id))?;
 
         let size = input.read_u32()
-            .with_context(|| format!("Could not read size of resource {}", id))?;
+            .with_context(|| format!("Can’t read size of resource {}", id))?;
 
         let is_vise_compressed = {
-            let mut sig = [0; 4];
+            let mut sig = [ 0; 4 ];
             input.read_exact(&mut sig).ok();
             input.seek(SeekFrom::Start(u64::from(entry.data_offset) + 4))
-                .with_context(|| format!("Could not seek to resource {}", id))?;
+                .with_context(|| format!("Can’t seek to resource {}", id))?;
             ApplicationVise::is_compressed(&sig)
         };
 
@@ -172,7 +172,7 @@ impl<T: Reader> ResourceFile<T> {
                 let mut compressed_data = Vec::with_capacity(size as usize);
                 input.as_mut().take(u64::from(size)).read_to_end(&mut compressed_data)?;
                 self.decompress(&compressed_data)
-                    .with_context(|| format!("Could not decompress resource {}", id))?
+                    .with_context(|| format!("Can’t decompress resource {}", id))?
             };
             let decompressed_size = data.len() as u32;
             R::load(&mut ByteOrdered::new(Cursor::new(data), Endianness::Big), decompressed_size)
@@ -211,9 +211,9 @@ impl<T: Reader> ResourceFile<T> {
 
         if let Some(resource_id) = resource_id {
             let resource_data = self.load::<Vec<u8>>(rsid!(b"CODE", resource_id))
-                .context("Could not find the Application VISE CODE resource")?;
+                .context("Can’t find the Application VISE CODE resource")?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
-                .context("Could not find the Application VISE shared dictionary")?;
+                .context("Can’t find the Application VISE shared dictionary")?;
             self.decompressor.replace(DecompressorState::Loaded(ApplicationVise::new(shared_data.to_vec())));
         }
 

@@ -105,7 +105,7 @@ impl<T: Reader> Riff<T> {
 
         let mut input = self.input.borrow_mut();
         input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
-            .with_context(|| format!("Could not seek to RIFF index {}", index))?;
+            .with_context(|| format!("Can’t seek to RIFF index {}", index))?;
 
         R::load(&mut input, entry.size).map(|resource| {
             let resource = Rc::new(resource);
@@ -232,11 +232,11 @@ impl<T: Reader> Riff<T> {
         // imap contains the reference to the active mmap chunk for the file
         // along with some other unknown data which we can ignore for now
         input.seek(SeekFrom::Start(u64::from(map_offset)))
-            .context("Could not seek to mmap")?;
+            .context("Can’t seek to mmap")?;
 
         let os_type = input.read_os_type::<OE>()?;
         if os_type != os!(b"mmap") {
-            bail!("Could not find a valid resource map; found {} instead", os_type);
+            bail!("Can’t find a valid resource map; found {} instead", os_type);
         }
 
         let _chunk_size = input.skip(4)?;
@@ -293,7 +293,7 @@ impl<T: Reader> Riff<T> {
         // reason to have a separate code path for container RIFFs
         let resource_map = if let Some(offset) = resource_map_offset {
             input.seek(SeekFrom::Start(u64::from(offset)))
-                .context("Could not seek to KEY*")?;
+                .context("Can’t seek to KEY*")?;
             Self::read_keys::<R, OE, DE>(input)?
         } else {
             ResourceMap::new()
