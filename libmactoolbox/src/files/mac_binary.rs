@@ -48,8 +48,8 @@ impl<T: Reader> MacBinary<T> {
             bail!("Bad magic byte 2");
         }
 
-        for byte in &header[101..=125] {
-            if *byte != 0 {
+        for &byte in &header[101..=125] {
+            if byte != 0 {
                 bail!("Bad header padding");
             }
         }
