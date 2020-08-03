@@ -14,7 +14,7 @@ static REF_NUM: AtomicI16 = AtomicI16::new(1);
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
 pub struct ResourceFile<T: Reader> {
-    input: RefCell<Input<T>>,
+    input: RefCell<ByteOrdered<T, Endianness>>,
     decompressor: RefCell<DecompressorState>,
     resource_map: HashMap<ResourceId, ResourceOffsets>,
     counts: HashMap<OSType, u16>,
@@ -260,8 +260,6 @@ enum DecompressorState {
     Waiting(i16),
     Loaded(ApplicationVise),
 }
-
-type Input<T> = ByteOrdered<T, Endianness>;
 
 #[derive(Clone, Debug)]
 struct ResourceOffsets {
