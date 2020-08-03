@@ -61,7 +61,7 @@ impl fmt::Debug for OSType {
 pub trait OSTypeReadExt: io::Read {
     #[inline]
     fn read_os_type<T: ByteOrder>(&mut self) -> io::Result<OSType> {
-        let mut buf = [0; 4];
+        let mut buf = [ 0; 4 ];
         self.read_exact(&mut buf)?;
         Ok(OSType::from(T::read_u32(&buf)))
     }

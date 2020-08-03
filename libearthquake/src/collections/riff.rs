@@ -445,7 +445,7 @@ struct MemoryMapItem {
 type ResourceMap = HashMap<ResourceId, ChunkIndex>;
 
 fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
-    let mut chunk_size_raw = [0; 4];
+    let mut chunk_size_raw = [ 0; 4 ];
     reader.read_exact(&mut chunk_size_raw).ok()?;
 
     let sub_type = reader.read_os_type::<BigEndian>().ok()?;

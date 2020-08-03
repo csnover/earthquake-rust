@@ -42,14 +42,14 @@ pub trait ReadExt: Read {
 
     #[inline]
     fn read_pascal_str(&mut self, decoder: &dyn Decoder) -> IoResult<String> {
-        let mut buf = [0; 1];
+        let mut buf = [ 0; 1 ];
         self.read_exact(&mut buf)?;
         read_pascal_int(decoder, self, buf[0].into())
     }
 
     #[inline]
     fn read_pascal_16_str<T: ByteOrder, D: Decoder>(&mut self, decoder: &D) -> IoResult<String> {
-        let mut buf = [0; 2];
+        let mut buf = [ 0; 2 ];
         self.read_exact(&mut buf)?;
         let size = T::read_u16(&buf);
         read_pascal_int(decoder, self, size.into())
