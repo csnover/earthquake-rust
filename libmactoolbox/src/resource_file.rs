@@ -3,12 +3,12 @@ use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::ReadExt};
-use derive_more::{Constructor, Display};
+use derive_more::Display;
 use libcommon::{encodings::MAC_ROMAN, Reader};
 use std::{any::Any, cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
-#[derive(Clone, Constructor, Copy, Debug, Display, Eq, PartialEq)]
-pub struct RefNum(i16);
+#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+pub struct RefNum(pub i16);
 static REF_NUM: AtomicI16 = AtomicI16::new(1);
 
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub struct ResourceFile<T: Reader> {
     decompressor: RefCell<DecompressorState>,
     resource_map: HashMap<ResourceId, ResourceOffsets>,
     counts: HashMap<OSType, u16>,
+    names: HashMap<(OSType, Vec<u8>), i16>,
     reference_number: RefNum,
 }
 
@@ -56,6 +57,7 @@ impl<T: Reader> ResourceFile<T> {
         };
 
         let mut counts = HashMap::with_capacity(num_types as usize);
+        let mut names = HashMap::with_capacity(num_types as usize);
 
         let mut last_code_id = 0;
         for i in 0..num_types {
@@ -85,7 +87,18 @@ impl<T: Reader> ResourceFile<T> {
                     if value == NO_NAME {
                         None
                     } else {
-                        Some(names_offset + u32::from(value))
+                        let offset = names_offset + u32::from(value);
+                        let pos = input.pos()?;
+                        input.seek(SeekFrom::Start(u64::from(offset)))
+                            .with_context(|| format!("Can’t seek to name offset of {}", resource_id))?;
+                        let size = input.read_u8()
+                            .with_context(|| format!("Can’t read name size of {}", resource_id))?;
+                        let mut name = Vec::with_capacity(size as usize);
+                        input.as_mut().take(u64::from(size)).read_to_end(&mut name)
+                            .with_context(|| format!("Can’t read name of {}", resource_id))?;
+                        input.seek(SeekFrom::Start(pos))?;
+                        names.insert((os_type, name), resource_num);
+                        Some(offset)
                     }
                 };
 
@@ -121,6 +134,7 @@ impl<T: Reader> ResourceFile<T> {
             decompressor: RefCell::new(DecompressorState::Waiting(last_code_id)),
             resource_map,
             counts,
+            names,
             reference_number: RefNum(REF_NUM.fetch_add(1, Ordering::Relaxed)),
         })
     }
@@ -183,6 +197,10 @@ impl<T: Reader> ResourceFile<T> {
             *entry.data.borrow_mut() = Some(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
             resource
         })
+    }
+
+    pub fn id_of_name(&self, os_type: OSType, name: impl AsRef<[u8]>) -> Option<ResourceId> {
+        self.names.get(&(os_type, name.as_ref().to_vec())).map(|&num| ResourceId(os_type, num))
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = ResourceId> + 'a {

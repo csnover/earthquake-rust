@@ -71,20 +71,44 @@ impl <'vfs> ResourceManager<'vfs> {
             })
     }
 
-    pub fn get_indexed_resource<T: Resource>(&self, index: i16) -> Option<T> {
-        todo!();
+    /// `GetNamedResource`
+    pub fn get_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>) -> AResult<Option<Rc<T>>> {
+        for file in self.files.iter().take(self.current_file).rev() {
+            if let Some(id) = file.id_of_name(kind, &name) {
+                return file.load::<T>(id).map(Some);
+            }
+        }
+
+        if let Some(file) = &self.system {
+            if let Some(id) = file.id_of_name(kind, name) {
+                return file.load::<T>(id).map(Some);
+            }
+        }
+
+        Ok(None)
     }
 
-    pub fn get_named_resource<T: Resource>(&self, name: impl AsRef<str>) -> Option<T> {
-        todo!();
-    }
-
-    pub fn get_one_indexed_resource<T: Resource>(&self, index: i16) -> Option<T> {
-        todo!();
-    }
-
-    pub fn get_one_named_resource<T: Resource>(&self, name: impl AsRef<str>) -> Option<T> {
-        todo!();
+    /// `Get1NamedResource`
+    pub fn get_one_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>) -> AResult<Option<Rc<T>>> {
+        if self.current_file == 0 {
+            self.system
+                .as_ref()
+                .ok_or_else(|| anyhow!("no system file"))
+                .and_then(|file| Ok({
+                    if let Some(id) = file.id_of_name(kind, name) {
+                        Some(file.load::<T>(id)?)
+                    } else {
+                        None
+                    }
+                }))
+        } else {
+            let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
+            Ok(if let Some(id) = file.id_of_name(kind, name) {
+                Some(file.load::<T>(id)?)
+            } else {
+                None
+            })
+        }
     }
 
     /// `Get1Resource`
@@ -140,7 +164,7 @@ impl <'vfs> ResourceManager<'vfs> {
 
     /// `UseResFile`
     pub fn use_resource_file(&mut self, ref_num: RefNum) -> AResult<()> {
-        if ref_num == RefNum::new(0) {
+        if ref_num == RefNum(0) {
             self.current_file = 0;
             return Ok(());
         }
