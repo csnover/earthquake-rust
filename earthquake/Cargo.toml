@@ -13,6 +13,7 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0"
 cpp_core = "0.6"
+derive_more = "0.99"
 fluent = "0.11"
 fluent-ergonomics = "0.2"
 libcommon = { path = "../libcommon" }
@@ -21,6 +22,7 @@ libmactoolbox = { path = "../libmactoolbox" }
 num-traits = "0.2"
 pico-args = "0.3"
 qt_core = "0.5"
+qt_core_custom_events = "0.2"
 qt_gui = "0.5"
 qt_widgets = "0.5"
 strum = "0.18"

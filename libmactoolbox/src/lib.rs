@@ -13,6 +13,8 @@
 mod application_vise;
 #[cfg(feature = "dialogs")]
 mod dialogs;
+#[cfg(feature = "events")]
+mod events;
 mod files;
 mod os_type;
 pub mod resources;
@@ -29,6 +31,7 @@ pub mod vfs;
 #[deprecated]
 pub use files::AppleDouble;
 pub use application_vise::*;
+pub use events::*;
 #[deprecated]
 pub use files::MacBinary;
 pub use os_type::*;

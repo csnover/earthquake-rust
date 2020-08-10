@@ -30,7 +30,8 @@ strum_macros = "0.18"
 tempfile = { version = "3.1", optional = true }
 
 [features]
-default = ["dialogs", "quickdraw", "vfs_zip"]
+default = ["dialogs", "events", "quickdraw", "vfs_zip"]
 dialogs = ["cpp_core", "qt_core", "qt_gui", "qt_widgets"]
+events = ["cpp_core", "qt_core", "qt_gui", "qt_widgets"]
 quickdraw = ["cpp_core", "qt_core", "qt_gui", "qt_widgets"]
 vfs_zip = ["tempfile", "rc-zip"]

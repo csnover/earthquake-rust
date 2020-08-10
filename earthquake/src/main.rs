@@ -52,17 +52,20 @@ fn main() -> AResult<()> {
 
     let mut args = Arguments::from_env();
 
-    let mut localizer = FluentErgo::new(&unsafe {
-        let qt_languages = QLocale::system().ui_languages();
-        let mut languages = Vec::with_capacity(qt_languages.size() as usize);
-        for lang in qt_languages.static_upcast::<qt_core::QListOfQString>().iter() {
-            languages.push(lang.to_std_string().parse::<unic_langid::LanguageIdentifier>().unwrap());
-        }
-        languages.push("en-US".parse().unwrap());
-        languages
-    }[..]);
-    // TODO: Add lazy-loading of other locales, maybe via q_init_resource
-    localizer.add_from_text("en-US".parse().unwrap(), include_str!("../locales/en-US/main.ftl").to_owned()).unwrap();
+    let localizer = Rc::new({
+        let mut localizer = FluentErgo::new(&unsafe {
+            let qt_languages = QLocale::system().ui_languages();
+            let mut languages = Vec::with_capacity(qt_languages.size() as usize);
+            for lang in qt_languages.static_upcast::<qt_core::QListOfQString>().iter() {
+                languages.push(lang.to_std_string().parse::<unic_langid::LanguageIdentifier>().unwrap());
+            }
+            languages.push("en-US".parse().unwrap());
+            languages
+        }[..]);
+        // TODO: Add lazy-loading of other locales, maybe via q_init_resource
+        localizer.add_from_text("en-US".parse().unwrap(), include_str!("../locales/en-US/main.ftl").to_owned()).unwrap();
+        localizer
+    });
 
     if args.contains("--help") {
         println!("{}", tr!(localizer, "cli_usage", [
@@ -82,7 +85,7 @@ fn main() -> AResult<()> {
         unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
 
         let files = if args_files.is_empty() {
-            Loader::new(Rc::new(localizer)).exec().map_or_else(Vec::new, |file| vec![file])
+            Loader::new(localizer.clone()).exec().map_or_else(Vec::new, |file| vec![file])
         } else {
             let fs = HostFileSystem::new();
             args_files.iter().filter_map(|filename| {
@@ -93,7 +96,7 @@ fn main() -> AResult<()> {
         if files.is_empty() {
             0
         } else {
-            let mut engine = Engine::new(app, charset, data_dir, files);
+            let mut engine = Engine::new(Rc::try_unwrap(localizer).unwrap(), app, charset, data_dir, files);
             engine.exec()
         }
     })
