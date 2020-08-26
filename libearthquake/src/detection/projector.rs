@@ -10,13 +10,14 @@ use derive_more::Display;
 use libcommon::{
     encodings::WIN_ROMAN,
     Reader,
+    Resource,
+    string::ReadExt,
 };
 use libmactoolbox::{
     ResourceFile,
     resources::string_list::StringList as StringListResource,
     rsid,
     script_manager::ScriptCode,
-    string::ReadExt,
 };
 use std::{path::PathBuf, io::{Read, SeekFrom}, rc::Rc};
 
@@ -144,7 +145,7 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
         let resource_id = rsid!(os_type, 0);
-        rom.load::<Vec<u8>>(resource_id)?
+        rom.load::<Vec<u8>>(resource_id, &Default::default())?
     };
 
     let (config, movie) = match version {
@@ -153,7 +154,7 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
             let num_movies = BigEndian::read_u16(&config[6..]);
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
-                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0))
+                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0), &Default::default())
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
                     .map_err(|_| anyhow!("Could not take ownership of movie list"))?;

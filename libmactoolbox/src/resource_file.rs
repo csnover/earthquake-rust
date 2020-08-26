@@ -2,9 +2,9 @@ use anyhow::{anyhow, bail, Context, ensure, Result as AResult};
 use bitflags::bitflags;
 use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
-use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid, string::ReadExt};
+use crate::{ApplicationVise, OSType, OSTypeReadExt, ResourceId, rsid};
 use derive_more::Display;
-use libcommon::{encodings::MAC_ROMAN, Reader};
+use libcommon::{encodings::MAC_ROMAN, Reader, string::ReadExt};
 use std::{any::Any, cell::RefCell, collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
@@ -155,7 +155,7 @@ impl<T: Reader> ResourceFile<T> {
         *self.counts.get(&os_type).unwrap_or(&0)
     }
 
-    pub fn load<R: 'static + libcommon::Resource>(&self, id: ResourceId) -> AResult<Rc<R>> {
+    pub fn load<R: 'static + libcommon::Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {
         let entry = self.resource_map.get(&id)
             .with_context(|| format!("Resource {} not found", id))?;
 
@@ -189,9 +189,9 @@ impl<T: Reader> ResourceFile<T> {
                     .with_context(|| format!("Can’t decompress resource {}", id))?
             };
             let decompressed_size = data.len() as u32;
-            R::load(&mut ByteOrdered::new(Cursor::new(data), Endianness::Big), decompressed_size)
+            R::load(&mut ByteOrdered::new(Cursor::new(data), Endianness::Big), decompressed_size, context)
         } else {
-            R::load(&mut input.as_mut(), size)
+            R::load(&mut input.as_mut(), size, context)
         }.map(|resource| {
             let resource = Rc::new(resource);
             *entry.data.borrow_mut() = Some(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
@@ -228,7 +228,7 @@ impl<T: Reader> ResourceFile<T> {
         };
 
         if let Some(resource_id) = resource_id {
-            let resource_data = self.load::<Vec<u8>>(rsid!(b"CODE", resource_id))
+            let resource_data = self.load::<Vec<u8>>(rsid!(b"CODE", resource_id), &())
                 .context("Can’t find the Application VISE CODE resource")?;
             let shared_data = ApplicationVise::find_shared_data(&resource_data)
                 .context("Can’t find the Application VISE shared dictionary")?;

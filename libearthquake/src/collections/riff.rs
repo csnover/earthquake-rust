@@ -47,6 +47,20 @@ impl<'a, T: Reader> Iter<'a, T> {
     pub fn id(&self) -> ResourceId {
         self.id
     }
+
+    // TODO: For debugging only
+    pub fn len(&self) -> u32 {
+        self.owner.memory_map.get(self.chunk_index).unwrap().size
+    }
+
+    pub fn load<R: Resource + 'static>(&self, context: &R::Context) -> AResult<Rc<R>> {
+        self.owner.load(self.chunk_index, context)
+    }
+
+    // TODO: For debugging only
+    pub fn offset(&self) -> u32 {
+        self.owner.memory_map.get(self.chunk_index).unwrap().offset
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -94,7 +108,7 @@ impl<T: Reader> Riff<T> {
         self.info.kind()
     }
 
-    pub fn load<R: 'static + Resource>(&self, index: ChunkIndex) -> AResult<Rc<R>> {
+    pub fn load<R: 'static + Resource>(&self, index: ChunkIndex, context: &R::Context) -> AResult<Rc<R>> {
         let entry = self.memory_map.get(index)
             .with_context(|| format!("Invalid RIFF index {}", index))?;
 
@@ -107,7 +121,7 @@ impl<T: Reader> Riff<T> {
         input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
             .with_context(|| format!("Can’t seek to RIFF index {}", index))?;
 
-        R::load(&mut input, entry.size).map(|resource| {
+        R::load(&mut input, entry.size, context).map(|resource| {
             let resource = Rc::new(resource);
             *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
             resource
@@ -144,6 +158,11 @@ impl<T: Reader> Riff<T> {
         entry.field_e = 0;
         entry.data.replace(ChunkData::Free { next_free: next_junk_index });
         self.memory_map.next_junk_index = index;
+    }
+
+    // TODO: For debugging
+    pub fn metadata(&self, index: ChunkIndex) -> Option<&MemoryMapItem> {
+        self.memory_map.get(index)
     }
 
     #[must_use]
@@ -433,7 +452,7 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-struct MemoryMapItem {
+pub struct MemoryMapItem {
     os_type: OSType,
     size: u32,
     offset: u32,

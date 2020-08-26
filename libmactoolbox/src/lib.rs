@@ -24,7 +24,6 @@ mod resource_manager;
 #[cfg(feature = "quickdraw")]
 mod quickdraw;
 pub mod script_manager;
-pub mod string;
 mod system;
 pub mod vfs;
 
@@ -50,7 +49,8 @@ pub struct Point {
 }
 
 impl Resource for Point {
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32) -> AResult<Self> where Self: Sized {
+    type Context = ();
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, 4);
         Ok(Self {
             x: input.read_i16()?,
@@ -67,8 +67,23 @@ pub struct Rect {
     pub right: i16,
 }
 
+impl Rect {
+    #[inline]
+    #[must_use]
+    pub fn height(&self) -> i16 {
+        self.bottom - self.top
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn width(&self) -> i16 {
+        self.right - self.left
+    }
+}
+
 impl Resource for Rect {
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32) -> AResult<Self> where Self: Sized {
+    type Context = ();
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, 8);
         Ok(Self {
             top: input.read_i16()?,

@@ -41,7 +41,8 @@ impl ChunkFile {
     }
 }
 impl Resource for ChunkFile {
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32) -> AResult<Self> {
+    type Context = ();
+    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
         let pos = input.pos()?;
         ensure_sample!(size >= 4 && size <= 8, "Bad ChunkFile size at {} ({})", pos, size);
         let chunk_index = ChunkIndex::new(input.read_i32()?);
@@ -65,7 +66,8 @@ struct DictItem {
     value: i32,
 }
 impl Resource for DictItem {
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32) -> AResult<Self> {
+    type Context = ();
+    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
         ensure_sample!(size == 8, "Bad DictItem size at {} ({} != 8)", size, input.pos()?);
         let key_offset = input.read_u32()?;
         let value = input.read_i32()?;
@@ -95,14 +97,15 @@ impl Dict {
     }
 }
 impl Resource for Dict {
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32) -> AResult<Self> {
+    type Context = ();
+    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
         let mut input = input.as_mut().into_endianness(Endianness::Big);
         let list_size = input.read_u32()?;
         let keys_size = input.read_u32()?;
         ensure_sample!(list_size + keys_size <= size, "Bad Dict size at {} ({} > {})", input.pos()? - 8, list_size + keys_size, size);
 
-        let list = List::<DictItem>::load(&mut input, list_size)?;
-        let keys = ByteVec::load(&mut input, keys_size)?;
+        let list = List::<DictItem>::load(&mut input, list_size, &<List::<DictItem> as Resource>::Context::default())?;
+        let keys = ByteVec::load(&mut input, keys_size, &<ByteVec as Resource>::Context::default())?;
         let mut dict = HashMap::new();
 
         for item in list.iter() {
@@ -140,8 +143,8 @@ impl<T: Reader> Clone for RiffContainer<T> {
 impl <T: Reader> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
-        let file_list = riff.load::<List<ChunkFile>>(riff.first_of_kind(os!(b"List"))).context("Bad List chunk")?;
-        let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict"))).context("Bad Dict chunk")?;
+        let file_list = riff.load::<List<ChunkFile>>(riff.first_of_kind(os!(b"List")), &Default::default()).context("Bad List chunk")?;
+        let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict")), &Default::default()).context("Bad Dict chunk")?;
 
         Ok(Self {
             riff: Rc::new(riff),

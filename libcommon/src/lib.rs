@@ -11,9 +11,10 @@
 #![warn(rust_2018_idioms)]
 
 pub mod encodings;
-mod resource;
+pub mod resource;
 // TODO: use positioned_io crate?
 mod shared_stream;
+pub mod string;
 pub mod vfs;
 
 pub use resource::Resource;

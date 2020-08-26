@@ -29,7 +29,7 @@ use libearthquake::{
             Version as ProjectorVersion,
         }, Detection,
     },
-    name,
+    name, resources::cast::{CastMap, Member},
 };
 use libcommon::{Reader, vfs::VirtualFileSystem};
 use libmactoolbox::{ResourceFile, vfs::HostFileSystem};
@@ -58,11 +58,20 @@ fn main() -> AResult<()> {
 
 fn inspect_riff(stream: &mut impl Reader) -> AResult<()> {
     let riff = Riff::new(stream)?;
+    inspect_riff_contents(&riff);
+    Ok(())
+}
+
+fn inspect_riff_contents(riff: &Riff<impl Reader>) {
     for resource in riff.iter() {
         println!("{}", resource);
+        if resource.id().0.as_bytes() == b"CAS*" {
+            let cast = resource.load::<CastMap>(&Default::default()).unwrap();
+            for &chunk_index in cast.iter() {
+                println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, )).unwrap());
+            }
+        }
     }
-
-    Ok(())
 }
 
 fn inspect_riff_container(stream: impl Reader, inspect_data: bool) -> AResult<()> {
@@ -75,9 +84,7 @@ fn inspect_riff_container(stream: impl Reader, inspect_data: bool) -> AResult<()
         if inspect_data && riff_container.kind(index).unwrap() != ChunkFileKind::Xtra {
             match riff_container.load_file(index) {
                 Ok(riff) => {
-                    for resource in riff.iter() {
-                        println!("{}", resource);
-                    }
+                    inspect_riff_contents(&riff);
                 },
                 Err(e) => println!("Could not inspect file: {}", e)
             }

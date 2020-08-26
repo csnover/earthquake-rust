@@ -1,11 +1,11 @@
 use anyhow::{Context, Result as AResult};
 use crate::{
     script_manager::CountryCode,
-    string::ReadExt,
 };
 use libcommon::{
     Reader,
     Resource,
+    string::ReadExt,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -42,7 +42,8 @@ impl Version {
 }
 
 impl Resource for Version {
-    fn load<T: Reader>(input: &mut byteordered::ByteOrdered<T, byteordered::Endianness>, _size: u32) -> AResult<Self> where Self: Sized {
+    type Context = ();
+    fn load<T: Reader>(input: &mut byteordered::ByteOrdered<T, byteordered::Endianness>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let version = Number {
             major: input.read_u8()?,
             minor: input.read_u8()?,

@@ -1,5 +1,5 @@
 use byteorder::ByteOrder;
-use libcommon::encodings::Decoder;
+use crate::encodings::Decoder;
 use std::io::{Error, ErrorKind, Read, Result as IoResult};
 
 fn read_pascal_int<T: Read + ?Sized>(decoder: &dyn Decoder, reader: &mut T, size: usize) -> IoResult<String> {
@@ -62,7 +62,7 @@ impl<T: Read + ?Sized> ReadExt for T {}
 mod test {
     #![allow(clippy::wildcard_imports)]
     use byteorder::{BigEndian, LittleEndian};
-    use libcommon::encodings::WIN_ROMAN;
+    use crate::encodings::WIN_ROMAN;
     use std::io::Cursor;
     use super::*;
 

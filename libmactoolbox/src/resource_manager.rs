@@ -59,12 +59,12 @@ impl <'vfs> ResourceManager<'vfs> {
     /// `GetString`
     pub fn get_string(&self, id: i16) -> Option<Rc<String>> {
         // TODO: User Information Resources
-        self.get_resource::<String>(rsid!(b"STR ", id)).unwrap_or(None)
+        self.get_resource::<String>(rsid!(b"STR ", id), &Default::default()).unwrap_or(None)
     }
 
     /// `GetIndString`
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<String> {
-        self.get_resource::<StringList>(rsid!(b"STR#", id))
+        self.get_resource::<StringList>(rsid!(b"STR#", id), &Default::default())
             .unwrap_or(None)
             .map(|list| {
                 list.get(index as usize).unwrap_or(&String::new()).to_owned()
@@ -72,16 +72,16 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `GetNamedResource`
-    pub fn get_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>) -> AResult<Option<Rc<T>>> {
+    pub fn get_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>, context: &T::Context) -> AResult<Option<Rc<T>>> {
         for file in self.files.iter().take(self.current_file).rev() {
             if let Some(id) = file.id_of_name(kind, &name) {
-                return file.load::<T>(id).map(Some);
+                return file.load::<T>(id, context).map(Some);
             }
         }
 
         if let Some(file) = &self.system {
             if let Some(id) = file.id_of_name(kind, name) {
-                return file.load::<T>(id).map(Some);
+                return file.load::<T>(id, context).map(Some);
             }
         }
 
@@ -89,14 +89,14 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `Get1NamedResource`
-    pub fn get_one_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>) -> AResult<Option<Rc<T>>> {
+    pub fn get_one_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>, context: &T::Context) -> AResult<Option<Rc<T>>> {
         if self.current_file == 0 {
             self.system
                 .as_ref()
                 .ok_or_else(|| anyhow!("no system file"))
                 .and_then(|file| Ok({
                     if let Some(id) = file.id_of_name(kind, name) {
-                        Some(file.load::<T>(id)?)
+                        Some(file.load::<T>(id, context)?)
                     } else {
                         None
                     }
@@ -104,7 +104,7 @@ impl <'vfs> ResourceManager<'vfs> {
         } else {
             let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
             Ok(if let Some(id) = file.id_of_name(kind, name) {
-                Some(file.load::<T>(id)?)
+                Some(file.load::<T>(id, context)?)
             } else {
                 None
             })
@@ -112,14 +112,14 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `Get1Resource`
-    pub fn get_one_resource<T: Resource + 'static>(&self, id: ResourceId) -> AResult<Option<Rc<T>>> {
+    pub fn get_one_resource<T: Resource + 'static>(&self, id: ResourceId, context: &T::Context) -> AResult<Option<Rc<T>>> {
         if self.current_file == 0 {
             self.system
                 .as_ref()
                 .ok_or_else(|| anyhow!("no system file"))
                 .and_then(|file| Ok({
                     if file.contains(id) {
-                        Some(file.load::<T>(id)?)
+                        Some(file.load::<T>(id, context)?)
                     } else {
                         None
                     }
@@ -127,7 +127,7 @@ impl <'vfs> ResourceManager<'vfs> {
         } else {
             let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
             Ok(if file.contains(id) {
-                Some(file.load::<T>(id)?)
+                Some(file.load::<T>(id, context)?)
             } else {
                 None
             })
@@ -135,16 +135,16 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `GetResource`
-    pub fn get_resource<R: Resource + 'static>(&self, id: ResourceId) -> AResult<Option<Rc<R>>> {
+    pub fn get_resource<R: Resource + 'static>(&self, id: ResourceId, context: &R::Context) -> AResult<Option<Rc<R>>> {
         for file in self.files.iter().take(self.current_file).rev() {
             if file.contains(id) {
-                return file.load::<R>(id).map(Some);
+                return file.load::<R>(id, context).map(Some);
             }
         }
 
         if let Some(file) = &self.system {
             if file.contains(id) {
-                return file.load::<R>(id).map(Some);
+                return file.load::<R>(id, context).map(Some);
             }
         }
 

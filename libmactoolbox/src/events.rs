@@ -220,6 +220,7 @@ impl EventManager {
         };
 
         if let Some(event) = event {
+            println!("{:?}", event);
             self.queue.push_back(event);
             Ok(())
         } else {

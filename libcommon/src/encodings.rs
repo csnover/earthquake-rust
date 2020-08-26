@@ -16,7 +16,7 @@ pub trait Decoder: std::fmt::Debug + Sync {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MacJapanese;
 impl Decoder for MacJapanese {
     fn decode(&self, _text: &[u8]) -> String {
@@ -27,7 +27,7 @@ pub const MAC_JAPANESE: &MacJapanese = &MacJapanese;
 
 macro_rules! encodings_decoder(
     ($name:ident, $id:ident, $($module:ident)::+) => (
-        #[derive(Debug)]
+        #[derive(Clone, Copy, Debug, Default)]
         pub struct $id;
         impl Decoder for $id {
             fn decode(&self, text: &[u8]) -> String {

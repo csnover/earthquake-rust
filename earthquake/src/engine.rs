@@ -6,7 +6,7 @@ use libcommon::{Reader, SharedStream, Resource, vfs::{VirtualFileSystem, Virtual
 use libearthquake::{collections::riff_container::RiffContainer, detection::{projector::{Movie as MovieKind, Platform as ProjectorPlatform, Version as ProjectorVersion}, FileType, movie::Version as MovieVersion}};
 use libmactoolbox::{os, ResourceFile, ResourceManager, script_manager::ScriptCode, System, ResourceId, vfs::HostFileSystem, EventManager, Point, EventModifiers, EventKind, EventData};
 use std::{fs::File, io::Cursor, path::PathBuf, rc::{Weak, Rc}, cell::Cell};
-use qt_core::{q_event::Type as QEventType, QBox, QCoreApplication, QEvent, QObject, qs, QTimer, TimerType, KeyboardModifier, MouseButton};
+use qt_core::{q_event::Type as QEventType, QBox, QCoreApplication, QEvent, QObject, qs, QTimer, TimerType, KeyboardModifier, MouseButton, q_event_loop::ProcessEventsFlag};
 use qt_core_custom_events::custom_event_filter::CustomEventFilter;
 use qt_gui::{QGuiApplication, QMouseEvent, QCursor, QKeyEvent};
 use qt_widgets::{QApplication, QMessageBox, QWidget};
@@ -51,6 +51,7 @@ pub(crate) struct Engine<'a> {
     last_error: i16,
     vfs: Box<dyn VirtualFileSystem>,
     windows: Vec<QBox<QWidget>>,
+    should_quit: bool,
 }
 
 impl <'a> Engine<'a> {
@@ -69,6 +70,7 @@ impl <'a> Engine<'a> {
             current_movie_index: 0,
             init_event_kind: unsafe { QEventType::from(QEvent::register_event_type_0a()) },
             last_error: 0,
+            should_quit: false,
             vfs: Box::new(HostFileSystem::new()),
             windows: Vec::new(),
         };
@@ -86,6 +88,21 @@ impl <'a> Engine<'a> {
             _ if e == self.init_event_kind => {
                 // TODO
                 println!("Init!");
+                true
+            },
+
+            QEventType::ZeroTimerEvent => {
+                println!("ZTE");
+                false
+            },
+
+            QEventType::Quit => {
+                println!("Quit?");
+                self.should_quit = true;
+                false
+            },
+
+            QEventType::Timer => {
                 true
             },
 
@@ -139,6 +156,7 @@ impl <'a> Engine<'a> {
                 ).unwrap();
                 true
             },
+
             _ => {
                 false
             },
