@@ -63,7 +63,7 @@ impl Resource for Point {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct Rect {
     pub top: i16,
     pub left: i16,
@@ -84,6 +84,19 @@ impl Rect {
     #[must_use]
     pub fn width(self) -> i16 {
         self.right - self.left
+    }
+}
+
+impl std::fmt::Debug for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rect")
+            .field("top", &self.top)
+            .field("left", &self.left)
+            .field("bottom", &self.bottom)
+            .field("right", &self.right)
+            .field("(width)", &self.width())
+            .field("(height)", &self.height())
+            .finish()
     }
 }
 
