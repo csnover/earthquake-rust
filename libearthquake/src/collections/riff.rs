@@ -128,6 +128,14 @@ impl<T: Reader> Riff<T> {
         })
     }
 
+    pub fn load_id<R: 'static + Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {
+        if let Some(&chunk_index) = self.resource_map.get(&id) {
+            Self::load::<R>(self, chunk_index, context)
+        } else {
+            bail!("Invalid resource ID {}", id)
+        }
+    }
+
     pub fn load_riff(&self, index: ChunkIndex) -> AResult<Self> {
         let entry = self.memory_map.get(index)
             .with_context(|| format!("Invalid RIFF index {}", index))?;
