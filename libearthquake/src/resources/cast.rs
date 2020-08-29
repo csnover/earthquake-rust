@@ -1,14 +1,16 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
-use crate::{collections::riff::{Riff, ChunkIndex}, ensure_sample, pvec};
+use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{Reader, Resource, resource::{StringContext, StringKind}, vfs::VirtualFile, encodings::MAC_ROMAN};
+use libcommon::{encodings::MAC_ROMAN, Reader, Resource, resource::{StringContext, StringKind}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::{cell::RefCell, rc::{Weak, Rc}, io::{Cursor, Read, Seek, SeekFrom}};
-use super::field::load_metadata as field_load_metadata;
-use libmactoolbox::Rect;
+use super::{
+    field::Meta as FieldMeta,
+    shape::Meta as ShapeMeta,
+    text::Meta as TextMeta,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ConfigVersion {
@@ -170,19 +172,6 @@ pvec! {
     }
 }
 
-// #[derive(Debug)]
-// struct VideoWorksCastInfo {
-//     data: Vec<u8>,
-//     indexes: Vec<u16>,
-// }
-
-// impl Resource for VideoWorksCastInfo {
-//     type Data = ();
-//     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _data: Self::Data) -> AResult<Self> where Self: Sized {
-//         todo!()
-//     }
-// }
-
 #[derive(Debug)]
 pub struct Member {
     // TODO: This needs to be an Either; for Director 3 it is an i16 resource
@@ -203,13 +192,15 @@ impl Resource for Member {
             .with_context(|| format!("Can’t read cast member kind in chunk {}", context.0))?;
         let kind = MemberKind::from_u32(kind)
             .with_context(|| format!("Invalid cast member kind {} in chunk {}", kind, context.0))?;
-        let vwci_size = input.read_u32()?;
-        let vwcr_size = input.read_u32()?;
+        // VWCI
+        let info_size = input.read_u32()?;
+        // VWCR
+        let meta_size = input.read_u32()?;
 
-        let info = if vwci_size == 0 {
+        let info = if info_size == 0 {
             None
         } else {
-            Some(MemberInfo::load(&mut input, vwci_size, &Default::default())
+            Some(MemberInfo::load(&mut input, info_size, &Default::default())
                 .with_context(|| format!("Invalid member info for chunk {}", context.0))?)
         };
 
@@ -219,7 +210,7 @@ impl Resource for Member {
             some_num_a: 0,
             flags: MemberFlags::empty(),
             info,
-            metadata: MemberMetadata::load(&mut input, vwcr_size, &(kind, context.1))?,
+            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1))?,
         })
     }
 }
@@ -255,124 +246,26 @@ pub enum MemberKind {
     Xtra,
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
-pub enum FieldFrame {
-    Fit              = 0,
-    Scroll           = 1,
-    Fixed            = 2,
-    LimitToFieldSize = 3,
-}
-
-bitflags! {
-    pub struct FieldFlags: u8 {
-        const EDITABLE     = 0x1;
-        const TABBABLE     = 0x2;
-        const NO_WORD_WRAP = 0x4;
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
-pub enum ShapeKind {
-    Rect      = 1,
-    RoundRect = 2,
-    Oval      = 3,
-    Line      = 4,
-}
-
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
-pub enum ShapeLineDirection {
-    TopToBottom = 5,
-    BottomToTop = 6,
-}
-
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
-pub enum TextFrame {
-    Fit    = 0,
-    Scroll = 1,
-    Crop   = 2,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum MemberMetadata {
     None,
-    Bitmap {
-
-    },
-    FilmLoop {
-
-    },
-    Field {
-        border_size: u8,
-        /// Space between the field viewport and the border.
-        margin_size: u8,
-        box_shadow_size: u8,
-        frame: FieldFrame,
-        field_c: i16,
-        field_e: i16,
-        field_10: i16,
-        field_12: i16,
-        scroll_top: u16,
-        /// The viewport of the field, excluding decorations.
-        bounds: Rect,
-        /// The height of the field, excluding decorations.
-        height: u16,
-        text_shadow_size: u8,
-        flags: FieldFlags,
-        /// The total height of content, which may be larger than the viewport
-        /// if the field is scrollable.
-        scroll_height: u16,
-    },
+    Bitmap {},
+    FilmLoop {},
+    Field(FieldMeta),
     Palette,
     Picture,
-    Sound {
-
-    },
-    Button {
-
-    },
-    Shape {
-        kind: ShapeKind,
-        bounds: Rect,
-        pattern: u16,
-        fore_color: u8,
-        back_color: u8,
-        filled: bool,
-        line_size: u8,
-        line_direction: ShapeLineDirection,
-    },
-    Movie {
-
-    },
-    DigitalVideo {
-
-    },
-    Script {
-
-    },
+    Sound {},
+    Button(FieldMeta),
+    Shape(ShapeMeta),
+    Movie {},
+    DigitalVideo {},
+    Script {},
     // Rich text
-    Text {
-        bounds: Rect,
-        rect_2: Rect,
-        anti_alias: bool,
-        frame: TextFrame,
-        field_12: u16,
-        anti_alias_min_font_size: i16,
-        height: u16,
-        field_18: u32,
-        field_1c: i16,
-        field_1e: i16,
-        field_20: i16,
-    },
-    OLE {
-
-    },
+    Text(TextMeta),
+    OLE {},
     // Transition-specific Xtras
-    Transition {
-
-    },
-    Xtra {
-
-    },
+    Transition {},
+    Xtra {},
 }
 
 impl Resource for MemberMetadata {
@@ -383,122 +276,10 @@ impl Resource for MemberMetadata {
                 input.skip(u64::from(size))?;
                 MemberMetadata::None
             },
-            MemberKind::Field => {
-                if context.1 < ConfigVersion::V1217 {
-                    todo!("Implement text member kind for < V1217");
-                }
-
-                let border_size = input.read_u8().context("Can’t read border size")?;
-                let margin_size = input.read_u8().context("Can’t read margin size")?;
-                let box_shadow_size = input.read_u8().context("Can’t read box shadow size")?;
-                let frame = {
-                    let value = input.read_u8().context("Can’t read field frame")?;
-                    FieldFrame::from_u8(value).with_context(|| format!("Invalid value {} for field frame", value))?
-                };
-                let field_c = input.read_i16().context("Can’t read field_c")?;
-                ensure_sample!(field_c == 0, "Field_c is not 0");
-                let field_e = input.read_i16().context("Can’t read field_e")?;
-                ensure_sample!(field_e == -1, "Field_e is not -1");
-                let field_10 = input.read_i16().context("Can’t read field_10")?;
-                ensure_sample!(field_10 == -1, "Field_10 is not -1");
-                let field_12 = input.read_i16().context("Can’t read field_12")?;
-                ensure_sample!(field_12 == -1, "Field_12 is not -1");
-                let scroll_top = input.read_u16().context("Can’t read scroll top")?;
-                let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read bounds")?;
-                let height = input.read_u16().context("Can’t read height")?;
-                ensure_sample!(height == bounds.height() as u16, "Height does not match bounds height");
-                let text_shadow_size = input.read_u8().context("Can’t read text shadow size")?;
-                let flags = {
-                    let value = input.read_u8().context("Can’t read field flags")?;
-                    FieldFlags::from_bits(value).with_context(|| format!("Invalid flags 0x{:x} for field", value))?
-                };
-                let scroll_height = input.read_u16().context("Can’t read scroll height")?;
-
-                MemberMetadata::Field {
-                    border_size,
-                    margin_size,
-                    box_shadow_size,
-                    frame,
-                    field_c,
-                    field_e,
-                    field_10,
-                    field_12,
-                    scroll_top,
-                    bounds,
-                    height,
-                    text_shadow_size,
-                    flags,
-                    scroll_height,
-                }
-            },
-            MemberKind::Shape => {
-                let kind = {
-                    let value = input.read_u16().context("Can’t read shape kind")?;
-                    ShapeKind::from_u16(value).with_context(|| format!("Invalid shape kind {}", value))?
-                };
-                let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read shape bounds")?;
-                let pattern = input.read_u16().context("Can’t read shape pattern")?;
-                let fore_color = input.read_u8().context("Can’t read shape foreground color")?;
-                let back_color = input.read_u8().context("Can’t read shape background color")?;
-                let filled = input.read_u8().context("Can’t read shape filled flag")?;
-                ensure_sample!(filled == 0 || filled == 1, "Unexpected filled value {}", filled);
-                let line_size = input.read_u8().context("Can’t read shape line size")?;
-                ensure_sample!(line_size != 0, "Unexpected zero shape line size");
-                let line_direction = {
-                    let value = input.read_u8().context("Can’t read shape line kind")?;
-                    ShapeLineDirection::from_u8(value)
-                        .with_context(|| format!("Invalid line direction {}", value))?
-                };
-
-                MemberMetadata::Shape {
-                    kind,
-                    bounds,
-                    pattern,
-                    fore_color,
-                    back_color,
-                    filled: filled != 0,
-                    line_size: line_size - 1,
-                    line_direction,
-                }
-            },
-            MemberKind::Button => {
-                // println!("{:x?}", Vec::<u8>::load(input, size, &())?);
-                MemberMetadata::None
-            },
-            MemberKind::Text => {
-                let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read text bounds")?;
-                let rect_2 = Rect::load(input, Rect::SIZE, &()).context("Can’t read text rect 2")?;
-                let anti_alias = input.read_u8().context("Can’t read text anti-aliasing flag")?;
-                ensure_sample!(anti_alias == 0 || anti_alias == 1, "Unexpected anti-aliasing value {}", anti_alias);
-                let frame = {
-                    let value = input.read_u8().context("Can’t read text frame")?;
-                    TextFrame::from_u8(value).with_context(|| format!("Invalid text frame {}", value))?
-                };
-                let field_12 = input.read_u16().context("Can’t read text field_12")?;
-                let anti_alias_min_font_size = input.read_i16().context("Can’t read anti-aliasing minimum font size")?;
-                let height = input.read_u16().context("Can’t read text height")?;
-                let field_18 = input.read_u32().context("Can’t read text field_18")?;
-                ensure_sample!(field_18 == 0, "Unexpected field_18 value 0x{:x}", field_18);
-                let field_1c = input.read_i16().context("Can’t read text field_1c")?;
-                ensure_sample!(field_1c == -1, "Unexpected field_1c value {}", field_1c);
-                let field_1e = input.read_i16().context("Can’t read text field_1e")?;
-                ensure_sample!(field_1e == -1, "Unexpected field_1e value {}", field_1e);
-                let field_20 = input.read_i16().context("Can’t read text field_20")?;
-                ensure_sample!(field_20 == -1, "Unexpected field_20 value {}", field_20);
-                MemberMetadata::Text {
-                    bounds,
-                    rect_2,
-                    anti_alias: anti_alias != 0,
-                    frame,
-                    field_12,
-                    anti_alias_min_font_size,
-                    height,
-                    field_18,
-                    field_1c,
-                    field_1e,
-                    field_20,
-                }
-            },
+            MemberKind::Button => MemberMetadata::Button(FieldMeta::load(input, size, &())?),
+            MemberKind::Field => MemberMetadata::Field(FieldMeta::load(input, size, &())?),
+            MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::load(input, size, &())?),
+            MemberKind::Text => MemberMetadata::Text(TextMeta::load(input, size, &(context.1, ))?),
             MemberKind::Bitmap
             | MemberKind::FilmLoop
             | MemberKind::Palette

@@ -1,5 +1,7 @@
 pub mod cast;
 pub mod field;
+pub mod shape;
+pub mod text;
 
 use anyhow::{Context, Result as AResult};
 use byteordered::{Endianness, ByteOrdered};
