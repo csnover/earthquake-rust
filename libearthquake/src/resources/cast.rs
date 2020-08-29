@@ -265,6 +265,20 @@ bitflags! {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+pub enum ShapeKind {
+    Rect      = 1,
+    RoundRect = 2,
+    Oval      = 3,
+    Line      = 4,
+}
+
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+pub enum ShapeLineDirection {
+    TopToBottom = 5,
+    BottomToTop = 6,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum MemberMetadata {
     None,
@@ -295,12 +309,8 @@ pub enum MemberMetadata {
         /// if the field is scrollable.
         scroll_height: u16,
     },
-    Palette {
-
-    },
-    Picture {
-
-    },
+    Palette,
+    Picture,
     Sound {
 
     },
@@ -308,7 +318,14 @@ pub enum MemberMetadata {
 
     },
     Shape {
-
+        kind: ShapeKind,
+        bounds: Rect,
+        pattern: u16,
+        fore_color: u8,
+        back_color: u8,
+        filled: bool,
+        line_size: u8,
+        line_direction: ShapeLineDirection,
     },
     Movie {
 
@@ -387,17 +404,58 @@ impl Resource for MemberMetadata {
                     scroll_height,
                 }
             },
+            MemberKind::Shape => {
+                let kind = {
+                    let value = input.read_u16().context("Can’t read shape kind")?;
+                    ShapeKind::from_u16(value).with_context(|| format!("Invalid shape kind {}", value))?
+                };
+                let bounds = Rect::load(input, 8, &()).context("Can’t read bounds")?;
+                let pattern = input.read_u16().context("Can’t read shape pattern")?;
+                let fore_color = input.read_u8().context("Can’t read shape foreground color")?;
+                let back_color = input.read_u8().context("Can’t read shape background color")?;
+                let filled = input.read_u8().context("Can’t read shape filled flag")?;
+                ensure_sample!(filled == 0 || filled == 1, "Unexpected filled value {}", filled);
+                let line_size = input.read_u8().context("Can’t read shape line size")?;
+                ensure_sample!(line_size != 0, "Unexpected zero shape line size");
+                let line_direction = {
+                    let value = input.read_u8().context("Can’t read shape line kind")?;
+                    ShapeLineDirection::from_u8(value)
+                        .with_context(|| format!("Invalid line direction {}", value))?
+                };
+
+                MemberMetadata::Shape {
+                    kind,
+                    bounds,
+                    pattern,
+                    fore_color,
+                    back_color,
+                    filled: filled != 0,
+                    line_size: line_size - 1,
+                    line_direction,
+                }
+            },
+            MemberKind::Button => {
+                // println!("{:x?}", Vec::<u8>::load(input, size, &())?);
+                MemberMetadata::None
+            },
+            MemberKind::Text => {
+                // [0, 0, 0, 0, 0, 10, 0, 78, 0, 0, 0, 0, 0, 10, 0, 78, 1, 0, 0, 0,  0,  c, 0, 10, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] aa default 12
+                // [0, 0, 0, 0, 0, 10, 0, 77, 0, 0, 0, 0, 0, 10, 0, 77, 0, 0, 0, 0, ff, f4, 0, 10, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] aa none
+                // [0, 0, 0, 0, 0, 10, 0, 77, 0, 0, 0, 0, 0, 10, 0, 77, 1, 0, 0, 0, ff, f4, 0, 10, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] aa all
+                // [0, 0, 0, 0, 0, 10, 0, 77, 0, 0, 0, 0, 0, 10, 0, 77, 1, 2, 0, 0,  0,  c, 0, 10, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] text crop
+                // [0, 0, 0, 0, 0, 10, 0, 78, 0, 0, 0, 0, 0, 1f, 0, 78, 1, 1, 0, 0,  0,  c, 0, 1f, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] text scrollable
+                // [0, 0, 0, 0, 0, 10, 0, 78, 0, 0, 0, 0, 0, 10, 0, 78, 1, 0, 0, 0,  0,  7, 0, 10, 0, 0, 0, 0, ff, ff, ff, ff, ff, ff] aa over 7
+                println!("{:x?}", Vec::<u8>::load(input, size, &())?);
+                MemberMetadata::None
+            },
             MemberKind::Bitmap
             | MemberKind::FilmLoop
             | MemberKind::Palette
             | MemberKind::Picture
             | MemberKind::Sound
-            | MemberKind::Button
-            | MemberKind::Shape
             | MemberKind::Movie
             | MemberKind::DigitalVideo
             | MemberKind::Script
-            | MemberKind::Text
             | MemberKind::OLE
             | MemberKind::Transition
             | MemberKind::Xtra => todo!()
