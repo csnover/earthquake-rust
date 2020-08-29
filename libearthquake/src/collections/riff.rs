@@ -31,7 +31,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-#[derive(Clone, Copy, Constructor, Debug, Display)]
+#[derive(Clone, Copy, Constructor, Debug, Display, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ChunkIndex(i32);
 
 #[derive(Debug, Display)]

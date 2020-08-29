@@ -13,7 +13,7 @@
 use anyhow::{bail, Result as AResult};
 use libearthquake::{
     collections::{
-        riff::Riff,
+        riff::{ChunkIndex, Riff},
         riff_container::{ChunkFileKind, RiffContainer},
     },
     detection::{
@@ -68,7 +68,9 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
         if resource.id().0.as_bytes() == b"CAS*" {
             let cast = resource.load::<CastMap>(&Default::default()).unwrap();
             for &chunk_index in cast.iter() {
-                println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, )).unwrap());
+                if chunk_index > ChunkIndex::new(0) {
+                    println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, )).unwrap());
+                }
             }
         }
     }
