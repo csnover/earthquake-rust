@@ -7,16 +7,11 @@ use libcommon::{encodings::MAC_ROMAN, Reader, Resource, resource::{StringContext
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use super::{
+    config::Version as ConfigVersion,
     field::Meta as FieldMeta,
     shape::Meta as ShapeMeta,
     text::Meta as TextMeta,
 };
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ConfigVersion {
-    V1215 = 1215,
-    V1217 = 1217,
-}
 
 // CAS* - list of ChunkIndex to CASt resources
 // CASt - (flags, VWCI size, VWCR size) + VWCI resource + VWCR data
@@ -69,8 +64,11 @@ pub enum ConfigVersion {
 //     }
 // }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LibNum(pub i16);
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemberNum(pub i16);
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemberId(pub LibNum, pub MemberNum);
 
 impl From<(i16, i16)> for MemberId {

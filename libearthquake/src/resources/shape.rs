@@ -5,20 +5,19 @@ use libcommon::{Reader, Resource};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use super::cast::{ConfigVersion, MemberKind};
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Kind {
-    Rect      = 1,
-    RoundRect = 2,
-    Oval      = 3,
-    Line      = 4,
+    Rect = 1,
+    RoundRect,
+    Oval,
+    Line,
 }
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum LineDirection {
     TopToBottom = 5,
-    BottomToTop = 6,
+    BottomToTop,
 }
 
 #[derive(Clone, Copy, Debug)]

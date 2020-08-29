@@ -5,7 +5,7 @@ use libcommon::{Reader, Resource};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use super::cast::ConfigVersion;
+use super::config::Version as ConfigVersion;
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Frame {

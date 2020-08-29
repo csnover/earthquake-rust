@@ -29,10 +29,10 @@ use libearthquake::{
             Version as ProjectorVersion,
         }, Detection,
     },
-    name, resources::cast::{CastMap, Member, ConfigVersion},
+    name, resources::{cast::{CastMap, Member}, config::{Config, Version as ConfigVersion}},
 };
 use libcommon::{Reader, vfs::VirtualFileSystem};
-use libmactoolbox::{ResourceFile, vfs::HostFileSystem};
+use libmactoolbox::{ResourceFile, vfs::HostFileSystem, rsid};
 use pico_args::Arguments;
 use std::{env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
 
@@ -63,6 +63,9 @@ fn inspect_riff(stream: &mut impl Reader) -> AResult<()> {
 }
 
 fn inspect_riff_contents(riff: &Riff<impl Reader>) {
+    let config = riff.load_id::<Config>(rsid!(b"VWCF", 1024), &()).unwrap();
+    println!("{:#?}", config);
+
     for resource in riff.iter() {
         println!("{}", resource);
         if resource.id().0.as_bytes() == b"CAS*" {

@@ -1,4 +1,5 @@
 pub mod cast;
+pub mod config;
 pub mod field;
 pub mod shape;
 pub mod text;
