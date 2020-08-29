@@ -48,10 +48,14 @@ pub struct Point {
     pub y: i16,
 }
 
+impl Point {
+    pub const SIZE: u32 = 4;
+}
+
 impl Resource for Point {
     type Context = ();
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert_eq!(size, 4);
+        assert_eq!(size, Self::SIZE);
         Ok(Self {
             x: input.read_i16()?,
             y: input.read_i16()?,
@@ -68,15 +72,17 @@ pub struct Rect {
 }
 
 impl Rect {
+    pub const SIZE: u32 = 8;
+
     #[inline]
     #[must_use]
-    pub fn height(&self) -> i16 {
+    pub fn height(self) -> i16 {
         self.bottom - self.top
     }
 
     #[inline]
     #[must_use]
-    pub fn width(&self) -> i16 {
+    pub fn width(self) -> i16 {
         self.right - self.left
     }
 }
@@ -84,7 +90,7 @@ impl Rect {
 impl Resource for Rect {
     type Context = ();
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert_eq!(size, 8);
+        assert_eq!(size, Self::SIZE);
         Ok(Self {
             top: input.read_i16()?,
             left: input.read_i16()?,

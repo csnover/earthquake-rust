@@ -29,7 +29,7 @@ use libearthquake::{
             Version as ProjectorVersion,
         }, Detection,
     },
-    name, resources::cast::{CastMap, Member},
+    name, resources::cast::{CastMap, Member, ConfigVersion},
 };
 use libcommon::{Reader, vfs::VirtualFileSystem};
 use libmactoolbox::{ResourceFile, vfs::HostFileSystem};
@@ -69,7 +69,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
             let cast = resource.load::<CastMap>(&Default::default()).unwrap();
             for &chunk_index in cast.iter() {
                 if chunk_index > ChunkIndex::new(0) {
-                    println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, )).unwrap());
+                    println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)).unwrap());
                 }
             }
         }
