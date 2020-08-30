@@ -60,7 +60,7 @@ struct Dialogs {
 
 impl Dialogs {
     pub fn alert(&self, alert_id: i16) -> i16 {
-        todo!()
+        todo!("alert dialog")
     }
 
     pub fn param_text<T: AsRef<str>>(&mut self, param0: T, param1: T, param2: T, param3: T) {
@@ -71,6 +71,6 @@ impl Dialogs {
     }
 
     pub fn stop_alert(&self, alert_id: i16) -> i16 {
-        todo!()
+        todo!("stop alert dialog")
     }
 }

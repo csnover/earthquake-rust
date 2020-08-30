@@ -20,7 +20,7 @@ pub trait Decoder: std::fmt::Debug + Sync {
 pub struct MacJapanese;
 impl Decoder for MacJapanese {
     fn decode(&self, _text: &[u8]) -> String {
-        todo!()
+        todo!("MacJapanese decoder")
     }
 }
 pub const MAC_JAPANESE: &MacJapanese = &MacJapanese;

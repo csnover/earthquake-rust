@@ -173,7 +173,7 @@ impl ProjectorSettings {
         ensure_sample!(bits[4..=5] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 4-5");
         ensure_sample!(bits[8] == 0, "Unexpected D4+Mac PJst byte 8");
         match version {
-            ProjectorVersion::D3 => unreachable!(),
+            ProjectorVersion::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
             ProjectorVersion::D4 => {
                 // TODO: This is 0x14 for the post-release D4 and 0x04 in the
                 // pre-release D4.
@@ -186,7 +186,7 @@ impl ProjectorSettings {
             ProjectorVersion::D6 => {
                 ensure_sample!(bits[6] & 0x24 == 0x24, "Unexpected D6Mac PJst byte 6");
             },
-            ProjectorVersion::D7 => todo!(),
+            ProjectorVersion::D7 => todo!("D7Mac projector settings parser"),
         }
 
         let cpu = if bits[7] == 0 {
@@ -206,7 +206,7 @@ impl ProjectorSettings {
         let platform               = Platform::Mac(cpu);
 
         Ok(match version {
-            ProjectorVersion::D3 => unreachable!(),
+            ProjectorVersion::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
             ProjectorVersion::D4 => {
                 Self {
                     resize_stage,
@@ -257,7 +257,7 @@ impl ProjectorSettings {
                     }),
                 }
             },
-            ProjectorVersion::D7 => todo!(),
+            ProjectorVersion::D7 => todo!("D7Mac projector settings parser"),
         })
     }
 
@@ -285,7 +285,7 @@ impl ProjectorSettings {
                 ensure_sample!(bits[0] & 0x20 != 0, "Unexpected D6Win PJ95 byte 0");
                 ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D6Win PJ95 bytes 5-11");
             },
-            ProjectorVersion::D7 => todo!(),
+            ProjectorVersion::D7 => todo!("D7Win projector settings parser"),
         }
 
         Ok(match version {
@@ -351,7 +351,7 @@ impl ProjectorSettings {
                     has_network_xtras:      bits[0] & 0x40 != 0,
                 }),
             },
-            ProjectorVersion::D7 => todo!(),
+            ProjectorVersion::D7 => todo!("D7Win projector settings parser"),
         })
     }
 

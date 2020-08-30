@@ -197,9 +197,9 @@ pub fn decode_text<T: Reader>(input: &mut T, script_code: u8) -> String {
     match ScriptCode::from_u8(script_code) {
         Some(ScriptCode::Roman) | None       => MAC_ROMAN.decode_stream(input),
         Some(ScriptCode::Japanese)           => MAC_JAPANESE.decode_stream(input),
-        Some(ScriptCode::ChineseTraditional) => todo!(),
-        Some(ScriptCode::Korean)             => todo!(),
+        Some(ScriptCode::ChineseTraditional) => todo!("Chinese traditional decoder"),
+        Some(ScriptCode::Korean)             => todo!("Korean decoder"),
         Some(ScriptCode::Russian)            => MAC_CYRILLIC.decode_stream(input),
-        _ => unimplemented!(),
+        _ => unimplemented!("no currently known uses of other script codes"),
     }
 }

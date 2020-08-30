@@ -155,13 +155,13 @@ impl EventManager {
 
     /// `GetKeys`
     pub fn keys(&self, map: &[u8]) {
-        todo!()
+        todo!("keyboard state")
     }
 
     /// `GetMouse`
     pub fn mouse(&self) -> Point {
         // TODO: Supposed to be mouse position within grafport.
-        todo!()
+        todo!("mouse position")
     }
 
     /// `PostEvent`
@@ -200,7 +200,7 @@ impl EventManager {
             } else {
                 None
             },
-            EventKind::Disk => unimplemented!(),
+            EventKind::Disk => unimplemented!("disk events are not used"),
             EventKind::Activate => if let EventData::ActiveWindow(_, w, a) = data {
                 Some(EventRecord {
                     kind,
@@ -211,9 +211,9 @@ impl EventManager {
             } else {
                 None
             },
-            EventKind::OS => todo!(),
+            EventKind::OS => todo!("OS events"),
             EventKind::HighLevel => if let EventData::HighLevel(data) = data {
-                todo!()
+                todo!("high level events")
             } else {
                 None
             },
@@ -245,7 +245,7 @@ impl EventManager {
 
     /// `TickCount`
     pub fn tick_count(&self) -> Tick {
-        todo!()
+        todo!("system tick count")
     }
 
     fn modifiers(&self) -> EventModifiers {

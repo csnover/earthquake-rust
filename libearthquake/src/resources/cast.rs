@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
 use crate::{collections::riff::ChunkIndex, pvec};
-use derive_more::{Deref, DerefMut, Index, IndexMut};
+use derive_more::{Deref, DerefMut, Display, Index, IndexMut};
 use libcommon::{encodings::MAC_ROMAN, Reader, Resource, resource::{StringContext, StringKind}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -224,7 +224,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive)]
+#[derive(Clone, Copy, Debug, Display, FromPrimitive)]
 pub enum MemberKind {
     None = 0,
     Bitmap,
@@ -288,7 +288,7 @@ impl Resource for MemberMetadata {
             | MemberKind::Script
             | MemberKind::OLE
             | MemberKind::Transition
-            | MemberKind::Xtra => todo!()
+            | MemberKind::Xtra => todo!("{} metadata parser", context.0)
         })
     }
 }

@@ -100,7 +100,7 @@ impl std::fmt::Display for MacCPU {
             MacCPU::M68K => write!(f, "68000"),
             MacCPU::PPC => write!(f, "PowerPC"),
             MacCPU::ANY => write!(f, "68000/PowerPC"),
-            _ => unreachable!(),
+            _ => unreachable!("there are no other CPU types"),
         }
     }
 }
@@ -219,7 +219,7 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
                 bail!("No data fork; can’t get offset of internal movie");
             }
         },
-        Version::D7 => todo!(),
+        Version::D7 => todo!("D7Mac projector detection"),
     };
 
     Ok(DetectionInfo {
@@ -313,7 +313,7 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
             .context("Can’t seek to Projector settings")?;
 
         let settings_offset = match version {
-            Version::D3 => unreachable!(),
+            Version::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
             Version::D4 => {
                 // A Cidade Virtual has more stuff in PJ93 than other samples
                 // in the corpus, so it is not possible to just walk forward by
@@ -407,7 +407,7 @@ fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> 
 
 fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
     let (rsrc_offset, rsrc_size) = match version {
-        Version::D3 => unreachable!(),
+        Version::D3 => unreachable!("D3 does not include a system resource file"),
         Version::D4 => {
             input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + 8)))
                 .context("Can’t seek to PROJECTR.RSR offset")?;
@@ -454,7 +454,7 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
             // resources inside the embedded DLLs. So figure out how to make
             // that work, ha ha ugh.
             const DRIVER_ENTRY_SIZE: u32 = 0x3c;
-            todo!()
+            todo!("D7 projector system resource loading")
         },
     };
 

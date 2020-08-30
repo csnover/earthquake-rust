@@ -238,7 +238,7 @@ impl<T: Reader> ResourceFile<T> {
         if let DecompressorState::Loaded(decompressor) = &*self.decompressor.borrow() {
             decompressor.decompress(&data).context("Decompression failure")
         } else {
-            unreachable!();
+            bail!("Missing decompressor")
         }
     }
 }

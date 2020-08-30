@@ -371,7 +371,7 @@ impl<T: Reader> Riff<T> {
             } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Big {
                 Self::init::<_, BigEndian, BigEndian>(&mut input)?
             } else {
-                unreachable!();
+                unreachable!("big endian data with little endian OSType does not exist");
             }
         };
 
