@@ -2,15 +2,21 @@ use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
 use crate::{collections::riff::ChunkIndex, pvec};
-use derive_more::{Deref, DerefMut, Display, Index, IndexMut};
+use derive_more::{Constructor, Deref, DerefMut, Display, From, Index, IndexMut};
 use libcommon::{encodings::MAC_ROMAN, Reader, Resource, resource::{StringContext, StringKind}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use std::fmt;
 use super::{
+    bitmap::Meta as BitmapMeta,
     config::Version as ConfigVersion,
     field::Meta as FieldMeta,
+    film_loop::Meta as FilmLoopMeta,
+    script::Meta as ScriptMeta,
     shape::Meta as ShapeMeta,
     text::Meta as TextMeta,
+    video::Meta as VideoMeta,
+    xtra::{Meta as XtraMeta, TransitionMeta},
 };
 
 // CAS* - list of ChunkIndex to CASt resources
@@ -64,22 +70,52 @@ use super::{
 //     }
 // }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
 pub struct LibNum(pub i16);
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct MemberNum(pub i16);
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct MemberId(pub LibNum, pub MemberNum);
 
-impl From<(i16, i16)> for MemberId {
-    fn from(tuple: (i16, i16)) -> Self {
-        Self(LibNum(tuple.0), MemberNum(tuple.1))
+#[derive(Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
+pub struct MemberNum(pub i16);
+
+#[derive(Clone, Constructor, Copy, Default, Display, Eq, PartialEq)]
+#[display(fmt = "MemberId({}, {})", "_0.0", "_1.0")]
+pub struct MemberId(LibNum, MemberNum);
+
+impl fmt::Debug for MemberId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
-impl From<LibNum> for MemberId {
-    fn from(lib_num: LibNum) -> Self {
-        Self(lib_num, MemberNum(0))
+impl MemberId {
+    pub const SIZE: u32 = 4;
+
+    #[must_use]
+    pub fn lib(self) -> LibNum {
+        self.0
+    }
+
+    pub fn lib_mut(&mut self) -> &mut LibNum {
+        &mut self.0
+    }
+
+    #[must_use]
+    pub fn num(self) -> MemberNum {
+        self.1
+    }
+
+    pub fn num_mut(&mut self) -> &mut MemberNum {
+        &mut self.1
+    }
+}
+
+impl Resource for MemberId {
+    type Context = ();
+
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        Ok(Self(
+            input.read_i16().context("Can’t read cast library number")?.into(),
+            input.read_i16().context("Can’t read cast member number")?.into()
+        ))
     }
 }
 
@@ -134,15 +170,15 @@ type StructD_439630 = Vec<u8>;
 pvec! {
     pub struct MemberInfo {
         #[offset(4..8)]
-        field_4: u32,
+        script_handle: u32,
         #[offset(8..0xc)]
         field_8: u32,
         #[offset(0xc..0x10)]
         flags: MemberInfoFlags,
         #[offset(0x10..0x14)]
-        field_10: u32,
+        script_context_num: u32,
         #[entry(0)]
-        entry_0: String,
+        script_text: String,
         #[entry(1, StringContext(StringKind::PascalStr, MAC_ROMAN))]
         name: String,
         #[entry(2, StringContext(StringKind::PascalStr, MAC_ROMAN))]
@@ -173,7 +209,7 @@ pvec! {
 #[derive(Debug)]
 pub struct Member {
     // TODO: This needs to be an Either; for Director 3 it is an i16 resource
-    // number, for Director 4+ it is a RIFF chunk index
+    // number, for Director 4+ it is also sometimes a RIFF chunk index maybe?
     riff_index: ChunkIndex,
     next_free: i16,
     some_num_a: i16,
@@ -247,23 +283,23 @@ pub enum MemberKind {
 #[derive(Clone, Copy, Debug)]
 pub enum MemberMetadata {
     None,
-    Bitmap {},
-    FilmLoop {},
+    Bitmap(BitmapMeta),
+    FilmLoop(FilmLoopMeta),
     Field(FieldMeta),
     Palette,
     Picture,
-    Sound {},
+    Sound,
     Button(FieldMeta),
     Shape(ShapeMeta),
-    Movie {},
-    DigitalVideo {},
-    Script {},
+    Movie(FilmLoopMeta),
+    DigitalVideo(VideoMeta),
+    Script(ScriptMeta),
     // Rich text
     Text(TextMeta),
-    OLE {},
+    OLE(BitmapMeta),
     // Transition-specific Xtras
-    Transition {},
-    Xtra {},
+    Transition(TransitionMeta),
+    Xtra(XtraMeta),
 }
 
 impl Resource for MemberMetadata {
@@ -274,21 +310,21 @@ impl Resource for MemberMetadata {
                 input.skip(u64::from(size))?;
                 MemberMetadata::None
             },
+            MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::load(input, size, &())?),
             MemberKind::Button => MemberMetadata::Button(FieldMeta::load(input, size, &())?),
+            MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::load(input, size, &())?),
             MemberKind::Field => MemberMetadata::Field(FieldMeta::load(input, size, &())?),
+            MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::load(input, size, &())?),
+            MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::load(input, size, &())?),
+            MemberKind::OLE => MemberMetadata::OLE(BitmapMeta::load(input, size, &())?),
+            MemberKind::Palette => MemberMetadata::Palette,
+            MemberKind::Picture => MemberMetadata::Picture,
+            MemberKind::Script => MemberMetadata::Script(ScriptMeta::load(input, size, &())?),
             MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::load(input, size, &())?),
+            MemberKind::Sound => MemberMetadata::Sound,
             MemberKind::Text => MemberMetadata::Text(TextMeta::load(input, size, &(context.1, ))?),
-            MemberKind::Bitmap
-            | MemberKind::FilmLoop
-            | MemberKind::Palette
-            | MemberKind::Picture
-            | MemberKind::Sound
-            | MemberKind::Movie
-            | MemberKind::DigitalVideo
-            | MemberKind::Script
-            | MemberKind::OLE
-            | MemberKind::Transition
-            | MemberKind::Xtra => todo!("{} metadata parser", context.0)
+            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::load(input, size, &(context.1, ))?),
+            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &())?),
         })
     }
 }

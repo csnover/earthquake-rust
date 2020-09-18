@@ -1,8 +1,13 @@
+pub mod bitmap;
 pub mod cast;
 pub mod config;
 pub mod field;
+pub mod film_loop;
+pub mod script;
 pub mod shape;
 pub mod text;
+pub mod video;
+pub mod xtra;
 
 use anyhow::{Context, Result as AResult};
 use byteordered::{Endianness, ByteOrdered};

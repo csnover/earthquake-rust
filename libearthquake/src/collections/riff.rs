@@ -95,6 +95,10 @@ impl<T: Reader> Riff<T> {
         ChunkIndex::new(-1)
     }
 
+    pub fn has_id(&self, id: ResourceId) -> bool {
+        self.resource_map.get(&id).is_some()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = Iter<'_, T>> {
         self.resource_map.iter().map(move |(k, v)| Iter {
             id: *k,

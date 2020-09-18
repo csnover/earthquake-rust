@@ -1,13 +1,16 @@
+use anyhow::{Context, Result as AResult};
+use byteordered::{ByteOrdered, Endianness};
 use libcommon::{
     Unk16,
     Unk32,
     Unk8,
-    UnkPtr,
+    UnkPtr, Resource, Reader,
 };
 use libmactoolbox::{
     Rect,
     TEHandle,
 };
+use crate::resources::cast::MemberId;
 
 // TODO: Will need to be a bit_field::BitArray for >64 sprites
 type SpriteBitmask = u64;
@@ -23,11 +26,6 @@ type SpriteNum = u16;
 // D6: 120
 // D7: 150
 const NUM_SPRITES: usize = 48;
-
-pub struct CastMemberId {
-    pub lib: i16,
-    pub num: i16,
-}
 
 struct Score {
     field_0: Unk32,
@@ -82,7 +80,7 @@ struct Score {
 }
 
 struct Score12BC {
-    frame_palette_maybe: CastMemberId,
+    frame_palette_maybe: MemberId,
     field_4: Unk8,
     field_5: Unk8,
     field_6: Unk8,
@@ -107,7 +105,7 @@ struct Score16DA {
     h_te: TEHandle,
     rect: Rect,
     sprite_num: SpriteNum,
-    id: CastMemberId,
+    id: MemberId,
     field_12: Unk8,
     field_13: Unk8,
 }
@@ -118,7 +116,7 @@ struct SpriteFrame {
 }
 
 struct Frame {
-    script: CastMemberId,
+    script: MemberId,
     field_4: Unk32,
     field_8: Unk32,
     field_c: Unk16,
@@ -132,7 +130,7 @@ struct Frame {
 struct FrameCell {
     field_0: Unk8,
     field_1: Unk8,
-    id: CastMemberId,
+    id: MemberId,
     field_6: Unk32,
 
     field_10: Unk16,

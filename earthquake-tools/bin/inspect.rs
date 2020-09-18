@@ -63,19 +63,39 @@ fn inspect_riff(stream: &mut impl Reader) -> AResult<()> {
 }
 
 fn inspect_riff_contents(riff: &Riff<impl Reader>) {
-    let config = riff.load_id::<Config>(rsid!(b"VWCF", 1024), &()).unwrap();
-    println!("{:#?}", config);
+    let config_id = if riff.has_id(rsid!(b"VWCF", 1024)) {
+        Some(rsid!(b"VWCF", 1024))
+    } else if riff.has_id(rsid!(b"DRCF", 1024)) {
+        Some(rsid!(b"DRCF", 1024))
+    } else {
+        None
+    };
+
+    if let Some(config_id) = config_id {
+        let config = riff.load_id::<Config>(config_id, &()).unwrap();
+        println!("{:#?}", config);
+        if !config.valid() {
+            panic!("invalid config");
+        }
+    } else {
+        println!("No config chunk!");
+    }
 
     for resource in riff.iter() {
         println!("{}", resource);
-        if resource.id().0.as_bytes() == b"CAS*" {
-            let cast = resource.load::<CastMap>(&Default::default()).unwrap();
-            for &chunk_index in cast.iter() {
-                if chunk_index > ChunkIndex::new(0) {
-                    println!("{:#?}", riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)).unwrap());
+    }
+
+    if let Ok(cast) = riff.load_id::<CastMap>(rsid!(b"CAS*", 1024), &()) {
+        for &chunk_index in cast.iter() {
+            if chunk_index > ChunkIndex::new(0) {
+                match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)) {
+                    Ok(member) => println!("{:#?}", member),
+                    Err(err) => println!("Failed to inspect {}: {}", chunk_index, err),
                 }
             }
         }
+    } else {
+        println!("No cast!")
     }
 }
 
