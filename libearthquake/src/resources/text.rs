@@ -2,10 +2,23 @@ use anyhow::{Context, Result as AResult};
 use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
 use libcommon::{Reader, Resource};
-use libmactoolbox::Rect;
+use libmactoolbox::{Rect, quickdraw::RGBColor};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use super::config::Version as ConfigVersion;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct RGB24(u32);
+
+impl std::fmt::Debug for RGB24 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rgb8({}, {}, {})",
+            (self.0 >> 16) & 0xff,
+            (self.0 >> 8) & 0xff,
+            self.0 & 0xff,
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Frame {
@@ -23,10 +36,8 @@ pub struct Meta {
     field_12: u16,
     anti_alias_min_font_size: i16,
     height: u16,
-    field_18: u32,
-    field_1c: i16,
-    field_1e: i16,
-    field_20: i16,
+    fore_color: RGB24,
+    back_color: RGBColor,
 }
 
 impl Resource for Meta {
@@ -48,14 +59,8 @@ impl Resource for Meta {
         let field_12 = input.read_u16().context("Can’t read text field_12")?;
         let anti_alias_min_font_size = input.read_i16().context("Can’t read anti-aliasing minimum font size")?;
         let height = input.read_u16().context("Can’t read text height")?;
-        let field_18 = input.read_u32().context("Can’t read text field_18")?;
-        ensure_sample!(field_18 == 0, "Unexpected field_18 value 0x{:x}", field_18);
-        let field_1c = input.read_i16().context("Can’t read text field_1c")?;
-        ensure_sample!(field_1c == -1, "Unexpected field_1c value {}", field_1c);
-        let field_1e = input.read_i16().context("Can’t read text field_1e")?;
-        ensure_sample!(field_1e == -1, "Unexpected field_1e value {}", field_1e);
-        let field_20 = input.read_i16().context("Can’t read text field_20")?;
-        ensure_sample!(field_20 == -1, "Unexpected field_20 value {}", field_20);
+        let fore_color = RGB24(input.read_u32().context("Can’t read text foreground color")?);
+        let back_color = RGBColor::load(input, RGBColor::SIZE, &()).context("Can’t read text background color")?;
         Ok(Self {
             bounds,
             rect_2,
@@ -64,10 +69,8 @@ impl Resource for Meta {
             field_12,
             anti_alias_min_font_size,
             height,
-            field_18,
-            field_1c,
-            field_1e,
-            field_20,
+            fore_color,
+            back_color,
         })
     }
 }

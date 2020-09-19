@@ -118,18 +118,20 @@ impl<T: Reader> Riff<T> {
 
         if let Some(data) = entry.data.borrow().as_data().and_then(Weak::upgrade) {
             return data.downcast::<R>()
-                .map_err(|_| anyhow!("Invalid data type for index {}", index));
+                .map_err(|_| anyhow!("Invalid data type for index {}; OSType is {}", index, entry.os_type));
         }
 
         let mut input = self.input.borrow_mut();
         input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
-            .with_context(|| format!("Can’t seek to RIFF index {}", index))?;
+            .with_context(|| format!("Can’t seek to {} for RIFF index {}", entry.offset, index))?;
 
-        R::load(&mut input, entry.size, context).map(|resource| {
-            let resource = Rc::new(resource);
-            *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
-            resource
-        })
+        R::load(&mut input, entry.size, context)
+            .map(|resource| {
+                let resource = Rc::new(resource);
+                *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
+                resource
+            })
+            .with_context(|| format!("Can’t load {} chunk {} at {}", entry.os_type, index, entry.offset))
     }
 
     pub fn load_id<R: 'static + Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {

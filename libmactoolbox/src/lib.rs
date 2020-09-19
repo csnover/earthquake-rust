@@ -22,7 +22,7 @@ mod resource_file;
 mod resource_id;
 mod resource_manager;
 #[cfg(feature = "quickdraw")]
-mod quickdraw;
+pub mod quickdraw;
 pub mod script_manager;
 mod system;
 pub mod vfs;

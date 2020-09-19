@@ -1,5 +1,7 @@
 use crate::{Point, Rect};
-use libcommon::{UnkHnd, UnkPtr};
+use anyhow::{Context, Result as AResult};
+use byteordered::{ByteOrdered, Endianness};
+use libcommon::{Resource, UnkHnd, UnkPtr};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -11,11 +13,34 @@ type RgnHandle = UnkHnd;
 type StyleField = u16;
 type Fixed = u32;
 
-#[derive(Clone, Copy)]
-struct RGBColor {
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct RGBColor {
     pub r: u16,
     pub g: u16,
     pub b: u16,
+}
+
+impl RGBColor {
+    pub const SIZE: u32 = 6;
+}
+
+impl Resource for RGBColor {
+    type Context = ();
+
+    fn load<T: libcommon::Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        assert_eq!(size, Self::SIZE);
+        Ok(Self {
+            r: input.read_u16().context("Can’t read red channel")?,
+            g: input.read_u16().context("Can’t read green channel")?,
+            b: input.read_u16().context("Can’t read blue channel")?,
+        })
+    }
+}
+
+impl std::fmt::Debug for RGBColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rgb16({}, {}, {})", self.r, self.g, self.b)
+    }
 }
 
 #[derive(Clone, Copy)]

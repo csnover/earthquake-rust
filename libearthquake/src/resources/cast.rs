@@ -222,20 +222,21 @@ impl Resource for Member {
     type Context = (ChunkIndex, ConfigVersion);
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
-        let kind = input.read_u32()
-            .with_context(|| format!("Can’t read cast member kind in chunk {}", context.0))?;
-        let kind = MemberKind::from_u32(kind)
-            .with_context(|| format!("Invalid cast member kind {} in chunk {}", kind, context.0))?;
+        let kind = {
+            let value = input.read_u32().context("Can’t read cast member kind")?;
+            MemberKind::from_u32(value)
+                .with_context(|| format!("Invalid cast member kind {}", value))?
+        };
         // VWCI
-        let info_size = input.read_u32()?;
+        let info_size = input.read_u32().context("Can’t read cast info size")?;
         // VWCR
-        let meta_size = input.read_u32()?;
+        let meta_size = input.read_u32().context("Can’t read cast metadata size")?;
 
         let info = if info_size == 0 {
             None
         } else {
             Some(MemberInfo::load(&mut input, info_size, &Default::default())
-                .with_context(|| format!("Invalid member info for chunk {}", context.0))?)
+                .with_context(|| format!("Can’t load {} cast member info", kind))?)
         };
 
         Ok(Self {
@@ -244,7 +245,8 @@ impl Resource for Member {
             some_num_a: 0,
             flags: MemberFlags::empty(),
             info,
-            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1))?,
+            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1))
+                .with_context(|| format!("Can’t load {} cast member metadata", kind))?,
         })
     }
 }

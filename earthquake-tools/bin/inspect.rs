@@ -71,26 +71,28 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
         None
     };
 
-    if let Some(config_id) = config_id {
+    let min_cast_num = if let Some(config_id) = config_id {
         let config = riff.load_id::<Config>(config_id, &()).unwrap();
-        println!("{:#?}", config);
         if !config.valid() {
-            panic!("invalid config");
+            println!("Configuration checksum failure!");
         }
+        println!("{:#?}", config);
+        config.min_cast_num().0
     } else {
         println!("No config chunk!");
-    }
+        0
+    };
 
     for resource in riff.iter() {
         println!("{}", resource);
     }
 
     if let Ok(cast) = riff.load_id::<CastMap>(rsid!(b"CAS*", 1024), &()) {
-        for &chunk_index in cast.iter() {
+        for (i, &chunk_index) in cast.iter().enumerate() {
             if chunk_index > ChunkIndex::new(0) {
                 match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)) {
                     Ok(member) => println!("{:#?}", member),
-                    Err(err) => println!("Failed to inspect {}: {}", chunk_index, err),
+                    Err(err) => println!("Failed to inspect cast member {}: {:#}", min_cast_num + (i as i16), err),
                 }
             }
         }

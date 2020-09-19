@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
 use libcommon::{Resource, Reader};
-use libmactoolbox::Rect;
+use libmactoolbox::{quickdraw::RGBColor, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -46,9 +46,7 @@ pub struct Meta {
     box_shadow_size: u8,
     frame: Frame,
     alignment: Alignment,
-    field_e: i16,
-    field_10: i16,
-    field_12: i16,
+    back_color: RGBColor,
     scroll_top: u16,
     /// The viewport of the field, excluding decorations.
     bounds: Rect,
@@ -77,12 +75,7 @@ impl Resource for Meta {
             let value = input.read_i16().context("Can’t read alignment")?;
             Alignment::from_i16(value).with_context(|| format!("Invalid value {} for field alignment", value))?
         };
-        let field_e = input.read_i16().context("Can’t read field_e")?;
-        ensure_sample!(field_e == -1, "Field_e is {}, not -1", field_e);
-        let field_10 = input.read_i16().context("Can’t read field_10")?;
-        ensure_sample!(field_10 == -1, "Field_10 is {}, not -1", field_10);
-        let field_12 = input.read_i16().context("Can’t read field_12")?;
-        ensure_sample!(field_12 == -1, "Field_12 is {}, not -1", field_12);
+        let back_color = RGBColor::load(input, RGBColor::SIZE, &()).context("Can’t read background color")?;
         let scroll_top = input.read_u16().context("Can’t read scroll top")?;
         let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read bounds")?;
         let height = input.read_u16().context("Can’t read height")?;
@@ -106,9 +99,7 @@ impl Resource for Meta {
             box_shadow_size,
             frame,
             alignment,
-            field_e,
-            field_10,
-            field_12,
+            back_color,
             scroll_top,
             bounds,
             height,

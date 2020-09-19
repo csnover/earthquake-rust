@@ -10,10 +10,9 @@ use super::cast::MemberId;
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 enum Kind {
-    K0,
-    K1,
-    K2,
-    K3,
+    Score = 1,
+    Movie = 3,
+    Parent = 7,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -30,7 +29,7 @@ impl Resource for Meta {
             let value = input.read_u16().context("Can’t read script kind")?;
             Kind::from_u16(value).with_context(|| format!("Invalid script kind {}", value))?
         } else {
-            Kind::K3
+            Kind::Movie
         };
 
         Ok(Self {

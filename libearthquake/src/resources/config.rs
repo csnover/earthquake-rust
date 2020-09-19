@@ -112,6 +112,29 @@ impl Config {
     }
 
     #[must_use]
+    pub fn generate_field_3a(flag: bool) -> i16 {
+        let (state, a) = Self::field_3a_1(0x123_4567);
+        let (_, b) = Self::field_3a_1(state);
+        a % 1423 * 23 + if flag {
+            0
+        } else {
+            b % 19 + 1
+        }
+    }
+
+    fn field_3a_1(old_state: i32) -> (i32, i16) {
+        let mut state = (old_state % 127_773 * 16807).wrapping_sub(old_state / 127_773 * 2836);
+        if state < 0 {
+            state += 0x7fff_ffff;
+        }
+        (state, ((state >> 14) as i16).abs())
+    }
+
+    pub fn min_cast_num(&self) -> MemberNum {
+        self.min_cast_num
+    }
+
+    #[must_use]
     pub fn valid(&self) -> bool {
         self.checksum() == self.checksum
     }
