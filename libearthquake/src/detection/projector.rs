@@ -8,7 +8,7 @@ use crate::{
 };
 use derive_more::Display;
 use libcommon::{
-    encodings::WIN_ROMAN,
+    encodings::{Decoder, MAC_ROMAN, WIN_ROMAN},
     Reader,
     string::ReadExt,
 };
@@ -153,7 +153,7 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
             let num_movies = BigEndian::read_u16(&config[6..]);
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
-                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0), &Default::default())
+                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0), &(MAC_ROMAN as &dyn Decoder))
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
                     .map_err(|_| anyhow!("Could not take ownership of movie list"))?;

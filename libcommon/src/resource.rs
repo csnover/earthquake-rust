@@ -42,16 +42,15 @@ impl Default for StringContext {
 
 impl Resource for String {
     type Context = StringContext;
-    fn load(input: &mut Input<impl Reader>, size: u32, data: &Self::Context) -> AResult<Self> where Self: Sized {
-        // TODO: Resources are *never* utf-8 so this will fail quite a lot.
-        match data.0 {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+        match context.0 {
             StringKind::Sized => Ok({
-                let mut string = String::with_capacity(size as usize);
-                input.take(u64::from(size)).read_to_string(&mut string)?;
-                string
+                let mut result = Vec::with_capacity(size as usize);
+                input.take(u64::from(size)).read_to_end(&mut result).context("Can’t read sized string")?;
+                context.1.decode(&result)
             }),
-            StringKind::CStr => input.read_c_str(data.1).context("Invalid C string"),
-            StringKind::PascalStr => input.read_pascal_str(data.1).context("Invalid Pascal string")
+            StringKind::CStr => input.read_c_str(context.1).context("Invalid C string"),
+            StringKind::PascalStr => input.read_pascal_str(context.1).context("Invalid Pascal string")
         }
     }
 }

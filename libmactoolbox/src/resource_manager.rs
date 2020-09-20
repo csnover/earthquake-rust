@@ -73,7 +73,7 @@ impl <'vfs> ResourceManager<'vfs> {
 
     /// `GetIndString`
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<String> {
-        self.get_resource::<StringList>(rsid!(b"STR#", id), &self.decoder)
+        self.get_resource::<StringList>(rsid!(b"STR#", id), &self.decoder.1)
             .unwrap_or(None)
             .map(|list| {
                 list.get(index as usize).unwrap_or(&String::new()).to_owned()
