@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
-use libcommon::{Resource, Reader};
+use libcommon::{encodings::DecoderRef, Reader, Resource};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use super::{
@@ -98,7 +98,7 @@ pub enum Meta {
 }
 
 impl Resource for Meta {
-    type Context = (ConfigVersion, );
+    type Context = (ConfigVersion, DecoderRef);
 
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         ensure_sample!(size >= 4, "Unexpected transition meta resource size {} (should be at least 4)", size);

@@ -1,11 +1,18 @@
 use anyhow::{anyhow, bail, Context, Result as AResult};
 use crate::{
     OSType,
+    resource_file::RefNum,
     ResourceFile,
     ResourceId,
-    resource_file::RefNum, rsid, resources::string_list::StringList,
+    resources::string_list::StringList,
+    rsid,
 };
-use libcommon::{Resource, vfs::{VirtualFile, VirtualFileSystem}};
+use libcommon::{
+    encodings::DecoderRef,
+    Resource,
+    resource::{StringContext, StringKind},
+    vfs::{VirtualFile, VirtualFileSystem},
+};
 use std::{io::Cursor, path::Path, rc::Rc};
 
 pub struct ResourceManager<'vfs> {
@@ -13,16 +20,18 @@ pub struct ResourceManager<'vfs> {
     current_file: usize,
     files: Vec<ResourceFile<Box<dyn VirtualFile + 'vfs>>>,
     system: Option<ResourceFile<Cursor<Vec<u8>>>>,
+    decoder: StringContext,
 }
 
 impl <'vfs> ResourceManager<'vfs> {
     #[must_use]
-    pub fn new(fs: &'vfs dyn VirtualFileSystem, system: Option<Vec<u8>>) -> Self {
+    pub fn new(fs: &'vfs dyn VirtualFileSystem, decoder: DecoderRef, system: Option<Vec<u8>>) -> Self {
         Self {
             fs,
             current_file: 0,
             files: Vec::new(),
             system: system.map(|data| ResourceFile::new(Cursor::new(data)).unwrap()),
+            decoder: StringContext(StringKind::PascalStr, decoder),
         }
     }
 
@@ -59,12 +68,12 @@ impl <'vfs> ResourceManager<'vfs> {
     /// `GetString`
     pub fn get_string(&self, id: i16) -> Option<Rc<String>> {
         // TODO: User Information Resources
-        self.get_resource::<String>(rsid!(b"STR ", id), &Default::default()).unwrap_or(None)
+        self.get_resource::<String>(rsid!(b"STR ", id), &self.decoder).unwrap_or(None)
     }
 
     /// `GetIndString`
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<String> {
-        self.get_resource::<StringList>(rsid!(b"STR#", id), &Default::default())
+        self.get_resource::<StringList>(rsid!(b"STR#", id), &self.decoder)
             .unwrap_or(None)
             .map(|list| {
                 list.get(index as usize).unwrap_or(&String::new()).to_owned()

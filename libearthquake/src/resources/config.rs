@@ -1,25 +1,27 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
-use crate::ensure_sample;
-use either::Either;
+use crate::{ensure_sample, player::score::Tempo};
 use libcommon::{Reader, Resource};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use super::cast::{MemberId, MemberNum};
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct LegacyTempo(pub u8);
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Tempo(pub u16);
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Platform {
     Unknown = 0,
     Mac,
     Win,
+}
+
+impl Default for Platform {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
@@ -45,6 +47,7 @@ impl Default for Version {
 }
 
 bitflags! {
+    #[derive(Default)]
     pub struct Flags: u32 {
         const MOVIE_FIELD_46       = 0x20;
         const PALETTE_MAPPING      = 0x40;
@@ -55,7 +58,19 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaletteId {
+    Cast(MemberId),
+    Number(i32),
+}
+
+impl Default for PaletteId {
+    fn default() -> Self {
+        Self::Number(0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Config {
     own_size: u16,
     version: Version,
@@ -88,12 +103,12 @@ pub struct Config {
     field_44: u16,
     field_46: u16,
     max_cast_resource_num: u32,
-    default_palette: Either<MemberId, u32>,
+    default_palette: PaletteId,
 }
 
 impl Config {
     #[must_use]
-    pub fn checksum(&self) -> u32 {
+    pub fn calculate_checksum(&self) -> u32 {
         (0_i32
         .wrapping_add(i32::from(self.own_size) + 1)
         .wrapping_mul(self.version as i32 + 2)
@@ -144,6 +159,16 @@ impl Config {
         }
     }
 
+    #[must_use]
+    pub fn min_cast_num(&self) -> MemberNum {
+        self.min_cast_num
+    }
+
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.calculate_checksum() == self.checksum
+    }
+
     fn field_3a_1(old_state: i32) -> (i32, i16) {
         let mut state = (old_state % 127_773 * 16807).wrapping_sub(old_state / 127_773 * 2836);
         if state < 0 {
@@ -152,13 +177,57 @@ impl Config {
         (state, ((state >> 14) as i16).abs())
     }
 
-    pub fn min_cast_num(&self) -> MemberNum {
-        self.min_cast_num
+    fn load_1025(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
+        this.stage_color_index = input.read_u16().context("Can’t read stage color")?;
+        this.default_color_depth = input.read_u16().context("Can’t read default color depth")?;
+        this.field_1e = input.read_u8().context("Can’t read field_1e")?;
+        this.field_1f = input.read_u8().context("Can’t read field_1f")?;
+        this.field_20 = input.read_i32().context("Can’t read field_20")?;
+        this.original_version = {
+            let value = input.read_u16().context("Can’t read original movie config version")?;
+            Version::from_u16(value).with_context(|| format!("Unknown original config version {}", value))?
+        };
+        this.max_cast_color_depth = input.read_u16().context("Can’t read cast maximum color depth")?;
+        this.flags = {
+            let value = input.read_u32().context("Can’t read flags")?;
+            Flags::from_bits(value).with_context(|| format!("Invalid config flags (0x{:x})", value))?
+        };
+        this.field_2c = input.read_i32().context("Can’t read field_2c")?;
+        this.field_30 = input.read_i32().context("Can’t read field_30")?;
+        this.field_34 = input.read_u16().context("Can’t read field_34")?;
+        this.current_tempo = Tempo(input.read_u16().context("Can’t read current tempo")?);
+        this.platform = {
+            let value = input.read_u16().context("Can’t read platform")?;
+            Platform::from_u16(value).with_context(|| format!("Unknown config platform {}", value))?
+        };
+        Ok(())
     }
 
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        self.checksum() == self.checksum
+    fn load_1113(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
+        this.field_3a = input.read_u16().context("Can’t read field_3a")?;
+        this.field_3c = input.read_u32().context("Can’t read field_3c")?;
+        this.checksum = input.read_u32().context("Can’t read checksum")?;
+        Ok(())
+    }
+
+    fn load_1114(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
+        this.field_44 = input.read_u16().context("Can’t read field_44")?;
+        Ok(())
+    }
+
+    fn load_1115(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
+        this.field_46 = input.read_u16().context("Can’t read field_46")?;
+        this.max_cast_resource_num = input.read_u32().context("Can’t read maximum cast resource number")?;
+        Ok(())
+    }
+
+    fn load_1201(this: &mut Self, version: Version, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
+        if version >= Version::V1201 {
+            this.default_palette = PaletteId::Cast(MemberId::load(input, MemberId::SIZE, &()).context("Can’t read default palette")?);
+        } else if version >= Version::V1115 {
+            this.default_palette = PaletteId::Number(input.read_i32().context("Can’t read default palette")?);
+        }
+        Ok(())
     }
 }
 
@@ -185,84 +254,7 @@ impl Resource for Config {
         let field_18 = input.read_u8().context("Can’t read field_18")?;
         let field_19 = input.read_u8().context("Can’t read field_19")?;
 
-        let (
-            stage_color_index,
-            default_color_depth,
-            field_1e,
-            field_1f,
-            field_20,
-            original_version,
-            max_cast_color_depth,
-            flags,
-            field_2c,
-            field_30,
-            field_34,
-            current_tempo,
-            platform,
-        ) = if version >= Version::V1025 {(
-            input.read_u16().context("Can’t read stage color")?,
-            input.read_u16().context("Can’t read default color depth")?,
-            input.read_u8().context("Can’t read field_1e")?,
-            input.read_u8().context("Can’t read field_1f")?,
-            input.read_i32().context("Can’t read field_20")?,
-            {
-                let value = input.read_u16().context("Can’t read original movie config version")?;
-                Version::from_u16(value).with_context(|| format!("Unknown original config version {}", value))?
-            },
-            input.read_u16().context("Can’t read cast maximum color depth")?,
-            {
-                let value = input.read_u32().context("Can’t read flags")?;
-                Flags::from_bits(value).with_context(|| format!("Invalid config flags (0x{:x})", value))?
-            },
-            input.read_i32().context("Can’t read field_2c")?,
-            input.read_i32().context("Can’t read field_30")?,
-            input.read_u16().context("Can’t read field_34")?,
-            Tempo(input.read_u16().context("Can’t read current tempo")?),
-            {
-                let value = input.read_u16().context("Can’t read platform")?;
-                Platform::from_u16(value).with_context(|| format!("Unknown config platform {}", value))?
-            }
-        )} else {
-            (0, 0, 0, 0, 0, Version::default(), 0, Flags::empty(), 0, 0, 0, Tempo(0), Platform::Unknown)
-        };
-
-        let (
-            field_3a,
-            field_3c,
-            checksum,
-        ) = if version >= Version::V1113 {(
-            input.read_u16().context("Can’t read field_3a")?,
-            input.read_u32().context("Can’t read field_3c")?,
-            input.read_u32().context("Can’t read checksum")?,
-        )} else {
-            Default::default()
-        };
-
-        let field_44 = if version >= Version::V1114 {
-            input.read_u16().context("Can’t read field_44")?
-        } else {
-            Default::default()
-        };
-
-        let (
-            field_46,
-            max_cast_resource_num,
-        ) = if version >= Version::V1115 {(
-            input.read_u16().context("Can’t read field_46")?,
-            input.read_u32().context("Can’t read maximum cast resource number")?,
-        )} else {
-            Default::default()
-        };
-
-        let default_palette = if version >= Version::V1201 {
-            Either::Left(MemberId::load(&mut input, MemberId::SIZE, &()).context("Can’t read default palette")?)
-        } else if version >= Version::V1115 {
-            Either::Right(input.read_u32().context("Can’t read default palette")?)
-        } else {
-            Either::Right(Default::default())
-        };
-
-        Ok(Self {
+        let mut this = Self {
             own_size,
             version,
             rect,
@@ -275,26 +267,23 @@ impl Resource for Config {
             field_16,
             field_18,
             field_19,
-            stage_color_index,
-            default_color_depth,
-            field_1e,
-            field_1f,
-            field_20,
-            original_version,
-            max_cast_color_depth,
-            flags,
-            field_2c,
-            field_30,
-            field_34,
-            current_tempo,
-            platform,
-            field_3a,
-            field_3c,
-            checksum,
-            field_44,
-            field_46,
-            max_cast_resource_num,
-            default_palette,
-        })
+            ..Self::default()
+        };
+
+        if version >= Version::V1025 {
+            Self::load_1025(&mut this, &mut input)?;
+        }
+        if version >= Version::V1113 {
+            Self::load_1113(&mut this, &mut input)?;
+        }
+        if version >= Version::V1114 {
+            Self::load_1114(&mut this, &mut input)?;
+        }
+        if version >= Version::V1115 {
+            Self::load_1115(&mut this, &mut input)?;
+        }
+        Self::load_1201(&mut this, version, &mut input)?;
+
+        Ok(this)
     }
 }

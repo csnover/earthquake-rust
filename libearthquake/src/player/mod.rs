@@ -1,4 +1,4 @@
-mod score;
+pub mod score;
 
 use anyhow::Result as AResult;
 use crate::{

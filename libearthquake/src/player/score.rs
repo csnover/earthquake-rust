@@ -1,10 +1,8 @@
-use anyhow::{Context, Result as AResult};
-use byteordered::{ByteOrdered, Endianness};
 use libcommon::{
     Unk16,
     Unk32,
     Unk8,
-    UnkPtr, Resource, Reader,
+    UnkPtr,
 };
 use libmactoolbox::{
     Rect,
@@ -15,7 +13,9 @@ use crate::resources::cast::MemberId;
 // TODO: Will need to be a bit_field::BitArray for >64 sprites
 type SpriteBitmask = u64;
 
-type Tempo = u16;
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Tempo(pub u16);
+
 type FrameNum = u16;
 type SpriteNum = u16;
 

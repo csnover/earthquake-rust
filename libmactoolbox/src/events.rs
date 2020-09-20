@@ -63,6 +63,7 @@ pub struct EventRecord {
 }
 
 impl EventRecord {
+    #[must_use]
     pub fn activate(&self) -> Option<bool> {
         match self.data {
             EventData::ActiveWindow(_, _, a) => Some(a),
@@ -70,6 +71,7 @@ impl EventRecord {
         }
     }
 
+    #[must_use]
     pub fn char_code(&self) -> Option<char> {
         match self.data {
             EventData::Key(_, c, _) => Some(c),
@@ -77,6 +79,7 @@ impl EventRecord {
         }
     }
 
+    #[must_use]
     pub fn high_level_kind(&self) -> Option<OSType> {
         match self.data {
             EventData::HighLevel(o) => Some(o),
@@ -84,14 +87,17 @@ impl EventRecord {
         }
     }
 
+    #[must_use]
     pub fn kind(&self) -> EventKind {
         self.kind
     }
 
+    #[must_use]
     pub fn modifiers(&self) -> EventModifiers {
         self.modifiers
     }
 
+    #[must_use]
     pub fn mouse(&self) -> Option<Point> {
         match self.data {
             EventData::Null
@@ -103,6 +109,7 @@ impl EventRecord {
         }
     }
 
+    #[must_use]
     pub fn scan_code(&self) -> Option<i32> {
         match self.data {
             EventData::Key(_, _, s) => Some(s),
@@ -110,10 +117,12 @@ impl EventRecord {
         }
     }
 
+    #[must_use]
     pub fn when(&self) -> Tick {
         self.when
     }
 
+    #[must_use]
     pub fn window(&self) -> Option<Weak<UnkPtr>> {
         match &self.data {
             EventData::Window(_, w)
@@ -139,11 +148,13 @@ pub struct EventManager {
 }
 
 impl EventManager {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// `Button`
+    #[must_use]
     pub fn button(&self) -> bool {
         self.queue.iter().any(|event| event.kind() == EventKind::MouseDown)
     }
@@ -229,6 +240,7 @@ impl EventManager {
     }
 
     /// `StillDown`
+    #[must_use]
     pub fn still_down(&self) -> bool {
         self.queue.iter().find(|event| event.kind() == EventKind::MouseUp).is_none()
     }
@@ -244,6 +256,7 @@ impl EventManager {
     }
 
     /// `TickCount`
+    #[must_use]
     pub fn tick_count(&self) -> Tick {
         todo!("system tick count")
     }

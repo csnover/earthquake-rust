@@ -31,7 +31,7 @@ use libearthquake::{
     },
     name, resources::{cast::{CastMap, Member}, config::{Config, Version as ConfigVersion}},
 };
-use libcommon::{Reader, vfs::VirtualFileSystem};
+use libcommon::{encodings::MAC_ROMAN, Reader, vfs::VirtualFileSystem};
 use libmactoolbox::{ResourceFile, vfs::HostFileSystem, rsid};
 use pico_args::Arguments;
 use std::{env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
@@ -91,7 +91,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
         for (i, &chunk_index) in cast.iter().enumerate() {
             if chunk_index > ChunkIndex::new(0) {
                 let cast_member_num = min_cast_num + (i as i16);
-                match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)) {
+                match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217, MAC_ROMAN)) {
                     Ok(member) => println!("{}: {:#?}", cast_member_num, member),
                     Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
                 }

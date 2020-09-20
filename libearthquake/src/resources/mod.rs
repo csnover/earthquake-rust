@@ -14,7 +14,7 @@ use anyhow::{Context, Result as AResult};
 use byteordered::{Endianness, ByteOrdered};
 use crate::ensure_sample;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{Reader, Resource};
+use libcommon::{encodings::DecoderRef, Reader, Resource};
 use std::{cell::RefCell, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
@@ -94,6 +94,7 @@ pub struct PVec {
     header_size: u32,
     offsets: Vec<u32>,
     inner: RefCell<ByteOrdered<Cursor<Vec<u8>>, Endianness>>,
+    decoder: DecoderRef,
 }
 
 impl PVec {
@@ -143,8 +144,8 @@ impl PVec {
 }
 
 impl Resource for PVec {
-    type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    type Context = (DecoderRef, );
+    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         const NUM_ENTRIES_SIZE: u32 = 2;
         let mut data = Vec::with_capacity(size as usize);
         input.take(u64::from(size)).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
@@ -165,6 +166,7 @@ impl Resource for PVec {
             inner: RefCell::new(inner),
             header_size,
             offsets,
+            decoder: context.0,
         })
     }
 }
@@ -175,6 +177,12 @@ macro_rules! pvec {
         $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
             #![allow(clippy::default_trait_access)]
             self.inner.load_header::<$field_type>($start_offset, $end_offset, &::std::default::Default::default())
+        }
+    };
+
+    (@field [string_entry($field_index:literal, $context:expr)], $vis:vis, $field_name:ident, $field_type:ty) => {
+        $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
+            self.inner.load_entry::<$field_type>($field_index, &::libcommon::resource::StringContext($context, self.inner.decoder))
         }
     };
 
@@ -221,10 +229,10 @@ macro_rules! pvec {
         }
 
         impl $crate::resources::Resource for $name {
-            type Context = ();
-            fn load<T: ::libcommon::Reader>(input: &mut ::byteordered::ByteOrdered<T, ::byteordered::Endianness>, size: u32, _: &Self::Context) -> ::anyhow::Result<Self> where Self: Sized {
+            type Context = <$crate::resources::PVec as ::libcommon::Resource>::Context;
+            fn load<T: ::libcommon::Reader>(input: &mut ::byteordered::ByteOrdered<T, ::byteordered::Endianness>, size: u32, context: &Self::Context) -> ::anyhow::Result<Self> where Self: Sized {
                 Ok(Self {
-                    inner: $crate::resources::PVec::load(input, size, &::std::default::Default::default())?
+                    inner: $crate::resources::PVec::load(input, size, context)?
                 })
             }
         }

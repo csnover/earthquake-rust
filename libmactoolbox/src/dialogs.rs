@@ -4,7 +4,6 @@ use byteordered::{ByteOrdered, Endianness};
 use crate::Rect;
 use libcommon::{Reader, Resource};
 use qt_widgets::QApplication;
-use std::io::Read;
 
 #[derive(Clone, Copy, Debug)]
 struct Alert {

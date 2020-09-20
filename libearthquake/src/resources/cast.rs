@@ -3,7 +3,12 @@ use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
 use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Constructor, Deref, DerefMut, Display, From, Index, IndexMut};
-use libcommon::{encodings::MAC_ROMAN, Reader, Resource, resource::{StringContext, StringKind}};
+use libcommon::{
+    encodings::DecoderRef,
+    Reader,
+    Resource,
+    resource::StringKind,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::fmt;
@@ -180,11 +185,11 @@ pvec! {
         script_context_num: u32,
         #[entry(0)]
         script_text: String,
-        #[entry(1, StringContext(StringKind::PascalStr, MAC_ROMAN))]
+        #[string_entry(1, StringKind::PascalStr)]
         name: String,
-        #[entry(2, StringContext(StringKind::PascalStr, MAC_ROMAN))]
+        #[string_entry(2, StringKind::PascalStr)]
         file_path: String,
-        #[entry(3, StringContext(StringKind::PascalStr, MAC_ROMAN))]
+        #[string_entry(3, StringKind::PascalStr)]
         file_name: String,
         #[entry(5)]
         entry_5: Struct14h,
@@ -197,7 +202,7 @@ pvec! {
         // xtra-related
         #[entry(9)]
         entry_9: Struct9_4A2DE0,
-        #[entry(10, StringContext(StringKind::CStr, MAC_ROMAN))]
+        #[string_entry(10, StringKind::CStr)]
         xtra_name: String,
         #[entry(11)]
         entry_11: StructB_4A2E00,
@@ -222,7 +227,7 @@ pub struct Member {
 }
 
 impl Resource for Member {
-    type Context = (ChunkIndex, ConfigVersion);
+    type Context = (ChunkIndex, ConfigVersion, DecoderRef);
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
         let kind = {
@@ -238,7 +243,7 @@ impl Resource for Member {
         let info = if info_size == 0 {
             None
         } else {
-            Some(MemberInfo::load(&mut input, info_size, &Default::default())
+            Some(MemberInfo::load(&mut input, info_size, &(context.2, ))
                 .with_context(|| format!("Can’t load {} cast member info", kind))?)
         };
 
@@ -248,7 +253,7 @@ impl Resource for Member {
             some_num_a: 0,
             flags: MemberFlags::empty(),
             info,
-            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1))
+            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1, context.2))
                 .with_context(|| format!("Can’t load {} cast member metadata", kind))?,
         })
     }
@@ -310,7 +315,7 @@ pub enum MemberMetadata {
 }
 
 impl Resource for MemberMetadata {
-    type Context = (MemberKind, ConfigVersion);
+    type Context = (MemberKind, ConfigVersion, DecoderRef);
     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         Ok(match context.0 {
             MemberKind::None => {
@@ -330,8 +335,8 @@ impl Resource for MemberMetadata {
             MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::load(input, size, &())?),
             MemberKind::Sound => MemberMetadata::Sound,
             MemberKind::Text => MemberMetadata::Text(TextMeta::load(input, size, &(context.1, ))?),
-            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::load(input, size, &(context.1, ))?),
-            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &(context.1, ))?),
+            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::load(input, size, &(context.1, context.2))?),
+            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &(context.1, context.2))?),
         })
     }
 }
