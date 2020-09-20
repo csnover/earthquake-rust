@@ -15,8 +15,9 @@ use super::{
     script::Meta as ScriptMeta,
     shape::Meta as ShapeMeta,
     text::Meta as TextMeta,
+    transition::Meta as TransitionMeta,
     video::Meta as VideoMeta,
-    xtra::{Meta as XtraMeta, TransitionMeta},
+    xtra::Meta as XtraMeta,
 };
 
 // CAS* - list of ChunkIndex to CASt resources
@@ -182,9 +183,9 @@ pvec! {
         #[entry(1, StringContext(StringKind::PascalStr, MAC_ROMAN))]
         name: String,
         #[entry(2, StringContext(StringKind::PascalStr, MAC_ROMAN))]
-        entry_2: String,
+        file_path: String,
         #[entry(3, StringContext(StringKind::PascalStr, MAC_ROMAN))]
-        entry_3: String,
+        file_name: String,
         #[entry(5)]
         entry_5: Struct14h,
         #[entry(6)]
@@ -193,12 +194,14 @@ pvec! {
         entry_7: Struct14h,
         #[entry(8)]
         entry_8: Struct14h,
+        // xtra-related
         #[entry(9)]
         entry_9: Struct9_4A2DE0,
-        #[entry(10)]
-        entry_10: String,
+        #[entry(10, StringContext(StringKind::CStr, MAC_ROMAN))]
+        xtra_name: String,
         #[entry(11)]
         entry_11: StructB_4A2E00,
+        // xtra-related
         #[entry(12)]
         entry_12: StructC_4A2DC0,
         #[entry(13)]
@@ -254,11 +257,13 @@ impl Resource for Member {
 bitflags! {
     struct MemberFlags: u16 {
         const FLAG_4   = 4;
+        const FLAG_8   = 8;
         const FLAG_10  = 0x10;
         const FLAG_40  = 0x40;
         const FLAG_80  = 0x80;
         const FLAG_100 = 0x100;
         const FLAG_200 = 0x200;
+        const FLAG_800 = 0x800;
     }
 }
 
@@ -282,7 +287,7 @@ pub enum MemberKind {
     Xtra,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum MemberMetadata {
     None,
     Bitmap(BitmapMeta),
@@ -326,7 +331,7 @@ impl Resource for MemberMetadata {
             MemberKind::Sound => MemberMetadata::Sound,
             MemberKind::Text => MemberMetadata::Text(TextMeta::load(input, size, &(context.1, ))?),
             MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::load(input, size, &(context.1, ))?),
-            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &())?),
+            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &(context.1, ))?),
         })
     }
 }

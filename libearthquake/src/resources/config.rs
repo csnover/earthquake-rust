@@ -1,4 +1,5 @@
 use anyhow::{Context, Result as AResult};
+use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
 use crate::ensure_sample;
 use either::Either;
@@ -9,7 +10,17 @@ use num_traits::FromPrimitive;
 use super::cast::{MemberId, MemberNum};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Tempo(pub u8);
+pub struct LegacyTempo(pub u8);
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Tempo(pub u16);
+
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+pub enum Platform {
+    Unknown = 0,
+    Mac,
+    Win,
+}
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
 pub enum Version {
@@ -33,6 +44,17 @@ impl Default for Version {
     }
 }
 
+bitflags! {
+    pub struct Flags: u32 {
+        const MOVIE_FIELD_46       = 0x20;
+        const PALETTE_MAPPING      = 0x40;
+        const LEGACY_FLAG_1        = 0x80;
+        const LEGACY_FLAG_2        = 0x100;
+        const UPDATE_MOVIE_ENABLED = 0x200;
+        const PRELOAD_EVENT_ABORT  = 0x400;
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
     own_size: u16,
@@ -40,7 +62,7 @@ pub struct Config {
     rect: Rect,
     min_cast_num: MemberNum,
     max_cast_num: MemberNum,
-    tempo: Tempo,
+    legacy_tempo: LegacyTempo,
     legacy_back_color_is_black: bool,
     field_12: u16,
     field_14: u16,
@@ -48,25 +70,25 @@ pub struct Config {
     field_18: u8,
     field_19: u8,
     stage_color_index: u16,
-    field_1c: u16,
+    default_color_depth: u16,
     field_1e: u8,
     field_1f: u8,
     field_20: i32,
-    maybe_original_version: Version,
-    field_26: u16,
-    field_28: i32,
+    original_version: Version,
+    max_cast_color_depth: u16,
+    flags: Flags,
     field_2c: i32,
     field_30: i32,
     field_34: u16,
-    field_36: u16,
-    field_38: u16,
+    current_tempo: Tempo,
+    platform: Platform,
     field_3a: u16,
     field_3c: u32,
     checksum: u32,
     field_44: u16,
     field_46: u16,
-    field_48: u32,
-    field_4c: Either<MemberId, u32>,
+    max_cast_resource_num: u32,
+    default_palette: Either<MemberId, u32>,
 }
 
 impl Config {
@@ -81,7 +103,7 @@ impl Config {
         .wrapping_mul(i32::from(self.rect.right) + 6)
         .wrapping_sub(i32::from(self.min_cast_num.0) + 7)
         .wrapping_mul(i32::from(self.max_cast_num.0) + 8)
-        .wrapping_sub(i32::from(self.tempo.0))
+        .wrapping_sub(i32::from(self.legacy_tempo.0))
         .wrapping_sub(i32::from(self.legacy_back_color_is_black))
         .wrapping_add(i32::from(self.field_12))
         .wrapping_sub(8)
@@ -89,25 +111,25 @@ impl Config {
         .wrapping_add(i32::from(self.field_16) + 13)
         .wrapping_mul(i32::from(self.field_18) + 14)
         .wrapping_add(i32::from(self.stage_color_index))
-        .wrapping_add(i32::from(self.field_1c))
+        .wrapping_add(i32::from(self.default_color_depth))
         .wrapping_add(i32::from(self.field_1e))
         .wrapping_add(48)
         .wrapping_mul(i32::from(self.field_1f) + 18)
         .wrapping_add(self.field_20 + 19)
-        .wrapping_mul(self.maybe_original_version as i32 + 20)
-        .wrapping_add(i32::from(self.field_26))
-        .wrapping_add(self.field_28)
+        .wrapping_mul(self.original_version as i32 + 20)
+        .wrapping_add(i32::from(self.max_cast_color_depth))
+        .wrapping_add(self.flags.bits as i32)
         .wrapping_add(self.field_2c)
         .wrapping_add(self.field_30)
         .wrapping_add(90)
         .wrapping_mul(i32::from(self.field_34) + 25)
-        .wrapping_add(i32::from(self.field_36) + 26)
+        .wrapping_add(i32::from(self.current_tempo.0) + 26)
         .wrapping_mul(
             i32::from(self.field_3a)
             .wrapping_mul(3590)
             .wrapping_sub(0xbb_0000)
         )
-        .wrapping_mul(i32::from(self.field_38) + 27)
+        .wrapping_mul(self.platform as i32 + 27)
         ^ 0x7261_6C66) as u32
     }
 
@@ -154,7 +176,7 @@ impl Resource for Config {
         let rect = Rect::load(&mut input, Rect::SIZE, &()).context("Can’t read stage rect")?;
         let min_cast_num = MemberNum(input.read_i16().context("Can’t read minimum cast number")?);
         let max_cast_num = MemberNum(input.read_i16().context("Can’t read maximum cast number")?);
-        let tempo = Tempo(input.read_u8().context("Can’t read tempo")?);
+        let legacy_tempo = LegacyTempo(input.read_u8().context("Can’t read legacy tempo")?);
         let legacy_back_color_is_black = input.read_u8().context("Can’t read legacy background is black flag")?;
         ensure_sample!(legacy_back_color_is_black < 2, "Unexpected legacy background is black flag {}", legacy_back_color_is_black);
         let field_12 = input.read_u16().context("Can’t read field_12")?;
@@ -165,37 +187,43 @@ impl Resource for Config {
 
         let (
             stage_color_index,
-            field_1c,
+            default_color_depth,
             field_1e,
             field_1f,
             field_20,
-            maybe_original_version,
-            field_26,
-            field_28,
+            original_version,
+            max_cast_color_depth,
+            flags,
             field_2c,
             field_30,
             field_34,
-            field_36,
-            field_38,
+            current_tempo,
+            platform,
         ) = if version >= Version::V1025 {(
             input.read_u16().context("Can’t read stage color")?,
-            input.read_u16().context("Can’t read field_1c")?,
+            input.read_u16().context("Can’t read default color depth")?,
             input.read_u8().context("Can’t read field_1e")?,
             input.read_u8().context("Can’t read field_1f")?,
             input.read_i32().context("Can’t read field_20")?,
             {
-                let value = input.read_u16().context("Can’t read original? movie config version")?;
-                Version::from_u16(value).with_context(|| format!("Unknown original? config version {}", value))?
+                let value = input.read_u16().context("Can’t read original movie config version")?;
+                Version::from_u16(value).with_context(|| format!("Unknown original config version {}", value))?
             },
-            input.read_u16().context("Can’t read field_26")?,
-            input.read_i32().context("Can’t read field_28")?,
+            input.read_u16().context("Can’t read cast maximum color depth")?,
+            {
+                let value = input.read_u32().context("Can’t read flags")?;
+                Flags::from_bits(value).with_context(|| format!("Invalid config flags (0x{:x})", value))?
+            },
             input.read_i32().context("Can’t read field_2c")?,
             input.read_i32().context("Can’t read field_30")?,
             input.read_u16().context("Can’t read field_34")?,
-            input.read_u16().context("Can’t read field_36")?,
-            input.read_u16().context("Can’t read field_38")?
+            Tempo(input.read_u16().context("Can’t read current tempo")?),
+            {
+                let value = input.read_u16().context("Can’t read platform")?;
+                Platform::from_u16(value).with_context(|| format!("Unknown config platform {}", value))?
+            }
         )} else {
-            (0, 0, 0, 0, 0, Version::default(), 0, 0, 0, 0, 0, 0, 0)
+            (0, 0, 0, 0, 0, Version::default(), 0, Flags::empty(), 0, 0, 0, Tempo(0), Platform::Unknown)
         };
 
         let (
@@ -218,18 +246,18 @@ impl Resource for Config {
 
         let (
             field_46,
-            field_48,
+            max_cast_resource_num,
         ) = if version >= Version::V1115 {(
             input.read_u16().context("Can’t read field_46")?,
-            input.read_u32().context("Can’t read field_48")?,
+            input.read_u32().context("Can’t read maximum cast resource number")?,
         )} else {
             Default::default()
         };
 
-        let field_4c = if version >= Version::V1201 {
-            Either::Left(MemberId::load(&mut input, MemberId::SIZE, &()).context("Can’t read field_4c")?)
+        let default_palette = if version >= Version::V1201 {
+            Either::Left(MemberId::load(&mut input, MemberId::SIZE, &()).context("Can’t read default palette")?)
         } else if version >= Version::V1115 {
-            Either::Right(input.read_u32().context("Can’t read field_4c")?)
+            Either::Right(input.read_u32().context("Can’t read default palette")?)
         } else {
             Either::Right(Default::default())
         };
@@ -240,7 +268,7 @@ impl Resource for Config {
             rect,
             min_cast_num,
             max_cast_num,
-            tempo,
+            legacy_tempo,
             legacy_back_color_is_black: legacy_back_color_is_black != 0,
             field_12,
             field_14,
@@ -248,25 +276,25 @@ impl Resource for Config {
             field_18,
             field_19,
             stage_color_index,
-            field_1c,
+            default_color_depth,
             field_1e,
             field_1f,
             field_20,
-            maybe_original_version,
-            field_26,
-            field_28,
+            original_version,
+            max_cast_color_depth,
+            flags,
             field_2c,
             field_30,
             field_34,
-            field_36,
-            field_38,
+            current_tempo,
+            platform,
             field_3a,
             field_3c,
             checksum,
             field_44,
             field_46,
-            field_48,
-            field_4c,
+            max_cast_resource_num,
+            default_palette,
         })
     }
 }

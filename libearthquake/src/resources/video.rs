@@ -13,11 +13,11 @@ bitflags! {
         /// Crop from the centre of the video instead of the top-left corner
         /// when cropping is enabled.
         const CROP_FROM_CENTER    = 0x1;
-        /// Crop the video instead of scaling it when the bounds don’t match
+        /// Scale the video instead of cropping when the bounds don’t match
         /// the source video dimensions.
-        const CROP                = 0x2;
+        const SCALE               = 0x2;
         /// Enable sound during playback.
-        const SOUND_ENABLED       = 0x4;
+        const SOUND_ENABLED       = 0x8;
         /// Loop playback.
         const LOOP                = 0x10;
         /// Render the video as an overlay on top of all other sprites instead
@@ -31,8 +31,10 @@ bitflags! {
         const HIDE_VIDEO          = 0x200;
         /// Preload the video from disk into memory instead of streaming.
         const PRELOAD             = 0x400;
-        /// Ignore the natural frame rate of the video.
-        const OVERRIDE_FRAME_RATE = 0x800;
+        /// Ignore the natural frame rate of the video and play every frame
+        /// without sound. Without this flag, the video will play in sync with
+        /// audio and may frame skip to keep AV sync.
+        const PLAY_EVERY_FRAME    = 0x800;
         /// Play back the video as quickly as possible.
         const FRAME_RATE_MAXIMUM  = 0x1000;
         /// Play back the video at a specific frame rate.
@@ -44,18 +46,11 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FrameRate {
-    Normal,
-    Maximum,
-    Fixed(u8),
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Meta {
     bounds: Rect,
     flags: Flags,
-    frame_rate: FrameRate,
+    frame_rate: u8,
 }
 
 impl Resource for Meta {
@@ -66,15 +61,9 @@ impl Resource for Meta {
         let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read video bounds")?;
         let (flags, frame_rate) = {
             let value = input.read_u32().context("Can’t read video flags")?;
-            let flags = Flags::from_bits(value & 0xFF_FFFF).with_context(|| format!("Invalid flags 0x{:x} for video", value))?;
-            let frame_rate = if flags.contains(Flags::FRAME_RATE_MAXIMUM) {
-                FrameRate::Maximum
-            } else if flags.contains(Flags::FRAME_RATE_FIXED) {
-                FrameRate::Fixed((value & 0xFF00_0000 >> 24) as u8)
-            } else {
-                FrameRate::Normal
-            };
-            (flags, frame_rate)
+            let flags_value = value & 0xFF_FFFF;
+            let flags = Flags::from_bits(flags_value).with_context(|| format!("Invalid video flags (0x{:x})", flags_value))?;
+            (flags, (value >> 24) as u8)
         };
 
         Ok(Self {

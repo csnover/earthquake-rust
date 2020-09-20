@@ -6,6 +6,7 @@ pub mod film_loop;
 pub mod script;
 pub mod shape;
 pub mod text;
+pub mod transition;
 pub mod video;
 pub mod xtra;
 

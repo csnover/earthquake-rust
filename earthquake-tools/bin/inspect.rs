@@ -90,9 +90,10 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
     if let Ok(cast) = riff.load_id::<CastMap>(rsid!(b"CAS*", 1024), &()) {
         for (i, &chunk_index) in cast.iter().enumerate() {
             if chunk_index > ChunkIndex::new(0) {
+                let cast_member_num = min_cast_num + (i as i16);
                 match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217)) {
-                    Ok(member) => println!("{:#?}", member),
-                    Err(err) => println!("Failed to inspect cast member {}: {:#}", min_cast_num + (i as i16), err),
+                    Ok(member) => println!("{}: {:#?}", cast_member_num, member),
+                    Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
                 }
             }
         }

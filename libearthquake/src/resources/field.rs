@@ -83,7 +83,7 @@ impl Resource for Meta {
         let text_shadow_size = input.read_u8().context("Can’t read text shadow size")?;
         let flags = {
             let value = input.read_u8().context("Can’t read field flags")?;
-            Flags::from_bits(value).with_context(|| format!("Invalid flags 0x{:x} for field", value))?
+            Flags::from_bits(value).with_context(|| format!("Invalid field flags (0x{:x})", value))?
         };
         let scroll_height = input.read_u16().context("Can’t read scroll height")?;
         let button_kind = if size == 0x1e {

@@ -28,6 +28,9 @@ pub struct Meta {
     fore_color: u8,
     back_color: u8,
     filled: bool,
+    // Director does not normalise file data, nor data to/from Lingo,
+    // so this value can be anything 0-255. Only in the paint function
+    // does it get clamped by (effectively) `max(0, (line_size & 0xf) - 1)`.
     line_size: u8,
     line_direction: LineDirection,
 }
@@ -47,7 +50,6 @@ impl Resource for Meta {
         let filled = input.read_u8().context("Can’t read shape filled flag")?;
         ensure_sample!(filled == 0 || filled == 1, "Unexpected filled value {}", filled);
         let line_size = input.read_u8().context("Can’t read shape line size")?;
-        ensure_sample!(line_size != 0, "Unexpected zero shape line size");
         let line_direction = {
             let value = input.read_u8().context("Can’t read shape line kind")?;
             LineDirection::from_u8(value)
@@ -61,7 +63,7 @@ impl Resource for Meta {
             fore_color,
             back_color,
             filled: filled != 0,
-            line_size: line_size - 1,
+            line_size,
             line_direction,
         })
     }
