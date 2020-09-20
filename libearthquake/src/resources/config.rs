@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{Endianness, ByteOrdered};
 use crate::{ensure_sample, player::score::Tempo};
-use libcommon::{Reader, Resource};
+use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -234,7 +234,7 @@ impl Config {
 impl Resource for Config {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
         let own_size = input.read_u16().context("Can’t read movie config size")?;
         ensure_sample!(u32::from(own_size) == size, "Recorded size is not true size ({} != {})", own_size, size);

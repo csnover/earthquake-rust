@@ -1,7 +1,12 @@
 use crate::{Point, Rect};
 use anyhow::{Context, Result as AResult};
-use byteordered::{ByteOrdered, Endianness};
-use libcommon::{Resource, UnkHnd, UnkPtr};
+use libcommon::{
+    Reader,
+    Resource,
+    resource::Input,
+    UnkHnd,
+    UnkPtr,
+};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -27,7 +32,7 @@ impl RGBColor {
 impl Resource for RGBColor {
     type Context = ();
 
-    fn load<T: libcommon::Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, Self::SIZE);
         Ok(Self {
             r: input.read_u16().context("Can’t read red channel")?,

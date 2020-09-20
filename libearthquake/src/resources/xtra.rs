@@ -1,12 +1,10 @@
 use anyhow::{Context, Result as AResult};
-use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
 use libcommon::{
     encodings::DecoderRef,
     Reader,
     Resource,
-    resource::StringContext,
-    resource::StringKind,
+    resource::{Input, StringContext, StringKind},
 };
 use super::config::Version as ConfigVersion;
 
@@ -22,7 +20,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = (ConfigVersion, DecoderRef);
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let name_size = input.read_u32().context("Can’t read Xtra name size")?;
         ensure_sample!(name_size <= size - 4, "Invalid Xtra name size ({} > {})", name_size, size - 4);
         let symbol_name = String::load(input, name_size, &StringContext(StringKind::Sized, context.1)).context("Can’t read Xtra name")?;

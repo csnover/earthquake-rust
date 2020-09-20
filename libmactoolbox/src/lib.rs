@@ -40,7 +40,7 @@ pub use resource_manager::*;
 pub use system::System;
 use anyhow::Result as AResult;
 use byteordered::{ByteOrdered, Endianness};
-use libcommon::{Reader, Resource};
+use libcommon::{Reader, Resource, resource::Input};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Point {
@@ -54,7 +54,7 @@ impl Point {
 
 impl Resource for Point {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut ByteOrdered<impl Reader, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, Self::SIZE);
         Ok(Self {
             x: input.read_i16()?,
@@ -102,7 +102,7 @@ impl std::fmt::Debug for Rect {
 
 impl Resource for Rect {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, Self::SIZE);
         Ok(Self {
             top: input.read_i16()?,

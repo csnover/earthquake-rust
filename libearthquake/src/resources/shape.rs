@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use byteordered::{Endianness, ByteOrdered};
 use crate::ensure_sample;
-use libcommon::{Reader, Resource};
+use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -38,7 +37,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let kind = {
             let value = input.read_u16().context("Can’t read shape kind")?;
             Kind::from_u16(value).with_context(|| format!("Invalid shape kind {}", value))?

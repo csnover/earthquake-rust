@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
-use libcommon::{Reader, Resource};
+use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::{Rect, quickdraw::RGBColor};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -43,7 +42,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = (ConfigVersion, );
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         if context.0 < ConfigVersion::V1217 {
             todo!("text member kind for < V1217");
         }

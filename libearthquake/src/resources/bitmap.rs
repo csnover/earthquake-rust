@@ -1,8 +1,7 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
-use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
-use libcommon::{Resource, Reader};
+use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::{Point, Rect};
 use super::cast::MemberId;
 
@@ -35,7 +34,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         ensure_sample!(size == 22 || size == 28, "Unexpected bitmap meta resource size {} (should be 22 or 28)", size);
         let (is_pixmap, row_bytes) = {
             let data = input.read_i16().context("Can’t read row bytes")?;

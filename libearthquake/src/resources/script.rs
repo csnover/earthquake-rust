@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
-use libcommon::{Resource, Reader};
+use libcommon::{Reader, Resource, resource::Input};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -20,7 +19,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         ensure_sample!(size == 0 || size == 2, "Unexpected script meta resource size {} (should be 0 or 2)", size);
         let kind = if size == 2 {
             let value = input.read_u16().context("Can’t read script kind")?;

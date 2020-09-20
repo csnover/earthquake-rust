@@ -14,7 +14,7 @@ use anyhow::{Context, Result as AResult};
 use byteordered::{Endianness, ByteOrdered};
 use crate::ensure_sample;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{encodings::DecoderRef, Reader, Resource};
+use libcommon::{encodings::DecoderRef, Reader, Resource, resource::Input};
 use std::{cell::RefCell, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
@@ -26,7 +26,7 @@ impl ByteVec {
 
 impl Resource for ByteVec {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         Rc::load(input, Rc::SIZE, &Default::default())?;
         let used = input.read_u32()?;
         let capacity = input.read_u32()?;
@@ -56,7 +56,7 @@ pub struct List<T: Resource>(Vec<T>);
 
 impl <T: Resource> Resource for List<T> {
     type Context = T::Context;
-    fn load<U: Reader>(input: &mut ByteOrdered<U, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> {
         Rc::load(input, Rc::SIZE, &Default::default())?;
         let used = input.read_u32()?;
         let capacity = input.read_u32()?;
@@ -82,7 +82,7 @@ impl Rc {
 
 impl Resource for Rc {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         assert_eq!(size, Self::SIZE);
         input.skip(u64::from(Self::SIZE))?;
         Ok(Self)
@@ -145,7 +145,7 @@ impl PVec {
 
 impl Resource for PVec {
     type Context = (DecoderRef, );
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         const NUM_ENTRIES_SIZE: u32 = 2;
         let mut data = Vec::with_capacity(size as usize);
         input.take(u64::from(size)).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
@@ -230,7 +230,7 @@ macro_rules! pvec {
 
         impl $crate::resources::Resource for $name {
             type Context = <$crate::resources::PVec as ::libcommon::Resource>::Context;
-            fn load<T: ::libcommon::Reader>(input: &mut ::byteordered::ByteOrdered<T, ::byteordered::Endianness>, size: u32, context: &Self::Context) -> ::anyhow::Result<Self> where Self: Sized {
+            fn load(input: &mut ::libcommon::resource::Input<impl ::libcommon::Reader>, size: u32, context: &Self::Context) -> ::anyhow::Result<Self> where Self: Sized {
                 Ok(Self {
                     inner: $crate::resources::PVec::load(input, size, context)?
                 })

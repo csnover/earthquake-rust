@@ -7,7 +7,7 @@ use libcommon::{
     encodings::DecoderRef,
     Reader,
     Resource,
-    resource::StringKind,
+    resource::{Input, StringKind},
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -117,7 +117,7 @@ impl MemberId {
 impl Resource for MemberId {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         Ok(Self(
             input.read_i16().context("Can’t read cast library number")?.into(),
             input.read_i16().context("Can’t read cast member number")?.into()
@@ -130,7 +130,7 @@ pub struct CastMap(Vec<ChunkIndex>);
 
 impl Resource for CastMap {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         let mut input = ByteOrdered::new(input, Endianness::Big);
         let capacity = size / 4;
         let mut chunk_indexes = Vec::with_capacity(capacity as usize);
@@ -160,7 +160,7 @@ bitflags! {
 
 impl Resource for MemberInfoFlags {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let flags = input.read_u32()?;
         Self::from_bits(flags).with_context(|| format!("Invalid MemberInfoFlags (0x{:x})", flags))
     }
@@ -228,7 +228,7 @@ pub struct Member {
 
 impl Resource for Member {
     type Context = (ChunkIndex, ConfigVersion, DecoderRef);
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
         let kind = {
             let value = input.read_u32().context("Can’t read cast member kind")?;
@@ -316,7 +316,7 @@ pub enum MemberMetadata {
 
 impl Resource for MemberMetadata {
     type Context = (MemberKind, ConfigVersion, DecoderRef);
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         Ok(match context.0 {
             MemberKind::None => {
                 input.skip(u64::from(size))?;

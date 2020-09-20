@@ -1,8 +1,7 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
-use byteordered::{ByteOrdered, Endianness};
 use crate::ensure_sample;
-use libcommon::{Resource, Reader};
+use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::{quickdraw::RGBColor, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -63,7 +62,7 @@ pub struct Meta {
 impl Resource for Meta {
     type Context = ();
 
-    fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let border_size = input.read_u8().context("Can’t read border size")?;
         let margin_size = input.read_u8().context("Can’t read margin size")?;
         let box_shadow_size = input.read_u8().context("Can’t read box shadow size")?;

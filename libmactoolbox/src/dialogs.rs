@@ -22,7 +22,7 @@ struct AlertStage {
 
 impl Resource for Alert {
     type Context = ();
-    fn load<T: Reader>(mut input: &mut ByteOrdered<T, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(mut input: &mut ByteOrdered<impl Reader, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         assert!(size >= 12);
         let bounds_rect = Rect::load(input, Rect::SIZE, context)?;
         let ditl_id = input.read_i16()?;

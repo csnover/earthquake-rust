@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
 use byteorder::{ByteOrder, BigEndian};
-use byteordered::{ByteOrdered, Endianness};
+use byteordered::Endianness;
 use crate::{
     ensure_sample,
     resources::{ByteVec, List},
@@ -8,6 +8,7 @@ use crate::{
 use libcommon::{
     Reader,
     Resource,
+    resource::Input,
 };
 use libmactoolbox::{
     os,
@@ -42,7 +43,7 @@ impl ChunkFile {
 }
 impl Resource for ChunkFile {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         let pos = input.pos()?;
         ensure_sample!(size >= 4 && size <= 8, "Bad ChunkFile size at {} ({})", pos, size);
         let chunk_index = ChunkIndex::new(input.read_i32()?);
@@ -67,7 +68,7 @@ struct DictItem {
 }
 impl Resource for DictItem {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         ensure_sample!(size == 8, "Bad DictItem size at {} ({} != 8)", size, input.pos()?);
         let key_offset = input.read_u32()?;
         let value = input.read_i32()?;
@@ -98,7 +99,7 @@ impl Dict {
 }
 impl Resource for Dict {
     type Context = ();
-    fn load<T: Reader>(input: &mut ByteOrdered<T, byteordered::Endianness>, size: u32, _: &Self::Context) -> AResult<Self> {
+    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         let mut input = input.as_mut().into_endianness(Endianness::Big);
         let list_size = input.read_u32()?;
         let keys_size = input.read_u32()?;
