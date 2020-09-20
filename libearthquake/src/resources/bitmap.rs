@@ -1,11 +1,9 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
-use crate::{assert_sample, ensure_sample};
+use crate::ensure_sample;
 use libcommon::{Resource, Reader};
 use libmactoolbox::{Point, Rect};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use super::cast::MemberId;
 
 bitflags! {

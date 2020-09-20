@@ -10,7 +10,6 @@ use derive_more::Display;
 use libcommon::{
     encodings::WIN_ROMAN,
     Reader,
-    Resource,
     string::ReadExt,
 };
 use libmactoolbox::{

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
 use byteordered::{ByteOrdered, Endianness};
-use crate::{Reader, string::ReadExt, encodings::{DecoderRef, Decoder}};
+use crate::{encodings::DecoderRef, Reader, string::ReadExt};
 use std::io::Read;
 
 pub trait Resource : std::fmt::Debug {
