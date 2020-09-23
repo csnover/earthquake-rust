@@ -37,6 +37,19 @@ impl DetectionInfo {
     }
 
     #[must_use]
+    pub fn charset(&self) -> Option<ScriptCode> {
+        self.charset
+    }
+
+    #[must_use]
+    pub fn is_mac_embedded(&self) -> bool {
+        match self.movie {
+            Movie::Embedded(_) => true,
+            _ => false,
+        }
+    }
+
+    #[must_use]
     pub fn movie(&self) -> &Movie {
         &self.movie
     }
@@ -144,7 +157,7 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
         let resource_id = rsid!(os_type, 0);
-        rom.load::<Vec<u8>>(resource_id, &Default::default())?
+        rom.load::<Vec<u8>>(resource_id, &())?
     };
 
     let (config, movie) = match version {

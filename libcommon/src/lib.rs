@@ -56,17 +56,17 @@ pub trait Reader: io::Read + io::Seek + fmt::Debug {
 }
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UnkHnd(u32);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UnkPtr(u32);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Unk32(u32);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Unk16(u16);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Unk8(u8);

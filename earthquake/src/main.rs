@@ -13,11 +13,13 @@
 
 mod engine;
 mod loader;
+mod player;
 
 use anyhow::Result as AResult;
 use engine::Engine;
 use fluent_ergonomics::FluentErgo;
 use libearthquake::detection::detect;
+use libcommon::vfs::VirtualFileSystem;
 use libmactoolbox::{vfs::HostFileSystem, script_manager::ScriptCode};
 use loader::Loader;
 use num_traits::FromPrimitive;
@@ -84,10 +86,10 @@ fn main() -> AResult<()> {
     QApplication::init(|app| {
         unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
 
+        let fs = HostFileSystem::new();
         let files = if args_files.is_empty() {
             Loader::new(localizer.clone()).exec().map_or_else(Vec::new, |file| vec![file])
         } else {
-            let fs = HostFileSystem::new();
             args_files.iter().filter_map(|filename| {
                 detect(&fs, &filename).map_or(None, |info| Some((filename.clone(), info.info)))
             }).collect()
@@ -96,7 +98,14 @@ fn main() -> AResult<()> {
         if files.is_empty() {
             0
         } else {
-            let mut engine = Engine::new(Rc::try_unwrap(localizer).unwrap(), app, charset, data_dir, files);
+            let mut engine = Engine::new(
+                Rc::try_unwrap(localizer).unwrap(),
+                Rc::new(fs),
+                app,
+                charset,
+                data_dir,
+                files
+            );
             engine.exec()
         }
     })

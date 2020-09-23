@@ -1,78 +1,71 @@
-use anyhow::{anyhow, Context, Result as AResult};
-use cpp_core::{NullPtr, Ptr, StaticUpcast, CppBox};
-use derive_more::Display;
+use anyhow::{Context, Result as AResult};
+use cpp_core::{NullPtr, Ptr};
 use fluent_ergonomics::FluentErgo;
-use libcommon::{Reader, SharedStream, Resource, vfs::{VirtualFileSystem, VirtualFile}, UnkPtr};
-use libearthquake::{collections::riff_container::RiffContainer, detection::{projector::{Movie as MovieKind, Platform as ProjectorPlatform, Version as ProjectorVersion}, FileType, movie::Version as MovieVersion}};
-use libmactoolbox::{os, ResourceFile, ResourceManager, script_manager::ScriptCode, System, ResourceId, vfs::HostFileSystem, EventManager, Point, EventModifiers, EventKind, EventData};
-use std::{fs::File, io::Cursor, path::PathBuf, rc::{Weak, Rc}, cell::Cell};
-use qt_core::{q_event::Type as QEventType, QBox, QCoreApplication, QEvent, QObject, qs, QTimer, TimerType, KeyboardModifier, MouseButton, q_event_loop::ProcessEventsFlag};
+use libcommon::vfs::VirtualFileSystem;
+use libearthquake::detection::FileType;
+use libmactoolbox::{EventKind, EventData, Point, script_manager::ScriptCode};
+use std::{path::PathBuf, rc::{Weak, Rc}};
+use qt_core::{q_event::Type as QEventType, QBox, QCoreApplication, QEvent, QObject};
 use qt_core_custom_events::custom_event_filter::CustomEventFilter;
-use qt_gui::{QGuiApplication, QMouseEvent, QCursor, QKeyEvent};
-use qt_widgets::{QApplication, QMessageBox, QWidget};
-use crate::qtr;
+use qt_gui::QKeyEvent;
+use qt_widgets::{QApplication, QMessageBox};
+use crate::{player::Player, qtr};
 
-#[derive(Display, Eq, PartialEq)]
-enum PlayResult {
-    Terminate = 7,
-}
-
-enum MovieList {
-    RiffContainer(RiffContainer<Box<dyn VirtualFile>>),
-    Files(Vec<String>),
-    Embeds(i16),
-}
-
-impl MovieList {
-    fn len(&self) -> usize {
-        match self {
-            MovieList::RiffContainer(container) => container.len(),
-            MovieList::Files(files) => files.len(),
-            &MovieList::Embeds(count) => count as usize,
-        }
-    }
-}
+/*
+for each file in file list:
+    set up the correct environment for input file (resource manager always, riff
+    container sometimes, global file list), then:
+        - show the "made with mm" logo if the projector configuration says so
+        - load the next movie from the RIFF container, then run the movie loop:
+            this loop runs forever until the player sends a quit signal
+            it prevents the player from advancing if the window is backgrounded
+            otherwise it just tells the player to run its loop
+        - check to see if the user quit or if playback just ended, and if
+        playback just ended and there is another movie in the RIFF container,
+        load and play it
+    - finally, show the "made with mm" logo if the projector configuration says so
+*/
 
 // Run each file and then jump to the next one; each one should be
 // treated fully independently.
-pub(crate) struct Engine<'a> {
+pub(crate) struct Engine<'vfs> {
     app: Ptr<QApplication>,
-    charset: Option<ScriptCode>,
-    event_manager: EventManager,
-    event_filter: QBox<CustomEventFilter>,
-    data_dir: Option<PathBuf>,
-    resource_manager: Option<ResourceManager<'a>>,
-    files: Vec<(String, FileType)>,
     localizer: FluentErgo,
-    movies: Option<MovieList>,
-    current_file_index: usize,
-    current_movie_index: usize,
+
+    charset: Option<ScriptCode>,
+    event_filter: QBox<CustomEventFilter>,
+
+    data_dir: Option<PathBuf>,
+
+    files: <Vec<(String, FileType)> as IntoIterator>::IntoIter,
+
     init_event_kind: QEventType,
-    last_error: i16,
-    vfs: Box<dyn VirtualFileSystem>,
-    windows: Vec<QBox<QWidget>>,
-    should_quit: bool,
+
+    player: Option<Player<'vfs>>,
+
+    // IT SHOULD NOT BE NECESSARY TO USE AN Rc HERE.
+    vfs: Rc<dyn VirtualFileSystem + 'vfs>,
 }
 
-impl <'a> Engine<'a> {
-    pub fn new(localizer: FluentErgo, app: Ptr<QApplication>, charset: Option<ScriptCode>, data_dir: Option<PathBuf>, files: Vec<(String, FileType)>) -> Self {
+impl <'vfs> Engine<'vfs> {
+    pub fn new(
+        localizer: FluentErgo,
+        vfs: Rc<dyn VirtualFileSystem + 'vfs>,
+        app: Ptr<QApplication>,
+        charset: Option<ScriptCode>,
+        data_dir: Option<PathBuf>,
+        files: Vec<(String, FileType)>
+    ) -> Self {
         let mut engine = Self {
             app,
             charset,
             data_dir,
-            event_manager: EventManager::default(),
             event_filter: unsafe { QBox::null() },
-            files,
-            movies: None,
+            files: files.into_iter(),
+            player: None,
             localizer,
-            resource_manager: None,
-            current_file_index: 0,
-            current_movie_index: 0,
             init_event_kind: unsafe { QEventType::from(QEvent::register_event_type_0a()) },
-            last_error: 0,
-            should_quit: false,
-            vfs: Box::new(HostFileSystem::new()),
-            windows: Vec::new(),
+            vfs,
         };
 
         engine.event_filter = CustomEventFilter::new(|object, event| unsafe {
@@ -86,8 +79,7 @@ impl <'a> Engine<'a> {
         let e = event.type_();
         match e {
             _ if e == self.init_event_kind => {
-                // TODO
-                println!("Init!");
+                self.load_next().unwrap_or_else(|ref e| self.show_error(e));
                 true
             },
 
@@ -98,7 +90,6 @@ impl <'a> Engine<'a> {
 
             QEventType::Quit => {
                 println!("Quit?");
-                self.should_quit = true;
                 false
             },
 
@@ -107,26 +98,32 @@ impl <'a> Engine<'a> {
             },
 
             QEventType::WindowActivate | QEventType::WindowDeactivate => {
-                self.event_manager.post_event(
-                    EventKind::Activate,
-                    EventData::ActiveWindow(Point::default(), Weak::new(), e == QEventType::WindowActivate),
-                ).unwrap();
+                if let Some(player) = self.player.as_mut() {
+                    player.post_event(
+                        EventKind::Activate,
+                        EventData::ActiveWindow(Point::default(), Weak::new(), e == QEventType::WindowActivate),
+                    ).unwrap_or_else(|ref e| self.show_error(e));
+                }
                 true
             },
 
             QEventType::MouseButtonPress => {
-                self.event_manager.post_event(
-                    EventKind::MouseDown,
-                    EventData::Null,
-                ).unwrap();
+                if let Some(player) = self.player.as_mut() {
+                    player.post_event(
+                        EventKind::MouseDown,
+                        EventData::Null,
+                    ).unwrap_or_else(|ref e| self.show_error(e));
+                }
                 true
             },
 
             QEventType::MouseButtonRelease => {
-                self.event_manager.post_event(
-                    EventKind::MouseUp,
-                    EventData::Null,
-                ).unwrap();
+                if let Some(player) = self.player.as_mut() {
+                    player.post_event(
+                        EventKind::MouseUp,
+                        EventData::Null,
+                    ).unwrap_or_else(|ref e| self.show_error(e));
+                }
                 true
             },
 
@@ -136,24 +133,29 @@ impl <'a> Engine<'a> {
             },
 
             QEventType::KeyPress | QEventType::KeyRelease => {
-                let event = &*(event as *mut QEvent as *mut QKeyEvent);
-                let char = event.text().to_std_string().chars().next().unwrap_or('\0');
-                let key = event.key();
-                self.event_manager.post_event(if e == QEventType::KeyRelease {
-                    EventKind::KeyUp
-                } else if event.is_auto_repeat() {
-                    EventKind::AutoKey
-                } else {
-                    EventKind::KeyDown
-                }, EventData::Key(Point::default(), char, key)).unwrap();
+                if let Some(player) = self.player.as_mut() {
+                    let event = &*(event as *mut QEvent as *mut QKeyEvent);
+                    let char = event.text().to_std_string().chars().next().unwrap_or('\0');
+                    let key = event.key();
+                    player.post_event(if e == QEventType::KeyRelease {
+                        EventKind::KeyUp
+                    } else if event.is_auto_repeat() {
+                        EventKind::AutoKey
+                    } else {
+                        EventKind::KeyDown
+                    }, EventData::Key(Point::default(), char, key))
+                    .unwrap_or_else(|ref e| self.show_error(e));
+                }
                 true
             },
 
             QEventType::Paint => {
-                self.event_manager.post_event(
-                    EventKind::Update,
-                    EventData::Window(Point::default(), Weak::new())
-                ).unwrap();
+                if let Some(player) = self.player.as_mut() {
+                    player.post_event(
+                        EventKind::Update,
+                        EventData::Window(Point::default(), Weak::new())
+                    ).unwrap_or_else(|ref e| self.show_error(e));
+                }
                 true
             },
 
@@ -165,83 +167,29 @@ impl <'a> Engine<'a> {
 
     pub fn exec(&mut self) -> i32 {
         unsafe {
-            let timer = QTimer::new_1a(self.app);
-            timer.set_timer_type(TimerType::PreciseTimer);
-            timer.start_1a(16);
             self.app.install_event_filter(&self.event_filter);
             QCoreApplication::post_event_2a(self.app, QEvent::new(self.init_event_kind).into_ptr());
             QApplication::exec()
         }
     }
 
-    fn play(&mut self) -> AResult<PlayResult> {
-        let load_next_file = match &self.movies {
-            Some(movies) => self.current_movie_index == movies.len() - 1,
-            None => false,
-        };
-
-        if load_next_file {
-            if self.current_file_index == self.files.len() - 1 {
-                return Ok(PlayResult::Terminate);
-            } else {
-                self.current_file_index += 1;
-                self.current_movie_index = 0;
-                let file = self.files.get(self.current_file_index).context("Invalid current_file_index")?;
-                match &file.1 {
-                    FileType::Projector(info) => {
-                        // set up the correct resource manager
-                        // info.version() == ProjectorVersion::D3 {
-
-                        // }
-                    },
-                    FileType::Movie(info) => {
-                        // set up the correct resource manager
-                    },
-                }
-            }
+    fn load_next(&mut self) -> AResult<()> {
+        if let Some((file_name, file_info)) = self.files.next() {
+            self.player = Some(Player::new(self.vfs.clone(), self.charset, &file_name, file_info).with_context(|| {
+                format!("Can’t create player for {}", file_name)
+            })?);
         } else {
-            self.current_movie_index += 1;
+            println!("Thank you for playing Wing Commander!");
+            unsafe { QCoreApplication::quit() }
         }
 
-        todo!()
-        // let file = self.files.get(self.current_file_index).ok_or_else(|| anyhow!("Invalid current_file_index"))?;
-        // match &file.1 {
-        //     FileType::Projector(info, stream) => {
-        //         if let Some(resource_data) = info.system_resources() {
-        //             let res_file = ResourceFile::new(Box::new(Cursor::new(resource_data.clone())) as Box<dyn Reader>)
-        //                 .context("Invalid system resources file")?;
-        //             self.resource_manager.add_resource_file(res_file);
-        //         }
-
-        //         match info.movie() {
-        //             MovieKind::Embedded(_id) => {
-        //                 let res_file = ResourceFile::new(Box::new(stream.clone()) as Box<dyn Reader>)
-        //                     .context("Invalid movie data")?;
-        //                 self.resource_manager.add_resource_file(res_file);
-        //             },
-        //             _ => todo!(),
-        //         }
-        //     },
-
-        //     FileType::Movie(info, stream) => todo!(),
-        // }
-
-        // Ok(PlayResult::Terminate)
+        Ok(())
     }
 
-    fn show_alert(&self, alert_id: i16, stop_flag: bool) {
-
-    }
-
-    fn show_error(&self, error_id: i16, text_param: Option<&str>) {
-        let alert_num = match self.last_error {
-            -35 | -43 | -120 => 1040, // File Not Found
-            10 => 1020, // Old Format
-            18 => 1060, // Color Depth
-            _ if self.last_error > -108 && self.last_error < -116 => 1070, // Low Memory
-            _ => 1030, // File Problem
-        };
-
-        self.show_alert(alert_num, false);
+    fn show_error(&self, error: &anyhow::Error) {
+        unsafe {
+            // TODO: i18n
+            QMessageBox::warning_q_widget2_q_string(NullPtr, qtr!(self.localizer, "Oops!"), qtr!(self.localizer, format!("{:#}", error).as_ref()));
+        }
     }
 }

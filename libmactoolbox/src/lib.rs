@@ -114,4 +114,5 @@ impl Resource for Rect {
 }
 
 // TODO
+#[derive(Default)]
 pub struct TEHandle(u32);

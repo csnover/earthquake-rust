@@ -16,7 +16,7 @@ use libcommon::{
 use std::{io::Cursor, path::Path, rc::Rc};
 
 pub struct ResourceManager<'vfs> {
-    fs: &'vfs dyn VirtualFileSystem,
+    fs: Rc<dyn VirtualFileSystem + 'vfs>,
     current_file: usize,
     files: Vec<ResourceFile<Box<dyn VirtualFile + 'vfs>>>,
     system: Option<ResourceFile<Cursor<Vec<u8>>>>,
@@ -25,7 +25,7 @@ pub struct ResourceManager<'vfs> {
 
 impl <'vfs> ResourceManager<'vfs> {
     #[must_use]
-    pub fn new(fs: &'vfs dyn VirtualFileSystem, decoder: DecoderRef, system: Option<Vec<u8>>) -> Self {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, decoder: DecoderRef, system: Option<Vec<u8>>) -> Self {
         Self {
             fs,
             current_file: 0,
@@ -161,14 +161,12 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `OpenResFile`
-    pub fn open_resource_file(&mut self, path: impl AsRef<Path>) -> AResult<()> {
-        self.fs.open_resource_fork(&path)
-            .and_then(|file| {
-                let res_file = ResourceFile::new(file)?;
-                self.files.push(res_file);
-                self.current_file = self.files.len();
-                Ok(())
-            })
+    pub fn open_resource_file(&'vfs mut self, path: impl AsRef<Path>) -> AResult<()> {
+        let file = self.fs.open_resource_fork(&path)?;
+        let res_file = ResourceFile::new(file)?;
+        self.files.push(res_file);
+        self.current_file = self.files.len();
+        Ok(())
     }
 
     /// `UseResFile`

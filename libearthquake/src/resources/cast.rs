@@ -292,6 +292,12 @@ pub enum MemberKind {
     Xtra,
 }
 
+impl Default for MemberKind {
+    fn default() -> Self {
+        MemberKind::None
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum MemberMetadata {
     None,

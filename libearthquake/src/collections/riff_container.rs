@@ -9,11 +9,8 @@ use libcommon::{
     Reader,
     Resource,
     resource::Input,
-};
-use libmactoolbox::{
-    os,
-    System,
-};
+encodings::DecoderRef, encodings::MAC_ROMAN, encodings::Decoder};
+use libmactoolbox::os;
 use derive_more::{Deref, Index};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -98,8 +95,8 @@ impl Dict {
     }
 }
 impl Resource for Dict {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
+    type Context = DecoderRef;
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> {
         let mut input = input.as_mut().into_endianness(Endianness::Big);
         let list_size = input.read_u32()?;
         let keys_size = input.read_u32()?;
@@ -113,8 +110,7 @@ impl Resource for Dict {
             let start = item.key_offset as usize - ByteVec::HEADER_SIZE;
             let end = start + 4;
             let size = BigEndian::read_u32(&keys[start..end]) as usize;
-            // TODO: Handle non-ASCII file paths correctly
-            let key = OsString::from(System::instance().decoder().decode(&keys[end..end + size]));
+            let key = OsString::from(context.decode(&keys[end..end + size]));
             dict.insert(key, item.value as usize);
         }
 
@@ -122,7 +118,7 @@ impl Resource for Dict {
     }
 }
 
-#[derive(Debug, Deref, Index)]
+#[derive(Clone, Debug, Deref, Index)]
 pub struct RiffContainer<T: Reader> {
     riff: Rc<Riff<T>>,
     #[deref]
@@ -131,21 +127,11 @@ pub struct RiffContainer<T: Reader> {
     file_dict: Dict,
 }
 
-impl<T: Reader> Clone for RiffContainer<T> {
-    fn clone(&self) -> Self {
-        Self {
-            riff: self.riff.clone(),
-            file_list: self.file_list.clone(),
-            file_dict: self.file_dict.clone(),
-        }
-    }
-}
-
 impl <T: Reader> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
         let file_list = riff.load::<List<ChunkFile>>(riff.first_of_kind(os!(b"List")), &Default::default()).context("Bad List chunk")?;
-        let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict")), &Default::default()).context("Bad Dict chunk")?;
+        let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict")), &(MAC_ROMAN as &dyn Decoder)).context("Bad Dict chunk")?;
 
         Ok(Self {
             riff: Rc::new(riff),

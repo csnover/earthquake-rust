@@ -1,9 +1,8 @@
+pub mod movie;
 pub mod score;
 
 use anyhow::Result as AResult;
-use crate::{
-    detection::{detect, FileType},
-};
+use crate::detection::{detect, FileType};
 use libmactoolbox::{Point, Rect};
 use std::{path::{Path, PathBuf}, time::Instant};
 use libcommon::vfs::VirtualFileSystem;
