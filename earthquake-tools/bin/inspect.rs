@@ -18,6 +18,7 @@ use libearthquake::{
     },
     detection::{
         detect,
+        Detection,
         FileType,
         movie::{
             DetectionInfo as MovieDetectionInfo,
@@ -26,8 +27,8 @@ use libearthquake::{
         projector::{
             DetectionInfo as ProjectorDetectionInfo,
             Movie as MovieInfo,
-            Version as ProjectorVersion,
-        }, Detection,
+        },
+        Version,
     },
     name, resources::{cast::{CastMap, Member}, config::{Config, Version as ConfigVersion}},
 };
@@ -71,27 +72,31 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>) {
         None
     };
 
-    let min_cast_num = if let Some(config_id) = config_id {
+    let (version, min_cast_num) = if let Some(config_id) = config_id {
         let config = riff.load_id::<Config>(config_id, &()).unwrap();
         if !config.valid() {
             println!("Configuration checksum failure!");
         }
         println!("{:#?}", config);
-        config.min_cast_num().0
+        (config.version(), config.min_cast_num().0)
     } else {
         println!("No config chunk!");
-        0
+        (ConfigVersion::Unknown, 0)
     };
 
     for resource in riff.iter() {
         println!("{}", resource);
     }
 
+    if version == ConfigVersion::Unknown {
+        return;
+    }
+
     if let Ok(cast) = riff.load_id::<CastMap>(rsid!(b"CAS*", 1024), &()) {
         for (i, &chunk_index) in cast.iter().enumerate() {
             if chunk_index > ChunkIndex::new(0) {
                 let cast_member_num = min_cast_num + (i as i16);
-                match riff.load::<Member>(chunk_index, &(chunk_index, ConfigVersion::V1217, MAC_ROMAN)) {
+                match riff.load::<Member>(chunk_index, &(chunk_index, version, MAC_ROMAN)) {
                     Ok(member) => println!("{}: {:#?}", cast_member_num, member),
                     Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
                 }
@@ -142,7 +147,7 @@ fn read_file(filename: &str, data_dir: Option<&PathBuf>, inspect_data: bool) -> 
         FileType::Projector(p) => read_projector(
             &fs,
             &p,
-            if p.version() == ProjectorVersion::D3 {
+            if p.version() == Version::D3 {
                 resource_fork.or(data_fork)
             } else {
                 data_fork
@@ -222,7 +227,7 @@ fn read_projector(
             }
         },
         MovieInfo::Embedded(num_movies) => {
-            if info.version() == ProjectorVersion::D3 {
+            if info.version() == Version::D3 {
                 read_embedded_movie(*num_movies, stream, inspect_data)?;
             } else {
                 match detect(fs, filename)? {

@@ -3,7 +3,6 @@ use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::{
     collections::riff::detect as detect_riff,
-    detection::projector_settings::ProjectorSettings,
     panic_sample,
 };
 use derive_more::Display;
@@ -19,6 +18,7 @@ use libmactoolbox::{
     script_manager::ScriptCode,
 };
 use std::{path::PathBuf, io::{Read, SeekFrom}, rc::Rc};
+use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone, Debug)]
 pub struct DetectionInfo {
@@ -125,21 +125,8 @@ pub enum Platform {
     Win(WinVersion),
 }
 
-#[derive(Clone, Copy, Debug, Display, PartialEq, PartialOrd)]
-pub enum Version {
-    #[display(fmt = "3")]
-    D3,
-    #[display(fmt = "4")]
-    D4,
-    #[display(fmt = "5")]
-    D5,
-    #[display(fmt = "6")]
-    D6,
-    #[display(fmt = "7")]
-    D7,
-}
-
-pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) -> AResult<DetectionInfo> {
+pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>) -> AResult<DetectionInfo> {
+    let resource_fork_offset = resource_fork.pos().context("Can’t read resource fork position")?;
     let rom = ResourceFile::new(resource_fork)?;
 
     let version = if rom.contains(rsid!(b"PJ97", 0)) && rom.contains(rsid!(b"PJst", 0)) {
@@ -234,14 +221,26 @@ pub fn detect_mac(resource_fork: impl Reader, data_fork: Option<impl Reader>) ->
         Version::D7 => todo!("D7Mac projector detection"),
     };
 
+    let name = rom.name();
+
+    let system_resources = if version == Version::D3 {
+        None
+    } else {
+        let mut resource_fork = rom.into_inner();
+        resource_fork.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
+        let mut data = Vec::with_capacity(resource_fork.len()? as usize);
+        resource_fork.read_to_end(&mut data).context("Can’t read system resource fork data")?;
+        Some(data)
+    };
+
     Ok(DetectionInfo {
-        name: rom.name(),
+        name,
         // TODO: Detect the character encoding. Reading the file creator name
         // from VWFI might be the best way to do this.
         charset: None,
         version,
         movie,
-        system_resources: None,
+        system_resources,
         config,
     })
 }

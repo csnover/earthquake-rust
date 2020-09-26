@@ -6,6 +6,7 @@ use libmactoolbox::{
     ResourceFile,
     rsid,
 };
+use super::Version;
 
 #[derive(Clone, Debug)]
 pub struct DetectionInfo {
@@ -49,14 +50,6 @@ pub enum Kind {
     Embedded,
     Movie,
     Cast,
-}
-
-#[derive(Clone, Copy, Debug, Display, PartialEq, PartialOrd)]
-pub enum Version {
-    #[display(fmt = "3")]
-    D3,
-    #[display(fmt = "4")]
-    D4,
 }
 
 pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {

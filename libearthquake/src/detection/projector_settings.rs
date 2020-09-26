@@ -3,11 +3,13 @@
 use anyhow::{Context, Result as AResult};
 use crate::{bail_sample, ensure_sample};
 use derive_more::Deref;
-use super::projector::{
-    MacCPU,
-    Platform,
-    Version as ProjectorVersion,
-    WinVersion,
+use super::{
+    projector::{
+        MacCPU,
+        Platform,
+        WinVersion,
+    },
+    Version,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -162,8 +164,8 @@ impl ProjectorSettings {
         }
     }
 
-    pub(super) fn parse_mac(version: ProjectorVersion, bits: &[u8]) -> AResult<Self> {
-        if version == ProjectorVersion::D3 {
+    pub(super) fn parse_mac(version: Version, bits: &[u8]) -> AResult<Self> {
+        if version == Version::D3 {
             return Self::parse_d3_mac(bits);
         }
 
@@ -173,20 +175,20 @@ impl ProjectorSettings {
         ensure_sample!(bits[4..=5] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 4-5");
         ensure_sample!(bits[8] == 0, "Unexpected D4+Mac PJst byte 8");
         match version {
-            ProjectorVersion::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
-            ProjectorVersion::D4 => {
+            Version::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
+            Version::D4 => {
                 // TODO: This is 0x14 for the post-release D4 and 0x04 in the
                 // pre-release D4.
                 ensure_sample!(bits[11] & 4 != 0, "Unexpected D4Mac PJst byte 11");
             },
-            ProjectorVersion::D5 => {
+            Version::D5 => {
                 // TODO: This flag is 0 in Safecracker
                 // ensure_sample!(bits[6] & 8 != 0, "Unexpected D5Mac PJst byte 6");
             },
-            ProjectorVersion::D6 => {
+            Version::D6 => {
                 ensure_sample!(bits[6] & 0x24 == 0x24, "Unexpected D6Mac PJst byte 6");
             },
-            ProjectorVersion::D7 => todo!("D7Mac projector settings parser"),
+            Version::D7 => todo!("D7Mac projector settings parser"),
         }
 
         let cpu = if bits[7] == 0 {
@@ -206,8 +208,8 @@ impl ProjectorSettings {
         let platform               = Platform::Mac(cpu);
 
         Ok(match version {
-            ProjectorVersion::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
-            ProjectorVersion::D4 => {
+            Version::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
+            Version::D4 => {
                 Self {
                     resize_stage,
                     switch_color_depth,
@@ -221,7 +223,7 @@ impl ProjectorSettings {
                     }),
                 }
             },
-            ProjectorVersion::D5 => {
+            Version::D5 => {
                 Self {
                     resize_stage,
                     switch_color_depth,
@@ -238,7 +240,7 @@ impl ProjectorSettings {
                     }),
                 }
             },
-            ProjectorVersion::D6 => {
+            Version::D6 => {
                 Self {
                     resize_stage,
                     switch_color_depth,
@@ -257,23 +259,23 @@ impl ProjectorSettings {
                     }),
                 }
             },
-            ProjectorVersion::D7 => todo!("D7Mac projector settings parser"),
+            Version::D7 => todo!("D7Mac projector settings parser"),
         })
     }
 
-    pub(crate) fn parse_win(version: ProjectorVersion, platform: Platform, bits: &[u8]) -> AResult<Self> {
+    pub(crate) fn parse_win(version: Version, platform: Platform, bits: &[u8]) -> AResult<Self> {
         // Sanity check: these bits cannot normally be changed by an author
         match version {
-            ProjectorVersion::D3 => {
+            Version::D3 => {
                 // There are no known existing copies of Gaffer so it is
                 // impossible to test which bits *might* be set by inspecting
                 // the authoring environment
             },
-            ProjectorVersion::D4 => {
+            Version::D4 => {
                 ensure_sample!(bits[1..=3] == [ 0; 3 ], "Unexpected D4Win PJ93 bytes 1-3");
                 ensure_sample!(bits[6..=11] == [ 0, 0, 0x80, 2, 0xe0, 1 ], "Unexpected D4Win PJ93 bytes 6-11");
             },
-            ProjectorVersion::D5 => {
+            Version::D5 => {
                 ensure_sample!(bits[0] & 0x10 != 0, "Unexpected D5Win PJ95 byte 0");
                 ensure_sample!(bits[1..=3] == [ 0; 3 ], "Unexpected D5Win PJ95 bytes 1-3");
 
@@ -281,15 +283,15 @@ impl ProjectorSettings {
                 // seem to be (0, 0) in every sample
                 ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D5Win PJ95 bytes 5-11");
             },
-            ProjectorVersion::D6 => {
+            Version::D6 => {
                 ensure_sample!(bits[0] & 0x20 != 0, "Unexpected D6Win PJ95 byte 0");
                 ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D6Win PJ95 bytes 5-11");
             },
-            ProjectorVersion::D7 => todo!("D7Win projector settings parser"),
+            Version::D7 => todo!("D7Win projector settings parser"),
         }
 
         Ok(match version {
-            ProjectorVersion::D3 => Self {
+            Version::D3 => Self {
                 resize_stage: false,
                 switch_color_depth: false,
                 full_screen: bits[2] & 1 == 0,
@@ -304,7 +306,7 @@ impl ProjectorSettings {
                     },
                 }),
             },
-            ProjectorVersion::D4 => Self {
+            Version::D4 => Self {
                 resize_stage:           bits[0] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 8 != 0,
@@ -316,7 +318,7 @@ impl ProjectorSettings {
                     show_title_bar:         bits[0] & 0x10 != 0,
                 }),
             },
-            ProjectorVersion::D5 => Self {
+            Version::D5 => Self {
                 resize_stage:           bits[4] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
@@ -331,7 +333,7 @@ impl ProjectorSettings {
                     duplicate_cast:         bits[0] & 1 != 0,
                 }),
             },
-            ProjectorVersion::D6 => Self {
+            Version::D6 => Self {
                 resize_stage:           bits[4] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
@@ -351,7 +353,7 @@ impl ProjectorSettings {
                     has_network_xtras:      bits[0] & 0x40 != 0,
                 }),
             },
-            ProjectorVersion::D7 => todo!("D7Win projector settings parser"),
+            Version::D7 => todo!("D7Win projector settings parser"),
         })
     }
 

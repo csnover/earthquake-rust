@@ -203,6 +203,10 @@ impl<T: Reader> ResourceFile<T> {
         self.names.get(&(os_type, name.as_ref().to_vec())).map(|&num| ResourceId(os_type, num))
     }
 
+    pub fn into_inner(self) -> T {
+        self.input.into_inner().into_inner()
+    }
+
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = ResourceId> + 'a {
         self.resource_map.keys().copied()
     }

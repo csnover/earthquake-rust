@@ -4,6 +4,7 @@ pub mod projector_settings;
 
 use anyhow::{anyhow, Context, Result as AResult};
 use crate::collections::riff;
+use derive_more::Display;
 use libcommon::{flatten_errors, Reader, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{io::SeekFrom, path::Path};
 
@@ -15,19 +16,33 @@ use std::{io::SeekFrom, path::Path};
 // 6. D4+Win projector: executable w/ standard projector header
 // 7. D3Win & D4+Win movie: riff w/ specific subtype
 
+#[derive(Clone, Copy, Debug, Display, PartialEq, PartialOrd)]
+pub enum Version {
+    #[display(fmt = "3")]
+    D3,
+    #[display(fmt = "4")]
+    D4,
+    #[display(fmt = "5")]
+    D5,
+    #[display(fmt = "6")]
+    D6,
+    #[display(fmt = "7")]
+    D7,
+}
+
 #[derive(Clone, Debug)]
 pub enum FileType {
     Projector(projector::DetectionInfo),
     Movie(movie::DetectionInfo),
 }
 
-pub struct Detection<'a> {
+pub struct Detection<'vfs> {
     pub info: FileType,
-    pub data_fork: Option<Box<dyn VirtualFile + 'a>>,
-    pub resource_fork: Option<Box<dyn VirtualFile + 'a>>,
+    pub data_fork: Option<Box<dyn VirtualFile + 'vfs>>,
+    pub resource_fork: Option<Box<dyn VirtualFile + 'vfs>>,
 }
 
-pub fn detect<'a>(fs: &'a impl VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'a>> {
+pub fn detect<'vfs>(fs: &'vfs dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'vfs>> {
     fs.open_resource_fork(&path).and_then(|mut res_file| {
         let mut data_file = fs.open(&path).ok();
         detect_mac(&mut res_file, data_file.as_mut()).map(|ft| {

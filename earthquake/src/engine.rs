@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use cpp_core::{NullPtr, Ptr};
 use fluent_ergonomics::FluentErgo;
 use libcommon::vfs::VirtualFileSystem;
-use libearthquake::detection::FileType;
+use libearthquake::detection::{Detection, FileType};
 use libmactoolbox::{EventKind, EventData, Point, script_manager::ScriptCode};
 use std::{path::PathBuf, rc::{Weak, Rc}};
 use qt_core::{q_event::Type as QEventType, QBox, QCoreApplication, QEvent, QObject};
@@ -37,7 +37,7 @@ pub(crate) struct Engine<'vfs> {
 
     data_dir: Option<PathBuf>,
 
-    files: <Vec<(String, FileType)> as IntoIterator>::IntoIter,
+    files: <Vec<(String, Detection<'vfs>)> as IntoIterator>::IntoIter,
 
     init_event_kind: QEventType,
 
@@ -54,7 +54,7 @@ impl <'vfs> Engine<'vfs> {
         app: Ptr<QApplication>,
         charset: Option<ScriptCode>,
         data_dir: Option<PathBuf>,
-        files: Vec<(String, FileType)>
+        files: Vec<(String, Detection<'vfs>)>
     ) -> Self {
         let mut engine = Self {
             app,
@@ -174,9 +174,9 @@ impl <'vfs> Engine<'vfs> {
     }
 
     fn load_next(&mut self) -> AResult<()> {
-        if let Some((file_name, file_info)) = self.files.next() {
-            self.player = Some(Player::new(self.vfs.clone(), self.charset, &file_name, file_info).with_context(|| {
-                format!("Can’t create player for {}", file_name)
+        if let Some((path, detection)) = self.files.next() {
+            self.player = Some(Player::new(self.vfs.clone(), self.charset, &path, detection).with_context(|| {
+                format!("Can’t create player for {}", path)
             })?);
         } else {
             println!("Thank you for playing Wing Commander!");

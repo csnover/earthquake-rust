@@ -230,15 +230,12 @@ impl Resource for Member {
     type Context = (ChunkIndex, ConfigVersion, DecoderRef);
     fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
-        let kind = {
-            let value = input.read_u32().context("Can’t read cast member kind")?;
-            MemberKind::from_u32(value)
-                .with_context(|| format!("Invalid cast member kind {}", value))?
+
+        let (kind, /* VWCI */ info_size, /* VWCR */ meta_size) = if context.1 < ConfigVersion::V1201 {
+            Self::read_meta_d4(&mut input)?
+        } else {
+            Self::read_meta_d5(&mut input)?
         };
-        // VWCI
-        let info_size = input.read_u32().context("Can’t read cast info size")?;
-        // VWCR
-        let meta_size = input.read_u32().context("Can’t read cast metadata size")?;
 
         let info = if info_size == 0 {
             None
@@ -256,6 +253,33 @@ impl Resource for Member {
             metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1, context.2))
                 .with_context(|| format!("Can’t load {} cast member metadata", kind))?,
         })
+    }
+}
+
+impl Member {
+    fn read_meta_d4(input: &mut Input<impl Reader>) -> AResult<(MemberKind, u32, u32)> {
+        // TODO: This is incorrect guesswork.
+        let _unknown = input.read_u16().context("Can’t read mystery word")?;
+        let meta_size = input.read_u16().map(u32::from).context("Can’t read cast metadata size")?;
+        let info_size = input.read_u16().map(u32::from).context("Can’t read cast info size")?;
+        let kind = {
+            let value = input.read_u8().context("Can’t read cast member kind")?;
+            MemberKind::from_u8(value)
+                .with_context(|| format!("Invalid cast member kind {}", value))?
+        };
+        Ok((kind, info_size, meta_size))
+    }
+
+    fn read_meta_d5(input: &mut Input<impl Reader>) -> AResult<(MemberKind, u32, u32)> {
+        Ok((
+            {
+                let value = input.read_u32().context("Can’t read cast member kind")?;
+                MemberKind::from_u32(value)
+                    .with_context(|| format!("Invalid cast member kind {}", value))?
+            },
+            input.read_u32().context("Can’t read cast info size")?,
+            input.read_u32().context("Can’t read cast metadata size")?
+        ))
     }
 }
 

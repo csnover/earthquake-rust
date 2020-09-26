@@ -86,13 +86,19 @@ fn main() -> AResult<()> {
     QApplication::init(|app| {
         unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
 
-        let fs = HostFileSystem::new();
-        let files = if args_files.is_empty() {
-            Loader::new(localizer.clone()).exec().map_or_else(Vec::new, |file| vec![file])
-        } else {
-            args_files.iter().filter_map(|filename| {
-                detect(&fs, &filename).map_or(None, |info| Some((filename.clone(), info.info)))
-            }).collect()
+        let fs = Rc::new(HostFileSystem::new());
+        let files = {
+            let fs_ref = &*fs;
+            if args_files.is_empty() {
+                Loader::new(fs.clone(), localizer.clone()).exec().map_or_else(Vec::new, move |filename| {
+                    let detection = detect(fs_ref, &filename).unwrap();
+                    vec![(filename, detection)]
+                })
+            } else {
+                args_files.into_iter().filter_map(|filename| {
+                    detect(fs_ref, &filename).map_or(None, move |detection| Some((filename, detection)))
+                }).collect()
+            }
         };
 
         if files.is_empty() {
@@ -100,7 +106,7 @@ fn main() -> AResult<()> {
         } else {
             let mut engine = Engine::new(
                 Rc::try_unwrap(localizer).unwrap(),
-                Rc::new(fs),
+                fs.clone(),
                 app,
                 charset,
                 data_dir,

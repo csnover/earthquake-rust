@@ -1,13 +1,14 @@
 
 use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
+use libcommon::vfs::VirtualFileSystem;
 use crate::{qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libearthquake::{
-    detection::{detect, FileType, movie::Kind as MovieKind, Detection},
+    detection::{detect, FileType, movie::Kind as MovieKind},
     name,
     version,
 };
-use libmactoolbox::{vfs::HostFileSystem, script_manager::ScriptCode};
+use libmactoolbox::script_manager::ScriptCode;
 use qt_core::{
     q_dir::Filter as DirFilter,
     AlignmentFlag,
@@ -238,7 +239,7 @@ pub(crate) struct Loader {
     about_box: RefCell<QBox<QDialog>>,
     about_action: QPtr<QAction>,
     about_license_action: QPtr<QAction>,
-    detection: RefCell<Option<FileType>>,
+    vfs: Rc<dyn VirtualFileSystem>,
     dialog: QBox<QDialog>,
     file: FileWidget,
     filename: RefCell<Option<String>>,
@@ -255,7 +256,7 @@ impl StaticUpcast<QObject> for Loader {
 }
 
 impl Loader {
-    pub fn new(l: Rc<FluentErgo>) -> Rc<Self> {
+    pub fn new(vfs: Rc<dyn VirtualFileSystem>, l: Rc<FluentErgo>) -> Rc<Self> {
         unsafe {
             let (dialog, dialog_layout) = Self::build_window();
             let (about_action, about_license_action) = Self::build_menu(l.as_ref(), &dialog);
@@ -273,24 +274,24 @@ impl Loader {
                 about_action,
                 about_license_action,
                 cancel_button,
-                detection: RefCell::default(),
                 dialog,
                 file,
                 filename: RefCell::default(),
                 l,
                 ok_button,
                 tabs,
+                vfs,
             });
             loader.init();
             loader
         }
     }
 
-    pub fn exec(&self) -> Option<(String, FileType)> {
+    pub fn exec(&self) -> Option<String> {
         unsafe {
             // TODO: This is garbage code
-            if self.dialog.exec() == DialogCode::Accepted.to_int() && self.filename.borrow().is_some() {
-                Some((self.filename.borrow().clone().unwrap(), self.detection.borrow().clone().unwrap()))
+            if self.dialog.exec() == DialogCode::Accepted.to_int() {
+                self.filename.replace(None)
             } else {
                 None
             }
@@ -596,15 +597,13 @@ impl Loader {
     }
 
     unsafe fn validate_input(self: &Rc<Self>, chosen_path: &CppBox<QString>) {
-        let fs = HostFileSystem::new();
         let std_path = chosen_path.to_std_string();
         let is_valid = if chosen_path.is_empty() {
             false
         } else {
-            match detect(&fs, &std_path) {
-                Ok(Detection { info, .. }) => {
-                    *self.detection.borrow_mut() = Some(info.to_owned());
-                    match info {
+            match detect(&*self.vfs, &std_path) {
+                Ok(d) => {
+                    match &d.info {
                         FileType::Projector(info) => {
                             self.tabs.info.file_name.set_text(&qs(info.name().unwrap_or(&tr!(self.l, "file-info_unknown-file-name"))));
                             self.tabs.info.kind.set_text(qtr!(

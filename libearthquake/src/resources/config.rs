@@ -32,6 +32,7 @@ pub enum Version {
     V1114,
     V1115,
     V1116,
+    V1117,
     V1201 = 1201,
     V1214 = 1214,
     V1215 = 1215,
@@ -164,6 +165,11 @@ impl Config {
     #[must_use]
     pub fn valid(&self) -> bool {
         self.calculate_checksum() == self.checksum
+    }
+
+    #[must_use]
+    pub fn version(&self) -> Version {
+        self.version
     }
 
     fn field_3a_1(old_state: i32) -> (i32, i16) {

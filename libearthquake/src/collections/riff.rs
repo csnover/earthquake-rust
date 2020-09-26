@@ -4,10 +4,12 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{
     bail_sample,
-    detection::movie::{
-        DetectionInfo,
-        Kind as MovieKind,
-        Version as MovieVersion,
+    detection::{
+        movie::{
+            DetectionInfo,
+            Kind as MovieKind,
+        },
+        Version,
     },
     ensure_sample,
 };
@@ -185,7 +187,7 @@ impl<T: Reader> Riff<T> {
     }
 
     #[must_use]
-    pub fn version(&self) -> MovieVersion {
+    pub fn version(&self) -> Version {
         self.info.version()
     }
 
@@ -487,7 +489,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
         b"RMMP" => Some(DetectionInfo {
             os_type_endianness: Endianness::Big,
             data_endianness: Endianness::Little,
-            version: MovieVersion::D3,
+            version: Version::D3,
             kind: MovieKind::Movie,
             // This version of Director incorrectly includes the
             // size of the chunk header in the RIFF chunk size
@@ -498,7 +500,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
             Some(DetectionInfo {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
-                version: MovieVersion::D4,
+                version: Version::D4,
                 kind: MovieKind::Movie,
                 size,
             })
@@ -508,7 +510,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
             Some(DetectionInfo {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
-                version: MovieVersion::D4,
+                version: Version::D4,
                 kind: MovieKind::Cast,
                 size,
             })
@@ -518,7 +520,7 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
             Some(DetectionInfo {
                 os_type_endianness: endianness,
                 data_endianness: endianness,
-                version: MovieVersion::D4,
+                version: Version::D4,
                 kind: MovieKind::Embedded,
                 size,
             })
