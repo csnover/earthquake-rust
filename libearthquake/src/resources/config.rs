@@ -72,32 +72,33 @@ impl Default for PaletteId {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Config {
-    own_size: u16,
+    own_size: i16,
     version: Version,
     rect: Rect,
     min_cast_num: MemberNum,
     max_cast_num: MemberNum,
     legacy_tempo: LegacyTempo,
     legacy_back_color_is_black: bool,
-    field_12: u16,
-    field_14: u16,
-    field_16: u16,
+    field_12: i16,
+    field_14: i16,
+    field_16: i16,
     field_18: u8,
     field_19: u8,
-    stage_color_index: u16,
-    default_color_depth: u16,
+    stage_color_index: i16,
+    default_color_depth: i16,
     field_1e: u8,
     field_1f: u8,
     field_20: i32,
     original_version: Version,
-    max_cast_color_depth: u16,
+    max_cast_color_depth: i16,
     flags: Flags,
     field_2c: i32,
     field_30: i32,
-    field_34: u16,
+    field_34: i8,
+    field_35: i8,
     current_tempo: Tempo,
     platform: Platform,
-    field_3a: u16,
+    field_3a: i16,
     field_3c: u32,
     checksum: u32,
     field_44: u16,
@@ -178,8 +179,8 @@ impl Config {
     }
 
     fn load_1025(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.stage_color_index = input.read_u16().context("Can’t read stage color")?;
-        this.default_color_depth = input.read_u16().context("Can’t read default color depth")?;
+        this.stage_color_index = input.read_i16().context("Can’t read stage color")?;
+        this.default_color_depth = input.read_i16().context("Can’t read default color depth")?;
         this.field_1e = input.read_u8().context("Can’t read field_1e")?;
         this.field_1f = input.read_u8().context("Can’t read field_1f")?;
         this.field_20 = input.read_i32().context("Can’t read field_20")?;
@@ -187,24 +188,25 @@ impl Config {
             let value = input.read_u16().context("Can’t read original movie config version")?;
             Version::from_u16(value).with_context(|| format!("Unknown original config version {}", value))?
         };
-        this.max_cast_color_depth = input.read_u16().context("Can’t read cast maximum color depth")?;
+        this.max_cast_color_depth = input.read_i16().context("Can’t read cast maximum color depth")?;
         this.flags = {
             let value = input.read_u32().context("Can’t read flags")?;
             Flags::from_bits(value).with_context(|| format!("Invalid config flags (0x{:x})", value))?
         };
         this.field_2c = input.read_i32().context("Can’t read field_2c")?;
         this.field_30 = input.read_i32().context("Can’t read field_30")?;
-        this.field_34 = input.read_u16().context("Can’t read field_34")?;
-        this.current_tempo = Tempo(input.read_u16().context("Can’t read current tempo")?);
+        this.field_34 = input.read_i8().context("Can’t read field_34")?;
+        this.field_35 = input.read_i8().context("Can’t read field_35")?;
+        this.current_tempo = Tempo(input.read_i16().context("Can’t read current tempo")?);
         this.platform = {
-            let value = input.read_u16().context("Can’t read platform")?;
-            Platform::from_u16(value).with_context(|| format!("Unknown config platform {}", value))?
+            let value = input.read_i16().context("Can’t read platform")?;
+            Platform::from_i16(value).with_context(|| format!("Unknown config platform {}", value))?
         };
         Ok(())
     }
 
     fn load_1113(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.field_3a = input.read_u16().context("Can’t read field_3a")?;
+        this.field_3a = input.read_i16().context("Can’t read field_3a")?;
         this.field_3c = input.read_u32().context("Can’t read field_3c")?;
         this.checksum = input.read_u32().context("Can’t read checksum")?;
         Ok(())
@@ -236,11 +238,11 @@ impl Resource for Config {
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
-        let own_size = input.read_u16().context("Can’t read movie config size")?;
-        ensure_sample!(u32::from(own_size) == size, "Recorded size is not true size ({} != {})", own_size, size);
+        let own_size = input.read_i16().context("Can’t read movie config size")?;
+        ensure_sample!(own_size as u32 == size, "Recorded size is not true size ({} != {})", own_size, size);
         let version = {
-            let value = input.read_u16().context("Can’t read movie config version")?;
-            Version::from_u16(value).with_context(|| format!("Unknown config version {}", value))?
+            let value = input.read_i16().context("Can’t read movie config version")?;
+            Version::from_i16(value).with_context(|| format!("Unknown config version {}", value))?
         };
         let rect = Rect::load(&mut input, Rect::SIZE, &()).context("Can’t read stage rect")?;
         let min_cast_num = MemberNum(input.read_i16().context("Can’t read minimum cast number")?);
@@ -248,9 +250,9 @@ impl Resource for Config {
         let legacy_tempo = LegacyTempo(input.read_u8().context("Can’t read legacy tempo")?);
         let legacy_back_color_is_black = input.read_u8().context("Can’t read legacy background is black flag")?;
         ensure_sample!(legacy_back_color_is_black < 2, "Unexpected legacy background is black flag {}", legacy_back_color_is_black);
-        let field_12 = input.read_u16().context("Can’t read field_12")?;
-        let field_14 = input.read_u16().context("Can’t read field_14")?;
-        let field_16 = input.read_u16().context("Can’t read field_16")?;
+        let field_12 = input.read_i16().context("Can’t read field_12")?;
+        let field_14 = input.read_i16().context("Can’t read field_14")?;
+        let field_16 = input.read_i16().context("Can’t read field_16")?;
         let field_18 = input.read_u8().context("Can’t read field_18")?;
         let field_19 = input.read_u8().context("Can’t read field_19")?;
 

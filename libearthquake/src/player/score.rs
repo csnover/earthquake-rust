@@ -15,10 +15,10 @@ use crate::resources::cast::{MemberId, MemberKind};
 type SpriteBitmask = u64;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Tempo(pub u16);
+pub struct Tempo(pub i16);
 
-type FrameNum = u16;
-type SpriteNum = u16;
+type FrameNum = i16;
+type SpriteNum = i16;
 
 // TODO: Different sizes for different Director versions:
 // D3: 24
