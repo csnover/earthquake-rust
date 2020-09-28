@@ -11,6 +11,7 @@
 #![warn(rust_2018_idioms)]
 
 pub mod encodings;
+pub mod error;
 pub mod resource;
 // TODO: use positioned_io crate?
 mod shared_stream;

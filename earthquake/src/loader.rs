@@ -1,6 +1,6 @@
 
 use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
-use libcommon::vfs::VirtualFileSystem;
+use libcommon::{error::ReasonsExt, vfs::VirtualFileSystem};
 use crate::{qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libearthquake::{
@@ -640,15 +640,7 @@ impl Loader {
                     }
                 },
                 Err(e) => {
-                    let mut reasons = String::new();
-                    for reason in e.chain().skip(1) {
-                        if !reasons.is_empty() {
-                            reasons += "\n";
-                        }
-                        reasons += &format!("• {}", reason);
-                    }
-
-                    self.detection_failure(&e.to_string(), Some(&reasons));
+                    self.detection_failure(&e.to_string(), Some(&e.reasons()));
                     false
                 },
             }

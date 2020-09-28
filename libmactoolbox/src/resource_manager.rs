@@ -24,15 +24,19 @@ pub struct ResourceManager<'vfs> {
 }
 
 impl <'vfs> ResourceManager<'vfs> {
-    #[must_use]
-    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, decoder: DecoderRef, system: Option<Vec<u8>>) -> Self {
-        Self {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, decoder: DecoderRef, system: Option<Vec<u8>>) -> AResult<Self> {
+        Ok(Self {
             fs,
             current_file: 0,
             files: Vec::new(),
-            system: system.map(|data| ResourceFile::new(Cursor::new(data)).unwrap()),
+            system: if let Some(data) = system {
+                Some(ResourceFile::new(Cursor::new(data))
+                    .context("Can’t create system resource from memory")?)
+            } else {
+                None
+            },
             decoder: StringContext(StringKind::PascalStr, decoder),
-        }
+        })
     }
 
     /// `CloseResFile`

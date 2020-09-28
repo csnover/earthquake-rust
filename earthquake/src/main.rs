@@ -14,13 +14,14 @@
 mod engine;
 mod loader;
 mod player;
+mod qt;
 
 use anyhow::Result as AResult;
+use crate::qt::EQApplication;
 use engine::Engine;
 use fluent_ergonomics::FluentErgo;
 use libearthquake::detection::detect;
-use libcommon::vfs::VirtualFileSystem;
-use libmactoolbox::{vfs::HostFileSystem, script_manager::ScriptCode};
+use libmactoolbox::{script_manager::ScriptCode, vfs::HostFileSystem};
 use loader::Loader;
 use num_traits::FromPrimitive;
 use pico_args::Arguments;
@@ -83,7 +84,7 @@ fn main() -> AResult<()> {
     let data_dir = args.opt_value_from_str::<_, PathBuf>("--data")?;
     let args_files = args.free()?;
 
-    QApplication::init(|app| {
+    EQApplication::init(|app| {
         unsafe { QApplication::set_window_icon(&QIcon::from_q_string(&qs(":/icon.png"))); }
 
         let fs = Rc::new(HostFileSystem::new());

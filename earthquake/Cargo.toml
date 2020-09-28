@@ -12,6 +12,7 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1.0"
+cpp = "0.5"
 cpp_core = "0.6"
 derive_more = "0.99"
 fluent = "0.11"
@@ -22,12 +23,12 @@ libmactoolbox = { path = "../libmactoolbox" }
 num-traits = "0.2"
 pico-args = "0.3"
 qt_core = "0.5"
-qt_core_custom_events = "0.2"
 qt_gui = "0.5"
 qt_widgets = "0.5"
 strum = "0.18"
 unic-langid = "0.8"
 
 [build-dependencies]
+cpp_build = "0.5"
 qt_ritual_build = "0.5"
 vergen = "3"

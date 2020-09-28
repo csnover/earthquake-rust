@@ -4,9 +4,9 @@ use libearthquake::{collections::riff::Riff, collections::riff_container::RiffCo
             D3WinMovie,
             Movie as ProjectorMovie,
         }}, player::{movie::Movie, score::Score}};
-use libmactoolbox::{EventData, EventKind, ResourceFile, System, rsid, script_manager::ScriptCode};
+use libmactoolbox::{EventData, EventKind, ResourceFile, System, script_manager::ScriptCode};
 use std::{io::SeekFrom, rc::Rc};
-use qt_core::{QBox, QEventLoop};
+use qt_core::{QBox, QEvent, QEventLoop, q_event::Type as QEventType};
 use qt_widgets::QWidget;
 
 #[derive(Debug)]
@@ -36,8 +36,12 @@ pub struct Player<'vfs> {
     current_index: usize,
     paused: bool,
 
+    next_movie_event_kind: QEventType,
+
     root_movie: Movie,
     root_score: Score,
+
+    stage_window: QBox<QWidget>,
 
     windows: Vec<QBox<QWidget>>,
     vfs: Rc<dyn VirtualFileSystem + 'vfs>,
@@ -54,14 +58,19 @@ impl <'vfs> std::fmt::Debug for Player<'vfs> {
 }
 
 impl <'vfs> Player<'vfs> {
-    pub fn new(vfs: Rc<dyn VirtualFileSystem + 'vfs>, charset: Option<ScriptCode>, path: impl AsRef<str>, mut d: Detection<'vfs>) -> AResult<Self> {
-        let (script_code, system_resources, movies) = match d.info {
+    pub fn new(
+        vfs: Rc<dyn VirtualFileSystem + 'vfs>,
+        charset: Option<ScriptCode>,
+        mut file: Detection<'vfs>,
+        next_movie_event_kind: QEventType
+    ) -> AResult<Self> {
+        let (script_code, system_resources, movies) = match file.info {
             FileType::Projector(p) => (
                 p.charset().unwrap_or_else(|| charset.unwrap_or(ScriptCode::Roman)),
                 p.system_resources().cloned(),
                 match p.movie() {
                     ProjectorMovie::Embedded(count) => {
-                        if let Some(resource_fork) = d.resource_fork.take() {
+                        if let Some(resource_fork) = file.resource_fork.take() {
                             let resource_file = ResourceFile::new(resource_fork)
                                 .context("Can’t create resource file for projector")?;
                             MovieList::Embeds(resource_file, *count)
@@ -71,7 +80,7 @@ impl <'vfs> Player<'vfs> {
                     },
                     ProjectorMovie::D3Win(movies) => MovieList::D3Win(movies.clone()),
                     ProjectorMovie::Internal(offset) => MovieList::RiffContainer({
-                        if let Some(mut input) = d.data_fork.take() {
+                        if let Some(mut input) = file.data_fork.take() {
                             input.seek(SeekFrom::Start(u64::from(*offset))).context("Can’t seek to RIFF container")?;
                             RiffContainer::new(input).context("Can’t create RIFF container from data fork")?
                         } else {
@@ -85,7 +94,7 @@ impl <'vfs> Player<'vfs> {
                 charset.unwrap_or(ScriptCode::Roman),
                 None,
                 if m.version() == Version::D3 {
-                    if let Some(resource_fork) = d.resource_fork.take() {
+                    if let Some(resource_fork) = file.resource_fork.take() {
                         let resource_file = ResourceFile::new(resource_fork)
                             .context("Can’t create resource file for movie")?;
                         MovieList::Embeds(resource_file, 1)
@@ -95,7 +104,7 @@ impl <'vfs> Player<'vfs> {
                 } else {
                     MovieList::SingleRiff(
                         Riff::new(
-                            d.data_fork.take().context("Missing data fork for movie")?
+                            file.data_fork.take().context("Missing data fork for movie")?
                         ).context("Can’t create RIFF from data fork")?
                     )
                 }
@@ -103,24 +112,26 @@ impl <'vfs> Player<'vfs> {
         };
 
         Ok(Self {
-            system: System::new(vfs.clone(), script_code, system_resources),
+            system: System::new(vfs.clone(), script_code, system_resources).context("Can’t create Macintosh Toolbox")?,
             movies,
+            next_movie_event_kind,
             current_index: 0,
             paused: false,
             root_movie: Movie,
             root_score: Score::default(),
+            stage_window: unsafe { Self::new_stage_window() },
             windows: Vec::new(),
             vfs,
         })
     }
 
-    pub fn exec(&mut self) {
-        todo!();
+    pub fn exec(&mut self) -> AResult<bool> {
+        self.next()
     }
 
-    pub fn next(&mut self) -> bool {
+    pub fn next(&mut self) -> AResult<bool> {
         if self.current_index == self.movies.len() {
-            return false;
+            return Ok(false);
         }
 
         todo!();
@@ -130,5 +141,12 @@ impl <'vfs> Player<'vfs> {
 
     pub fn post_event(&mut self, kind: EventKind, data: EventData) -> AResult<()> {
         self.system.event_manager_mut().post_event(kind, data)
+    }
+
+    unsafe fn new_stage_window() -> QBox<QWidget> {
+        let window = QWidget::new_0a();
+        window.set_fixed_size_2a(512, 342);
+        window.show();
+        window
     }
 }

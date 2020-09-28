@@ -56,6 +56,10 @@ data-dir_browse-title = Find data directory
 detection-failed_error = Detection failed
 detection-failed_message-html = If you think this file is a valid Director movie or projector, please <a href="{$url}">send a sample</a>.
 
+engine-error = Engine error
+engine-failed_message-html = You may want to check for or report this issue in the <a href="{$url}">issue tracker</a>.
+engine-load_next_error = Can’t create player for {$file_path}
+
 file-info_error-cannot-play-cast = Cannot play cast libraries.
 file-info_movie-file-kind = Director {$version} {$kind}
 file-info_projector-file-kind = Director {$version} for {$platform} projector

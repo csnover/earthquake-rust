@@ -1,8 +1,8 @@
-use std::rc::Rc;
-
+use anyhow::{Context, Result as AResult};
 use crate::{EventManager, script_manager::ScriptCode};
 use crate::ResourceManager;
 use libcommon::{vfs::VirtualFileSystem, encodings::MAC_ROMAN};
+use std::rc::Rc;
 
 pub struct System<'vfs> {
     event_manager: EventManager,
@@ -10,16 +10,17 @@ pub struct System<'vfs> {
 }
 
 impl <'vfs> System<'vfs> {
-    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, script: ScriptCode, system: Option<Vec<u8>>) -> Self {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, script: ScriptCode, system: Option<Vec<u8>>) -> AResult<Self> {
         let decoder = match script {
             ScriptCode::Roman => MAC_ROMAN,
             _ => unimplemented!(),
         };
 
-        Self {
+        Ok(Self {
             event_manager: EventManager::new(),
-            resource_manager: ResourceManager::new(fs, decoder, system),
-        }
+            resource_manager: ResourceManager::new(fs, decoder, system)
+                .context("Can’t create resource manager")?,
+        })
     }
 
     pub fn event_manager(&self) -> &EventManager {
