@@ -488,6 +488,8 @@ impl Loader {
         message_box.set_attribute_1a(WidgetAttribute::WADeleteOnClose);
 
         if cfg!(target_os = "macos") {
+            // The macOS platform convention for ‘About’ windows is to have no
+            // title
         } else {
             message_box.set_window_title(qtr!(self.l, "about_window-title", [ "app_name" => name(false) ]));
         }
