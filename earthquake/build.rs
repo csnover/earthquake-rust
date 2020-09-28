@@ -127,9 +127,10 @@ fn main() {
     gen_info_plist();
     gen_resources_qrc();
     add_resources(format!("{}/{}", env::var("OUT_DIR").unwrap(), "/resources.qrc"));
+    // This should use ConstantsFlags::REBUILD_ON_HEAD_CHANGE, but can’t due to
+    // https://github.com/rustyhorde/vergen/issues/21
     generate_cargo_keys(ConstantsFlags::SHA_SHORT
         | ConstantsFlags::SEMVER
-        | ConstantsFlags::COMMIT_DATE
-        | ConstantsFlags::REBUILD_ON_HEAD_CHANGE).unwrap();
+        | ConstantsFlags::COMMIT_DATE).unwrap();
     gen_qt_cargo_keys();
 }
