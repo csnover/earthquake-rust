@@ -429,29 +429,24 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
             let size = next_offset - rsrc_offset;
             (rsrc_offset, size)
         },
-        Version::D5 => {
-            const DRIVERS_HEADER_SIZE: u32 = 8;
-            const DRIVER_ENTRY_SIZE: u32 = 0x204;
-            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + DRIVER_ENTRY_SIZE * 2)))
+        Version::D5 | Version::D6 => {
+            const DRIVERS_HEADER_SIZE: u32 = 12;
+            let driver_entry_size = if version == Version::D5 { 0x204 } else { 0x208 };
+
+            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + driver_entry_size * 2)))
                 .context("Can’t seek to PROJECTR.RSR offset")?;
             let rsrc_offset = input.read_u32::<LittleEndian>()
                 .context("Can’t read PROJECTOR.RSR offset")?;
-            input.skip(u64::from(DRIVER_ENTRY_SIZE - 4))
-                .context("Can’t skip to fourth system file offset")?;
-            let next_offset = input.read_u32::<LittleEndian>()
-                .context("Can’t read fourth system file offset")?;
-            let size = next_offset - rsrc_offset;
-            (rsrc_offset, size)
-        },
-        Version::D6 => {
-            const DRIVERS_HEADER_SIZE: u32 = 8;
-            const DRIVER_ENTRY_SIZE: u32 = 0x208;
-            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + DRIVER_ENTRY_SIZE * 2)))
-                .context("Can’t seek to PROJECTR.RSR offset")?;
-            let rsrc_offset = input.read_u32::<LittleEndian>()
-                .context("Can’t read PROJECTOR.RSR offset")?;
-            let size = input.read_u32::<LittleEndian>()
-                .context("Can’t read PROJECTOR.RSR size")?;
+            let size = if version == Version::D5 {
+                input.skip(u64::from(driver_entry_size - 4))
+                    .context("Can’t skip to fourth system file offset")?;
+                let next_offset = input.read_u32::<LittleEndian>()
+                    .context("Can’t read fourth system file offset")?;
+                next_offset - rsrc_offset
+            } else {
+                input.read_u32::<LittleEndian>()
+                    .context("Can’t read PROJECTOR.RSR size")?
+            };
             (rsrc_offset, size)
         },
         Version::D7 => {
