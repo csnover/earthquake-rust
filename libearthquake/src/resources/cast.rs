@@ -244,14 +244,16 @@ impl Resource for Member {
                 .with_context(|| format!("Can’t load {} cast member info", kind))?)
         };
 
+        let metadata = MemberMetadata::load(&mut input, meta_size, &(kind, context.1, context.2))
+            .with_context(|| format!("Can’t load {} cast member metadata", kind))?;
+
         Ok(Self {
             riff_index: context.0,
             next_free: 0,
             some_num_a: 0,
             flags: MemberFlags::empty(),
             info,
-            metadata: MemberMetadata::load(&mut input, meta_size, &(kind, context.1, context.2))
-                .with_context(|| format!("Can’t load {} cast member metadata", kind))?,
+            metadata,
         })
     }
 }
@@ -339,7 +341,6 @@ pub enum MemberMetadata {
     // Rich text
     Text(TextMeta),
     OLE(BitmapMeta),
-    // Transition-specific Xtras
     Transition(TransitionMeta),
     Xtra(XtraMeta),
 }
