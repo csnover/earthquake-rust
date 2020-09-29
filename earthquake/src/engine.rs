@@ -103,7 +103,9 @@ impl <'vfs> Engine<'vfs> {
                 NullPtr,
             );
 
-            message_box.set_detailed_text(&qs(error.reasons()));
+            if error.chain().nth(1).is_some() {
+                message_box.set_detailed_text(&qs(error.reasons()));
+            }
 
             if let Some(url) = option_env!("CARGO_PKG_REPOSITORY") {
                 message_box.set_informative_text(qtr!(
@@ -220,5 +222,17 @@ impl <'vfs> EventReceiver for Engine<'vfs> {
                 false
             },
         }
+    }
+
+    fn error(&mut self, error: Box<dyn std::any::Any + Send>) -> bool {
+        if let Some(error) = error.downcast_ref::<String>() {
+            self.show_error(&anyhow::Error::msg(format!("Panic in event handler: {}", error)));
+        } else if let Some(error) = error.downcast_ref::<&str>() {
+            self.show_error(&anyhow::Error::msg(format!("Panic in event handler: {}", error)));
+        } else {
+            self.show_error(&anyhow::Error::msg("Unknown panic in event handler"));
+        }
+        unsafe { QCoreApplication::exit_1a(1); }
+        false
     }
 }
