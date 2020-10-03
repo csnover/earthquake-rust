@@ -381,7 +381,7 @@ impl ProjectorSettings {
                         1 => AccelMode::FillMemory,
                         2 => AccelMode::Frame,
                         3 => AccelMode::Chunk,
-                        _ => bail_sample!("Unknown accel mode {}", bits[10]),
+                        mode => bail_sample!("Unknown accel mode {}", mode),
                     },
                 },
             }),
