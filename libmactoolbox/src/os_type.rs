@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use byteorder::ByteOrder;
 use std::{char, fmt, io};
 
@@ -28,6 +29,20 @@ impl OSType {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8; 4] {
         &self.0
+    }
+}
+
+impl std::str::FromStr for OSType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() == 4 {
+            let mut value = [ 0; 4 ];
+            value.copy_from_slice(s.as_bytes());
+            Ok(Self(value))
+        } else {
+            Err(anyhow!("Bad OSType size"))
+        }
     }
 }
 

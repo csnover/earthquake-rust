@@ -27,7 +27,8 @@ impl Default for Platform {
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
 pub enum Version {
     Unknown,
-    V1025 = 1025,
+    V1024 = 1024,
+    V1025,
     V1113 = 1113,
     V1114,
     V1115,
@@ -164,7 +165,11 @@ impl Config {
 
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.calculate_checksum() == self.checksum
+        if self.version < Version::V1113 {
+            true
+        } else {
+            self.calculate_checksum() == self.checksum
+        }
     }
 
     #[must_use]
@@ -240,8 +245,18 @@ impl Resource for Config {
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
-        let own_size = input.read_i16().context("Can’t read movie config size")?;
-        ensure_sample!(own_size as u32 == size, "Recorded size is not true size ({} != {})", own_size, size);
+        let (platform, own_size, extra) = {
+            let own_size = input.read_i16().context("Can’t read movie config size")?;
+
+            // TODO: Do this correctly, this is a garbage D3Win guesswork hack
+            if own_size as u32 == size {
+                (Platform::Mac, own_size, 0)
+            } else {
+                input.skip(own_size as u64).context("Can’t skip own size")?;
+                (Platform::Win, input.read_i16().context("Can’t read D3Win movie config size")?, own_size as u32 + 2)
+            }
+        };
+        ensure_sample!(own_size as u32 == size - extra, "Recorded size is not true size ({} != {})", own_size, size - extra);
         let version = {
             let value = input.read_i16().context("Can’t read movie config version")?;
             Version::from_i16(value).with_context(|| format!("Unknown config version {}", value))?
@@ -271,6 +286,7 @@ impl Resource for Config {
             field_16,
             field_18,
             field_19,
+            platform,
             ..Self::default()
         };
 

@@ -1,4 +1,26 @@
-Usage: {} [--data <dir>] [--inspect-data] <exe/cxr/dxr ...>
+Usage: {} <command> [--data <path>] <exe/cxr/dxr ...>
+Commands:
+    detect: Print basic file detection information
+        --recursive: Also print detection information for referenced or
+                     embedded files
+
+    list: Print all resource IDs
+        --recursive: Also print resource IDs in referenced or embedded files
+
+    print-cast-member: Print metadata of specific cast member(s)
+        --id <member_num>: Cast member to view in the first cast library
+        --id <cast_lib,member>: Cast member to view in a specific cast library
+
+    print-cast-members: Print metadata of all cast members
+
+    print-casts: Print metadata of all internal casts
+
+    print-config: Print movie configuration
+
+    print-resource: Print data of specific resource(s)
+        --id <os_type,res_id>: Resource to print
+
+    print-resources: Print data of all resources
+
 Optional arguments:
-    --data: The path to movies referenced by a Projector
-    --inspect-data: Print movie contents
+    --data: The path to external files referenced by a Projector

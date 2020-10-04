@@ -82,7 +82,7 @@ pub struct LibNum(pub i16);
 #[derive(Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
 pub struct MemberNum(pub i16);
 
-#[derive(Clone, Constructor, Copy, Default, Display, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Display, Eq, PartialEq)]
 #[display(fmt = "MemberId({}, {})", "_0.0", "_1.0")]
 pub struct MemberId(LibNum, MemberNum);
 
@@ -94,6 +94,10 @@ impl fmt::Debug for MemberId {
 
 impl MemberId {
     pub const SIZE: u32 = 4;
+
+    pub fn new(lib_num: impl Into<LibNum>, member_num: impl Into<MemberNum>) -> Self {
+        Self(lib_num.into(), member_num.into())
+    }
 
     #[must_use]
     pub fn lib(self) -> LibNum {
