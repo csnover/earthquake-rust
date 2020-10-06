@@ -245,18 +245,8 @@ impl Resource for Config {
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = ByteOrdered::new(input, Endianness::Big);
-        let (platform, own_size, extra) = {
-            let own_size = input.read_i16().context("Can’t read movie config size")?;
-
-            // TODO: Do this correctly, this is a garbage D3Win guesswork hack
-            if own_size as u32 == size {
-                (Platform::Mac, own_size, 0)
-            } else {
-                input.skip(own_size as u64).context("Can’t skip own size")?;
-                (Platform::Win, input.read_i16().context("Can’t read D3Win movie config size")?, own_size as u32 + 2)
-            }
-        };
-        ensure_sample!(own_size as u32 == size - extra, "Recorded size is not true size ({} != {})", own_size, size - extra);
+        let own_size = input.read_i16().context("Can’t read movie config size")?;
+        ensure_sample!(own_size as u32 == size, "Recorded size is not true size ({} != {})", own_size, size);
         let version = {
             let value = input.read_i16().context("Can’t read movie config version")?;
             Version::from_i16(value).with_context(|| format!("Unknown config version {}", value))?
@@ -286,7 +276,6 @@ impl Resource for Config {
             field_16,
             field_18,
             field_19,
-            platform,
             ..Self::default()
         };
 

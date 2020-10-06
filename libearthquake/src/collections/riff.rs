@@ -127,7 +127,20 @@ impl<T: Reader> Riff<T> {
         input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
             .with_context(|| format!("Can’t seek to {} for RIFF index {}", entry.offset, index))?;
 
-        R::load(&mut input, entry.size, context)
+        let mut entry_size = entry.size;
+
+        if self.info.version() == Version::D3 {
+            input.skip(4).with_context(|| format!("Can’t skip unused D3Win value in index {}", index))?;
+            let mut name_size = input.read_u8().with_context(|| format!("Can’t read resource name size in index {}", index))?;
+            if name_size & 1 == 0 {
+                // padding byte
+                name_size += 1;
+            }
+            entry_size -= u32::from(name_size) + 5;
+            input.skip(u64::from(name_size)).with_context(|| format!("Can’t skip resource name in index {}", index))?;
+        }
+
+        R::load(&mut input, entry_size, context)
             .map(|resource| {
                 let resource = Rc::new(resource);
                 *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
