@@ -288,7 +288,7 @@ fn inspect_riff_container(stream: impl Reader, options: &Options) -> AResult<()>
     let riff_container = RiffContainer::new(stream)?;
     for index in 0..riff_container.len() {
         println!("\nFile {}: {}", index + 1, riff_container.filename(index).unwrap().to_string_lossy());
-        if !options.list() && riff_container.kind(index).unwrap() != ChunkFileKind::Xtra {
+        if options.recursive() && riff_container.kind(index).unwrap() != ChunkFileKind::Xtra {
             match riff_container.load_file(index) {
                 Ok(riff) => inspect_riff_contents(&riff, options)?,
                 Err(e) => eprintln!("Could not inspect file: {}", e)
@@ -392,10 +392,8 @@ fn read_projector(
         },
         MovieInfo::Internal(offset) => {
             println!("Internal movie at {}", offset);
-            if options.recursive() {
-                stream.seek(SeekFrom::Start(u64::from(*offset)))?;
-                inspect_riff_container(stream, options)?;
-            }
+            stream.seek(SeekFrom::Start(u64::from(*offset)))?;
+            inspect_riff_container(stream, options)?;
         },
         MovieInfo::External(filenames) => {
             for filename in filenames {
@@ -429,7 +427,9 @@ fn read_projector(
         },
         MovieInfo::Embedded(num_movies) => {
             println!("{} embedded movies", num_movies);
-            read_embedded_movie(*num_movies, stream, options)?;
+            if options.recursive() {
+                read_embedded_movie(*num_movies, stream, options)?;
+            }
         },
     }
     Ok(())
