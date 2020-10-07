@@ -130,7 +130,7 @@ impl<T: Reader> Riff<T> {
         let mut entry_size = entry.size;
 
         if self.info.version() == Version::D3 {
-            input.skip(4).with_context(|| format!("Can’t skip unused D3Win value in index {}", index))?;
+            input.skip(4).with_context(|| format!("Can’t skip resource ID in index {}", index))?;
             let mut name_size = input.read_u8().with_context(|| format!("Can’t read resource name size in index {}", index))?;
             if name_size & 1 == 0 {
                 // padding byte
@@ -226,12 +226,12 @@ impl<T: Reader> Riff<T> {
     }
 
     fn read_cftc<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<(MemoryMap, ResourceMap)> {
-        // CFTC map was not RCE'd so may not be correct.
         const ENTRY_SIZE: u32 = 16;
 
         let mut bytes_to_read = input.read_u32::<DE>()?;
 
-        // TODO: Is this value important? It seems to always be 0.
+        // This value is ignored in at least D3Win version 36 (the version # is
+        // the resource ID of the Ver. resource) and appears to always be zero.
         input.skip(4)?;
         bytes_to_read -= 4;
 
