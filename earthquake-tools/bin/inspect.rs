@@ -167,6 +167,21 @@ fn parse_command(args: &mut Arguments) -> AResult<Command> {
     }
 }
 
+fn print_mac_resource(rom: &ResourceFile<impl Reader>, id: ResourceId) {
+    print_resource(id, rom.load::<Vec<u8>>(id, &()));
+}
+
+fn print_resource(id: ResourceId, result: AResult<impl std::fmt::Debug>) {
+    match result {
+        Ok(r) => println!("{}: {:02x?}", id, r),
+        Err(e) => eprintln!("Can’t inspect {}: {}", id, e)
+    }
+}
+
+fn print_riff_resource(riff: &Riff<impl Reader>, id: ResourceId) {
+    print_resource(id, riff.load_id::<Vec<u8>>(id, &()));
+}
+
 fn main() -> AResult<()> {
     eprintln!("{} file inspector", name(true));
 
@@ -244,18 +259,11 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
 
     if let Some(resources) = options.print_resource() {
         resources.iter().for_each(|&id| {
-            match riff.load_id::<Vec<u8>>(id, &()) {
-                Ok(r) => println!("{:x?}", r),
-                Err(e) => eprintln!("Can’t inspect {}: {}", id, e)
-            }
+            print_riff_resource(riff, id);
         });
     } else if options.print_resources() {
         for resource in riff.iter() {
-            let id = resource.id();
-            match riff.load_id::<Vec<u8>>(id, &()) {
-                Ok(r) => println!("{:x?}", r),
-                Err(e) => eprintln!("Can’t inspect {}: {}", id, e)
-            }
+            print_riff_resource(riff, resource.id());
         }
     } else if options.print_cast_member().is_some() || options.print_cast_members() {
         if version == ConfigVersion::Unknown {
@@ -325,17 +333,11 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
 
     if let Some(resources) = options.print_resource() {
         resources.iter().for_each(|&id| {
-            match rom.load::<Vec<u8>>(id, &()) {
-                Ok(r) => println!("{:x?}", r),
-                Err(e) => eprintln!("Can’t inspect {}: {}", id, e)
-            }
+            print_mac_resource(&rom, id);
         });
     } else if options.print_resources() {
         for id in rom.iter() {
-            match rom.load::<Vec<u8>>(id, &()) {
-                Ok(r) => println!("{:x?}", r),
-                Err(e) => eprintln!("Can’t inspect {}: {}", id, e)
-            }
+            print_mac_resource(&rom, id);
         }
     } else if options.print_cast_member().is_some() || options.print_cast_members() {
         todo!("D3 cast member inspection");
