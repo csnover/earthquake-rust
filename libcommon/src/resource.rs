@@ -10,6 +10,27 @@ pub trait Resource : std::fmt::Debug {
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized;
 }
 
+impl Resource for i16 {
+    type Context = ();
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        Ok(input.read_i16()?)
+    }
+}
+
+impl Resource for u16 {
+    type Context = ();
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        Ok(input.read_u16()?)
+    }
+}
+
+impl Resource for i32 {
+    type Context = ();
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        Ok(input.read_i32()?)
+    }
+}
+
 impl Resource for u32 {
     type Context = ();
     fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {

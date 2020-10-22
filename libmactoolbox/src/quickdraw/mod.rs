@@ -1,5 +1,10 @@
+// TODO: You know, finish this file and then remove these overrides
+#![allow(dead_code)]
+
 use crate::{Point, Rect};
 use anyhow::{Context, Result as AResult};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use libcommon::{
     Reader,
     Resource,
@@ -17,6 +22,37 @@ type PixMapHandle = UnkHnd;
 type RgnHandle = UnkHnd;
 type StyleField = u16;
 type Fixed = u32;
+
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+pub enum Pen {
+    SrcCopy = 0,
+    SrcOr,
+    SrcXor,
+    SrcBic,
+    NotSrcCopy,
+    NotSrcOr,
+    NotSrcXor,
+    NotSrcBic,
+    PatCopy,
+    PatOr,
+    PatXor,
+    PatBic,
+    NotPatCopy,
+    NotPatOr,
+    NotPatXor,
+    NotPatBic,
+    Blend         = 32,
+    AddPin,
+    AddOver,
+    SubPin,
+    Transparent,
+    AdMax,
+    SubOver,
+    AdMin,
+    GrayishTextOr = 49,
+    Hilite,
+    DitherCopy    = 64,
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RGBColor {
@@ -94,6 +130,7 @@ impl QuickDraw {
         self.graf_port.replace(old_port);
     }
 
+    #[must_use]
     pub fn port(&self) -> &Rc<RefCell<CGrafPort>> {
         &self.graf_port
     }

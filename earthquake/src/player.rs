@@ -1,11 +1,32 @@
-use anyhow::{Context, Result as AResult, bail};
+use anyhow::{bail, Context, Result as AResult};
 use libcommon::vfs::{VirtualFile, VirtualFileSystem};
-use libearthquake::{collections::riff::Riff, collections::riff_container::RiffContainer, detection::{Detection, FileType, Version, projector::{
+use libearthquake::{
+    collections::{
+        riff::Riff,
+        riff_container::RiffContainer,
+    },
+    detection::{
+        Detection,
+        FileType,
+        projector::{
             D3WinMovie,
             Movie as ProjectorMovie,
-        }}, player::{movie::Movie, score::Score}};
-use libmactoolbox::{EventData, EventKind, ResourceFile, System, script_manager::ScriptCode};
-use std::{io::SeekFrom, rc::Rc};
+        },
+        Version,
+    },
+    player::{
+        movie::Movie,
+        score::Score,
+    },
+};
+use libmactoolbox::{
+    EventData,
+    EventKind,
+    ResourceFile,
+    script_manager::ScriptCode,
+    System,
+};
+use std::{io::SeekFrom, rc::Rc, time::Instant};
 use qt_core::{QBox, QEvent, QEventLoop, q_event::Type as QEventType};
 use qt_widgets::QWidget;
 
@@ -35,6 +56,7 @@ pub struct Player<'vfs> {
     movies: MovieList<'vfs>,
     current_index: usize,
     paused: bool,
+    some_tick_count_51145c: Option<Instant>,
 
     next_movie_event_kind: QEventType,
 
@@ -115,6 +137,7 @@ impl <'vfs> Player<'vfs> {
             system: System::new(vfs.clone(), script_code, system_resources).context("Can’t create Macintosh Toolbox")?,
             movies,
             next_movie_event_kind,
+            some_tick_count_51145c: None,
             current_index: 0,
             paused: false,
             root_movie: Movie,

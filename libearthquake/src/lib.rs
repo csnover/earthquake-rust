@@ -6,6 +6,7 @@
     clippy::cast_sign_loss,
     clippy::missing_errors_doc,
     clippy::non_ascii_literal,
+    clippy::option_if_let_else,
     clippy::verbose_bit_mask,
 )]
 #![warn(rust_2018_idioms)]

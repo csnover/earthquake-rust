@@ -6,6 +6,7 @@
     clippy::cast_sign_loss,
     clippy::missing_errors_doc,
     clippy::non_ascii_literal,
+    clippy::option_if_let_else,
     clippy::verbose_bit_mask,
 )]
 #![warn(rust_2018_idioms)]
@@ -58,16 +59,16 @@ pub trait Reader: io::Read + io::Seek + fmt::Debug {
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct UnkHnd(u32);
+pub struct UnkHnd(pub u32);
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct UnkPtr(u32);
+pub struct UnkPtr(pub u32);
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Unk32(u32);
+pub struct Unk32(pub u32);
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Unk16(u16);
+pub struct Unk16(pub u16);
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Unk8(u8);
+pub struct Unk8(pub u8);

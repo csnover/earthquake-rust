@@ -137,7 +137,7 @@ impl Config {
         .wrapping_add(self.field_2c + 23)
         .wrapping_add(self.field_30 + 24)
         .wrapping_mul(i32::from(self.field_34) + 25)
-        .wrapping_add(i32::from(self.current_tempo.0) + 26)
+        .wrapping_add(i32::from(self.current_tempo.to_primitive()) + 26)
         .wrapping_mul(self.platform as i32 + 27)
         .wrapping_mul(
             i32::from(self.field_3a)
@@ -204,7 +204,7 @@ impl Config {
         this.field_30 = input.read_i32().context("Can’t read field_30")?;
         this.field_34 = input.read_i8().context("Can’t read field_34")?;
         this.field_35 = input.read_i8().context("Can’t read field_35")?;
-        this.current_tempo = Tempo(input.read_i16().context("Can’t read current tempo")?);
+        this.current_tempo = Tempo::new(input.read_i16().context("Can’t read current tempo")?)?;
         this.platform = {
             let value = input.read_i16().context("Can’t read platform")?;
             Platform::from_i16(value).with_context(|| format!("Unknown config platform {}", value))?
@@ -244,7 +244,7 @@ impl Resource for Config {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut input = ByteOrdered::new(input, Endianness::Big);
+        let mut input = input.as_mut().into_endianness(Endianness::Big);
         let own_size = input.read_i16().context("Can’t read movie config size")?;
         ensure_sample!(own_size as u32 == size, "Recorded size is not true size ({} != {})", own_size, size);
         let version = {

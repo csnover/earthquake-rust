@@ -3,6 +3,7 @@ pub mod cast;
 pub mod config;
 pub mod field;
 pub mod film_loop;
+pub mod movie;
 pub mod script;
 pub mod shape;
 pub mod text;
@@ -51,7 +52,7 @@ impl Resource for ByteVec {
     }
 }
 
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+#[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
 pub struct List<T: Resource>(Vec<T>);
 
 impl <T: Resource> Resource for List<T> {
@@ -149,7 +150,7 @@ impl Resource for PVec {
         const NUM_ENTRIES_SIZE: u32 = 2;
         let mut data = Vec::with_capacity(size as usize);
         input.take(u64::from(size)).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
-        let mut inner = ByteOrdered::new(Cursor::new(data), input.endianness());
+        let mut inner = ByteOrdered::new(Cursor::new(data), Endianness::Big);
         let header_size = inner.read_u32().context("Can’t read PVec header size")?;
         inner.seek(SeekFrom::Start(u64::from(header_size))).context("Can’t seek past PVec header")?;
         let num_entries = inner.read_u16().context("Can’t read number of PVec entries")?;

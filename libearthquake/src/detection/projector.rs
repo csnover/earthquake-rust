@@ -43,10 +43,7 @@ impl DetectionInfo {
 
     #[must_use]
     pub fn is_mac_embedded(&self) -> bool {
-        match self.movie {
-            Movie::Embedded(_) => true,
-            _ => false,
-        }
+        matches!(self.movie, Movie::Embedded(_))
     }
 
     #[must_use]

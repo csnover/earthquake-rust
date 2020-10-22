@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
 use bitflags::bitflags;
-use byteordered::{Endianness, ByteOrdered};
+use byteordered::Endianness;
 use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Constructor, Deref, DerefMut, Display, From, Index, IndexMut};
 use libcommon::{
@@ -135,7 +135,7 @@ pub struct CastMap(Vec<ChunkIndex>);
 impl Resource for CastMap {
     type Context = ();
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        let mut input = ByteOrdered::new(input, Endianness::Big);
+        let mut input = input.as_mut().into_endianness(Endianness::Big);
         let capacity = size / 4;
         let mut chunk_indexes = Vec::with_capacity(capacity as usize);
         for _ in 0..capacity {
@@ -208,6 +208,7 @@ pvec! {
         entry_9: Struct9_4A2DE0,
         #[string_entry(10, StringKind::CStr)]
         xtra_name: String,
+        // script related
         #[entry(11)]
         entry_11: StructB_4A2E00,
         // xtra-related
@@ -233,7 +234,7 @@ pub struct Member {
 impl Resource for Member {
     type Context = (ChunkIndex, ConfigVersion, DecoderRef);
     fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut input = ByteOrdered::new(input, Endianness::Big);
+        let mut input = input.as_mut().into_endianness(Endianness::Big);
 
         let (kind, /* VWCI */ info_size, /* VWCR */ meta_size) = if context.1 < ConfigVersion::V1201 {
             Self::read_meta_d4(&mut input)?
