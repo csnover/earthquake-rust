@@ -24,7 +24,7 @@ Commands:
 
     print-score: Print score data
         --id <score_num>: Score resource number to view (default: 1024)
-        --frames <start>,<end>: Frame data to view
+        --frames <start>[,<end>]: Frame data to view
         --fields <name>[,<name> ...]: Frame fields to view
 
 Optional arguments:

@@ -132,6 +132,11 @@ fn parse_frames(frames: &str) -> AResult<(i16, i16)> {
             }
             Ok((start_frame - 1, end_frame - 1))
         },
+        [ frame_num ] => {
+            let frame_num = frame_num.parse::<i16>()
+                .with_context(|| format!("Malformed frame number '{}'", frame_num))?;
+            Ok((frame_num - 1, frame_num))
+        },
         _ => bail!("Malformed frame range '{}'", frames)
     }
 }
