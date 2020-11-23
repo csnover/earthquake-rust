@@ -199,9 +199,9 @@ fn print_frame(frame: &Frame, fields: &[String]) -> bool {
     for field in fields.iter() {
         match field.as_str() {
             "script" => println!("Script: {:?}", frame.script),
-            "sound_1" => println!("Sound 1: {:?}", frame.script),
-            "sound_2" => println!("Sound 2: {:?}", frame.script),
-            "transition" => println!("Transition: {:?}", frame.script),
+            "sound_1" => println!("Sound 1: {:?}", frame.sound_1),
+            "sound_2" => println!("Sound 2: {:?}", frame.sound_2),
+            "transition" => println!("Transition: {:?}", frame.transition),
             "tempo_related" => println!("Tempo related: {:?}", frame.tempo_related),
             "sound_1_related" => println!("Sound 1 related: {:?}", frame.sound_1_related),
             "sound_2_related" => println!("Sound 2 related: {:?}", frame.sound_2_related),
@@ -220,18 +220,23 @@ fn print_frame_sprites(frame: &Frame, fields: &[String]) {
     for (i, sprite) in frame.sprites.as_ref().iter().enumerate() {
         for field in fields.iter() {
             match field.as_str() {
-                "sprites.kind" => println!("Sprite {} kind: {:?}", i + 1, sprite.kind),
-                "sprites.ink_and_flags" => println!("Sprite {} ink and flags: {:?}", i + 1, sprite.ink_and_flags),
-                "sprites.id" => println!("Sprite {} id: {:?}", i + 1, sprite.id),
-                "sprites.script" => println!("Sprite {} script: {:?}", i + 1, sprite.script),
-                "sprites.fore_color_index" => println!("Sprite {} fore color index: {:?}", i + 1, sprite.fore_color_index),
-                "sprites.back_color_index" => println!("Sprite {} back color index: {:?}", i + 1, sprite.back_color_index),
-                "sprites.origin" => println!("Sprite {} origin: {:?}", i + 1, sprite.origin),
-                "sprites.height" => println!("Sprite {} height: {:?}", i + 1, sprite.height),
-                "sprites.width" => println!("Sprite {} width: {:?}", i + 1, sprite.width),
-                "sprites.score_color_and_flags" => println!("Sprite {} score color and flags: {:?}", i + 1, sprite.score_color_and_flags),
-                "sprites.blend_amount" => println!("Sprite {} blend amount: {:?}", i + 1, sprite.blend_amount),
-                "sprites.line_size_and_flags" => println!("Sprite {} line size and flags: {:?}", i + 1, sprite.line_size_and_flags),
+                "sprites.kind" => println!("Sprite {} kind: {:?}", i + 1, sprite.kind()),
+                "sprites.ink" => println!("Sprite {} ink: {:?}", i + 1, sprite.ink()),
+                "sprites.moveable" => println!("Sprite {} moveable: {:?}", i + 1, sprite.moveable()),
+                "sprites.editable" => println!("Sprite {} editable: {:?}", i + 1, sprite.editable()),
+                "sprites.trails" => println!("Sprite {} trails: {:?}", i + 1, sprite.trails()),
+                "sprites.stretch" => println!("Sprite {} stretch: {:?}", i + 1, sprite.stretch()),
+                "sprites.blend" => println!("Sprite {} blend: {:?}", i + 1, sprite.blend()),
+                "sprites.id" => println!("Sprite {} id: {:?}", i + 1, sprite.id()),
+                "sprites.script" => println!("Sprite {} script: {:?}", i + 1, sprite.script()),
+                "sprites.fore_color_index" => println!("Sprite {} fore color index: {:?}", i + 1, sprite.fore_color_index()),
+                "sprites.back_color_index" => println!("Sprite {} back color index: {:?}", i + 1, sprite.back_color_index()),
+                "sprites.origin" => println!("Sprite {} origin: {:?}", i + 1, sprite.origin()),
+                "sprites.height" => println!("Sprite {} height: {:?}", i + 1, sprite.height()),
+                "sprites.width" => println!("Sprite {} width: {:?}", i + 1, sprite.width()),
+                "sprites.score_color" => println!("Sprite {} score color: {:?}", i + 1, sprite.score_color()),
+                "sprites.blend_amount" => println!("Sprite {} blend amount: {:?}", i + 1, sprite.blend_amount()),
+                "sprites.line_size" => println!("Sprite {} line size: {:?}", i + 1, sprite.line_size()),
                 field if field.starts_with("sprites.") => eprintln!("Unknown score frame field '{}'", field),
                 _ => {},
             }
@@ -378,25 +383,24 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         let id = rsid!(b"VWSC", score_num);
         if riff.has_id(id) {
             let score = (*riff.load_id::<Score>(id, &())?).clone();
-            if let Some((start, end)) = frames {
-                for (i, frame) in score.skip(start as usize).take((end - start) as usize).enumerate() {
-                    let frame_num = i as i16 + start + 1;
-                    match frame {
-                        Ok(frame) => {
-                            println!("Frame {}:", frame_num);
-                            if let Some(ref fields) = fields {
-                                let print_sprites = print_frame(&frame, fields);
-                                if print_sprites {
-                                    print_frame_sprites(&frame, fields);
-                                }
-                            } else {
-                                println!("{:#?}", frame);
+            let (start, end) = frames.unwrap_or((0, i16::MAX));
+            for (i, frame) in score.skip(start as usize).take((end - start) as usize).enumerate() {
+                let frame_num = i as i16 + start + 1;
+                match frame {
+                    Ok(frame) => {
+                        println!("Frame {}:", frame_num);
+                        if let Some(ref fields) = fields {
+                            let print_sprites = print_frame(&frame, fields);
+                            if print_sprites {
+                                print_frame_sprites(&frame, fields);
                             }
-                        },
-                        Err(e) => {
-                            eprintln!("Error reading frame {}: {}", frame_num, e);
-                        },
-                    }
+                        } else {
+                            println!("{:#?}", frame);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Error reading frame {}: {:?}", frame_num, e);
+                    },
                 }
             }
         } else {
