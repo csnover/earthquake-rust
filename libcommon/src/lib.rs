@@ -4,6 +4,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
+    clippy::map_err_ignore,
     clippy::missing_errors_doc,
     clippy::non_ascii_literal,
     clippy::option_if_let_else,
