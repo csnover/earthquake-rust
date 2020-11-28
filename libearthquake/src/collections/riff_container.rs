@@ -10,7 +10,6 @@ use libcommon::{
     Resource,
     resource::Input,
 encodings::DecoderRef, encodings::MAC_ROMAN, encodings::Decoder};
-use libmactoolbox::os;
 use derive_more::{Deref, Index};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -130,8 +129,8 @@ pub struct RiffContainer<T: Reader> {
 impl <T: Reader> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
-        let file_list = riff.load::<List<ChunkFile>>(riff.first_of_kind(os!(b"List")), &Default::default()).context("Bad List chunk")?;
-        let file_dict = riff.load::<Dict>(riff.first_of_kind(os!(b"Dict")), &(MAC_ROMAN as &dyn Decoder)).context("Bad Dict chunk")?;
+        let file_list = riff.load_chunk::<List<ChunkFile>>(riff.first_of_kind(b"List"), &Default::default()).context("Bad List chunk")?;
+        let file_dict = riff.load_chunk::<Dict>(riff.first_of_kind(b"Dict"), &(MAC_ROMAN as &dyn Decoder)).context("Bad Dict chunk")?;
 
         Ok(Self {
             riff: Rc::new(riff),

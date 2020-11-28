@@ -2,19 +2,13 @@ use anyhow::anyhow;
 use byteorder::ByteOrder;
 use std::{char, fmt, io};
 
-// TODO: Find a better way to do this. User-defined literals would be nice.
-#[macro_export]
-macro_rules! os {
-    ($os_type:literal) => ($crate::OSType::new(*$os_type));
-}
-
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OSType([u8; 4]);
 
 impl OSType {
     #[must_use]
-    pub fn new(os_type: [u8; 4]) -> Self {
-        Self(os_type)
+    pub fn new(os_type: impl Into<[u8; 4]>) -> Self {
+        Self(os_type.into())
     }
 
     #[inline]
@@ -43,6 +37,12 @@ impl std::str::FromStr for OSType {
         } else {
             Err(anyhow!("Bad OSType size"))
         }
+    }
+}
+
+impl From<&[u8; 4]> for OSType {
+    fn from(value: &[u8; 4]) -> Self {
+        Self(*value)
     }
 }
 
@@ -90,12 +90,6 @@ mod tests {
     use byteorder::{BigEndian, LittleEndian};
     use std::io::Cursor;
 	use super::*;
-
-    #[test]
-    fn os_type_macro() {
-        let os_type = os!(b"HeLO");
-        assert_eq!(os_type, OSType(*b"HeLO"));
-    }
 
     #[test]
     fn os_type_primitive() {

@@ -75,7 +75,7 @@ fn detect_mac(resource_fork: &mut impl Reader, data_fork: Option<&mut impl Reade
                 FileType::Movie(m)
             }), e)
         })
-        .map_err(|e| anyhow!("Not a Director for Mac file: {}", e))
+        .map_err(|e| anyhow!("Not a Director for Mac file: {:?}", e))
 }
 
 fn detect_riff(data_fork: &mut impl Reader) -> AResult<FileType> {

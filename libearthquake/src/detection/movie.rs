@@ -2,10 +2,7 @@ use anyhow::{bail, Result as AResult};
 use byteordered::Endianness;
 use derive_more::Display;
 use libcommon::Reader;
-use libmactoolbox::{
-    ResourceFile,
-    rsid,
-};
+use libmactoolbox::{ResourceFile, ResourceId, ResourceSource};
 use super::Version;
 
 #[derive(Clone, Debug)]
@@ -55,20 +52,20 @@ pub enum Kind {
 pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = ResourceFile::new(reader)?;
 
-    if rom.contains(rsid!(b"VWCF", 1024)) {
-        Ok(DetectionInfo {
-            data_endianness: Endianness::Big,
-            os_type_endianness: Endianness::Big,
-            version: Version::D3,
-            kind: Kind::Embedded,
-            size: 0,
-        })
-    } else if rom.contains(rsid!(b"EMPO", 256)) {
+    if rom.contains(ResourceId::new(b"EMPO", 256)) {
         Ok(DetectionInfo {
             data_endianness: Endianness::Big,
             os_type_endianness: Endianness::Big,
             version: Version::D3,
             kind: Kind::Accelerator,
+            size: 0,
+        })
+    } else if rom.count(b"VWCF") > 1 || (rom.count(b"VWCF") == 1 && rom.id_of_name(b"VWCF", b"Tiles").is_none()) {
+        Ok(DetectionInfo {
+            data_endianness: Endianness::Big,
+            os_type_endianness: Endianness::Big,
+            version: Version::D3,
+            kind: Kind::Embedded,
             size: 0,
         })
     } else {

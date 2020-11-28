@@ -4,7 +4,35 @@ use std::fmt;
 
 #[derive(Copy, Clone, Display, Hash, PartialEq, Eq)]
 #[display(fmt = "{}({})", _0, _1)]
-pub struct ResourceId(pub OSType, pub i16);
+pub struct ResourceId(OSType, i16);
+
+impl ResourceId {
+    pub fn new(os_type: impl Into<OSType>, id: i16) -> Self {
+        Self(os_type.into(), id)
+    }
+
+    #[must_use]
+    pub fn id(self) -> i16 {
+        self.1
+    }
+
+    #[must_use]
+    pub fn os_type(self) -> OSType {
+        self.0
+    }
+}
+
+impl From<(OSType, i16)> for ResourceId {
+    fn from(value: (OSType, i16)) -> Self {
+        Self(value.0, value.1)
+    }
+}
+
+impl From<(&[u8; 4], i16)> for ResourceId {
+    fn from(value: (&[u8; 4], i16)) -> Self {
+        Self(value.0.into(), value.1)
+    }
+}
 
 impl fmt::Debug for ResourceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -12,27 +40,16 @@ impl fmt::Debug for ResourceId {
     }
 }
 
-#[macro_export]
-macro_rules! rsid {
-    ($os_type:expr, $id:expr) => ($crate::ResourceId($crate::OSType::new(*$os_type), $id));
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::wildcard_imports)]
-    use crate::os;
     use super::*;
 
     #[test]
     fn basic() {
-        println!("{:?}", ResourceId(os!(b"HELO"), 123));
-        let id = ResourceId(os!(b"HELO"), 123);
+        println!("{:?}", ResourceId(b"HELO".into(), 123));
+        let id = ResourceId(b"HELO".into(), 123);
         assert_eq!(id.0, OSType::new(*b"HELO"));
         assert_eq!(id.1, 123);
-    }
-
-    #[test]
-    fn rsid_macro() {
-        assert_eq!(ResourceId(os!(b"HELO"), 123), rsid!(b"HELO", 123));
     }
 }

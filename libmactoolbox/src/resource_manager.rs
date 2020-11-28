@@ -1,18 +1,12 @@
 use anyhow::{anyhow, bail, Context, Result as AResult};
 use crate::{
     OSType,
-    resource_file::RefNum,
+    resource_file::{RefNum, ResourceSource},
     ResourceFile,
     ResourceId,
     resources::string_list::StringList,
-    rsid,
 };
-use libcommon::{
-    encodings::DecoderRef,
-    Resource,
-    resource::{StringContext, StringKind},
-    vfs::{VirtualFile, VirtualFileSystem},
-};
+use libcommon::{Resource, encodings::DecoderRef, Reader, resource::{StringContext, StringKind}, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{io::Cursor, path::Path, rc::Rc};
 
 pub struct ResourceManager<'vfs> {
@@ -53,7 +47,7 @@ impl <'vfs> ResourceManager<'vfs> {
 
     /// `Count1Resources`
     #[must_use]
-    pub fn count_one_resources(&self, kind: OSType) -> u16 {
+    pub fn count_one_resources(&self, kind: OSType) -> i16 {
         if self.current_file == 0 {
             self.system.as_ref().map_or(0, |file| file.count(kind))
         } else {
@@ -64,20 +58,24 @@ impl <'vfs> ResourceManager<'vfs> {
 
     /// `CountResources`
     #[must_use]
-    pub fn count_resources(&self, kind: OSType) -> u16 {
+    pub fn count_resources(&self, kind: OSType) -> i16 {
         self.system.as_ref().map_or(0, |file| file.count(kind))
         + self.files.iter().fold(0, |count, file| count + file.count(kind))
     }
 
     /// `GetString`
     pub fn get_string(&self, id: i16) -> Option<Rc<String>> {
-        // TODO: User Information Resources
-        self.get_resource::<String>(rsid!(b"STR ", id), &self.decoder).unwrap_or(None)
+        match id {
+            -16096 => std::env::var_os("USER").or_else(|| std::env::var_os("USERNAME")).map(|s| Rc::new(s.to_string_lossy().to_string())),
+            #[cfg(feature = "sys_info")]
+            -16413 => unsafe { Some(Rc::new(qt_core::QSysInfo::machine_host_name().to_std_string())) },
+            _ => self.get_resource::<String>(ResourceId::new(b"STR ", id), &self.decoder).unwrap_or(None),
+        }
     }
 
     /// `GetIndString`
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<String> {
-        self.get_resource::<StringList>(rsid!(b"STR#", id), &self.decoder.1)
+        self.get_resource::<StringList>(ResourceId::new(b"STR#", id), &self.decoder.1)
             .unwrap_or(None)
             .map(|list| {
                 list.get(index as usize).unwrap_or(&String::new()).to_owned()
@@ -102,49 +100,30 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `Get1NamedResource`
-    pub fn get_one_named_resource<T: Resource + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>, context: &T::Context) -> AResult<Option<Rc<T>>> {
-        if self.current_file == 0 {
-            self.system
-                .as_ref()
-                .ok_or_else(|| anyhow!("no system file"))
-                .and_then(|file| Ok({
-                    if let Some(id) = file.id_of_name(kind, name) {
-                        Some(file.load::<T>(id, context)?)
-                    } else {
-                        None
-                    }
-                }))
-        } else {
-            let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
-            Ok(if let Some(id) = file.id_of_name(kind, name) {
-                Some(file.load::<T>(id, context)?)
-            } else {
-                None
-            })
-        }
+    pub fn get_one_named_resource<R: Resource + 'static>(&self, os_type: OSType, name: impl AsRef<[u8]>, context: &R::Context) -> AResult<Option<Rc<R>>> {
+        self.one_resource::<R, _, _>(
+            |file| file.id_of_name(os_type, name.as_ref()),
+            |file| file.id_of_name(os_type, name.as_ref()),
+            context
+        )
     }
 
     /// `Get1Resource`
-    pub fn get_one_resource<T: Resource + 'static>(&self, id: ResourceId, context: &T::Context) -> AResult<Option<Rc<T>>> {
-        if self.current_file == 0 {
-            self.system
-                .as_ref()
-                .ok_or_else(|| anyhow!("no system file"))
-                .and_then(|file| Ok({
-                    if file.contains(id) {
-                        Some(file.load::<T>(id, context)?)
-                    } else {
-                        None
-                    }
-                }))
-        } else {
-            let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
-            Ok(if file.contains(id) {
-                Some(file.load::<T>(id, context)?)
-            } else {
-                None
-            })
-        }
+    pub fn get_one_resource<R: Resource + 'static>(&self, id: ResourceId, context: &R::Context) -> AResult<Option<Rc<R>>> {
+        self.one_resource::<R, _, _>(
+            |_| Some(id),
+            |_| Some(id),
+            context
+        )
+    }
+
+    /// `Get1IndResource`
+    pub fn get_one_indexed_resource<R: Resource + 'static>(&self, kind: OSType, index: i16, context: &R::Context) -> AResult<Option<Rc<R>>> {
+        self.one_resource::<R, _, _>(
+            |file| file.id_of_index(kind, index),
+            |file| file.id_of_index(kind, index),
+            context
+        )
     }
 
     /// `GetResource`
@@ -189,4 +168,29 @@ impl <'vfs> ResourceManager<'vfs> {
 
         bail!("Invalid resource file number {}", ref_num)
     }
+
+    fn one_resource<R, GetSysId, GetUserId>(&self, get_sys_id: GetSysId, get_user_id: GetUserId, context: &R::Context) -> AResult<Option<Rc<R>>>
+    where
+        R: Resource + 'static,
+        GetSysId: Fn(&ResourceFile<Cursor<Vec<u8>>>) -> Option<ResourceId>,
+        GetUserId: Fn(&ResourceFile<Box<dyn VirtualFile + 'vfs>>) -> Option<ResourceId>
+    {
+        if self.current_file == 0 {
+            self.system
+                .as_ref()
+                .ok_or_else(|| anyhow!("no system file"))
+                .and_then(|file| load_one(file, get_sys_id, context))
+        } else {
+            let file = self.files.get(self.current_file - 1).context("current_file invalid")?;
+            load_one(file, get_user_id, context)
+        }
+    }
+}
+
+fn load_one<R: Resource + 'static, T: Reader>(file: &ResourceFile<T>, get_id: impl Fn(&ResourceFile<T>) -> Option<ResourceId>, context: &R::Context) -> AResult<Option<Rc<R>>> {
+    Ok(if let Some(id) = get_id(file) {
+        Some(file.load::<R>(id, context)?)
+    } else {
+        None
+    })
 }

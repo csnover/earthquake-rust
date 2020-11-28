@@ -2,11 +2,12 @@ use anyhow::{bail, Result as AResult};
 use bitflags::bitflags;
 use crate::{OSType, Point};
 use libcommon::UnkPtr;
-use std::{collections::VecDeque, rc::Weak, time::Duration};
+use smart_default::SmartDefault;
+use std::{time::Instant, collections::VecDeque, rc::Weak, time::Duration};
 use qt_core::{MouseButton, KeyboardModifier};
 use qt_gui::{QCursor, QGuiApplication};
 
-type Tick = std::time::Instant;
+type Tick = Instant;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EventKind {
@@ -142,8 +143,12 @@ pub enum EventData {
     HighLevel(OSType),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, SmartDefault)]
 pub struct EventManager {
+    #[default(Instant::now())]
+    start: Instant,
+    #[default(Instant::now())]
+    instance_start: Instant,
     queue: VecDeque<EventRecord>,
 }
 
@@ -258,7 +263,7 @@ impl EventManager {
     /// `TickCount`
     #[must_use]
     pub fn tick_count(&self) -> Tick {
-        todo!("system tick count")
+        self.start + (Instant::now() - self.instance_start)
     }
 
     fn modifiers(&self) -> EventModifiers {

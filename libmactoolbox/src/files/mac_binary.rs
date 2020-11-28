@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteorder::{ByteOrder, BigEndian};
-use crate::{OSType, os, script_manager::decode_text};
+use crate::{OSType, script_manager::decode_text};
 use crc::crc16::checksum_x25;
 use libcommon::{Reader, SharedStream};
 use std::io::{Cursor, SeekFrom};
@@ -30,7 +30,7 @@ impl<T: Reader> MacBinary<T> {
             bail!("Bad magic byte 1");
         }
 
-        if OSType::from(BigEndian::read_u32(&header[102..])) == os!(b"mBIN") {
+        if OSType::from(BigEndian::read_u32(&header[102..])).as_bytes() == b"mBIN" {
             return Ok(Self::build(data, &header, Version::V3));
         }
 

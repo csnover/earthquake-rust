@@ -509,6 +509,9 @@ impl Iterator for Score {
         if self.vwsc.pos().unwrap() == u64::from(self.vwsc_own_size) {
             None
         } else {
+            // TODO: If this call fails, it will not be possible to correctly
+            // unpack future frames, since they will be decompressing deltas
+            // against the wrong frame data.
             let next_frame = Self::unpack_frame(&mut self.vwsc, &self.current_frame.frame, self.puppet_sprites, self.version);
             if let Ok(next_frame) = next_frame.as_ref() {
                 self.current_frame.frame = next_frame.clone();
@@ -522,36 +525,6 @@ impl Iterator for Score {
 impl Score {
     const V4_HEADER_SIZE: u32 = 20;
     const V5_HEADER_SIZE: u32 = 20;
-
-    fn parse_v5(input: &mut Input<impl Reader>, version: Version) -> AResult<()> {
-        let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
-            (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
-        } else {
-            (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
-        };
-
-        let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
-        ensure_sample!(sprite_size == expect_sprite_size as i16, "Invalid sprite size {} for V5 score", sprite_size);
-        // Technically this is the number of `sizeof(Sprite)`s to make one
-        // `sizeof(Frame)`; the header of the frame is exactly two
-        // `sizeof(Sprite)`s, even though it does not actually contain sprite
-        // data
-        let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
-        ensure_sample!(num_sprites == expect_num_sprites as i16, "Invalid sprite count {} for V5 score", num_sprites);
-        let field_12 = input.read_u8().context("Can’t read score field_12")?;
-        ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
-        let field_13 = input.read_u8().context("Can’t read score field_13")?;
-        ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
-
-        dbg!(sprite_size, num_sprites, field_12, field_13);
-
-        // Director normally reads through all of the frame deltas here in order
-        // to byte swap them into the platform’s native endianness, but since we
-        // are using an endianness-aware reader, we’ll just let that happen
-        // when the frames are read later
-
-        Ok(())
-    }
 
     fn unpack_frame(input: &mut Input<impl Reader>, last_frame: &Frame, channels_to_keep: SpriteBitmask, version: Version) -> AResult<Frame> {
         let mut bytes_to_read = input.read_i16().context("Can’t read compressed score frame size")?;
@@ -616,7 +589,7 @@ impl Score {
 }
 
 impl Resource for Score {
-    type Context = ();
+    type Context = (crate::resources::config::Version, );
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut data = Vec::with_capacity(size as usize);
@@ -644,7 +617,31 @@ impl Resource for Score {
         if version > Version::V7 {
             todo!("Score version 8 parsing");
         } else {
-            Score::parse_v5(&mut input, version)?;
+            let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
+                (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
+            } else {
+                (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
+            };
+
+            let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
+            ensure_sample!(sprite_size == expect_sprite_size as i16, "Invalid sprite size {} for V5 score", sprite_size);
+            // Technically this is the number of `sizeof(Sprite)`s to make one
+            // `sizeof(Frame)`; the header of the frame is exactly two
+            // `sizeof(Sprite)`s, even though it does not actually contain sprite
+            // data
+            let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
+            ensure_sample!(num_sprites == expect_num_sprites as i16, "Invalid sprite count {} for V5 score", num_sprites);
+            let field_12 = input.read_u8().context("Can’t read score field_12")?;
+            ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
+            let field_13 = input.read_u8().context("Can’t read score field_13")?;
+            ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
+
+            dbg!(sprite_size, num_sprites, field_12, field_13);
+
+            // Director normally reads through all of the frame deltas here in order
+            // to byte swap them into the platform’s native endianness, but since we
+            // are using an endianness-aware reader, we’ll just let that happen
+            // when the frames are read later
         }
 
         Ok(Score {

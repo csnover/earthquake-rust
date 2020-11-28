@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result as AResult};
+use anyhow::{Context, Result as AResult, anyhow, bail, ensure};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::{
@@ -11,12 +11,7 @@ use libcommon::{
     Reader,
     string::ReadExt,
 };
-use libmactoolbox::{
-    ResourceFile,
-    resources::string_list::StringList as StringListResource,
-    rsid,
-    script_manager::ScriptCode,
-};
+use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode};
 use std::{path::PathBuf, io::{Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
@@ -126,13 +121,13 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     let resource_fork_offset = resource_fork.pos().context("Can’t read resource fork position")?;
     let rom = ResourceFile::new(resource_fork)?;
 
-    let version = if rom.contains(rsid!(b"PJ97", 0)) && rom.contains(rsid!(b"PJst", 0)) {
+    let version = if rom.contains(ResourceId::new(b"PJ97", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
         Version::D6
-    } else if rom.contains(rsid!(b"PJ95", 0)) && rom.contains(rsid!(b"PJst", 0)) {
+    } else if rom.contains(ResourceId::new(b"PJ95", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
         Version::D5
-    } else if rom.contains(rsid!(b"PJ93", 0)) && rom.contains(rsid!(b"PJst", 0)) {
+    } else if rom.contains(ResourceId::new(b"PJ93", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
         Version::D4
-    } else if rom.contains(rsid!(b"VWst", 0)) {
+    } else if rom.contains(ResourceId::new(b"VWst", 0)) {
         Version::D3
     } else {
         bail!("No Mac projector settings resource");
@@ -140,7 +135,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
 
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
-        let resource_id = rsid!(os_type, 0);
+        let resource_id = ResourceId::new(os_type, 0);
         rom.load::<Vec<u8>>(resource_id, &())?
     };
 
@@ -150,7 +145,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
             let num_movies = BigEndian::read_u16(&config[6..]);
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
-                let movies = rom.load::<StringListResource>(rsid!(b"STR#", 0), &(MAC_ROMAN as &dyn Decoder))
+                let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0), &(MAC_ROMAN as &dyn Decoder))
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
                     .map_err(|_| anyhow!("Could not take ownership of movie list"))?;
@@ -464,8 +459,9 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
     let mut system_resources = Vec::with_capacity(rsrc_size as usize);
     input.seek(SeekFrom::Start(u64::from(rsrc_offset)))
         .context("Can’t seek to PROJECTR.RSR")?;
-    input.take(u64::from(rsrc_size)).read_to_end(&mut system_resources)
+    let actual = input.take(u64::from(rsrc_size)).read_to_end(&mut system_resources)
         .context("Can’t read PROJECTR.RSR")?;
+    ensure!(actual == rsrc_size as usize, "Expected {} bytes, read {} bytes", rsrc_size, actual);
 
     Ok(Some(system_resources))
 }

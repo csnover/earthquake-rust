@@ -19,12 +19,7 @@ use libcommon::{
     Resource,
     SharedStream,
 };
-use libmactoolbox::{
-    os,
-    OSType,
-    OSTypeReadExt,
-    ResourceId,
-};
+use libmactoolbox::{OSType, OSTypeReadExt, ResourceId, ResourceSource};
 use std::{
     any::Any,
     cell::RefCell,
@@ -56,7 +51,7 @@ impl<'a, T: Reader> Iter<'a, T> {
     }
 
     pub fn load<R: Resource + 'static>(&self, context: &R::Context) -> AResult<Rc<R>> {
-        self.owner.load(self.chunk_index, context)
+        self.owner.load_chunk(self.chunk_index, context)
     }
 
     // TODO: For debugging only
@@ -88,17 +83,14 @@ impl<T: Reader> Riff<T> {
     }
 
     #[must_use]
-    pub fn first_of_kind(&self, kind: OSType) -> ChunkIndex {
+    pub fn first_of_kind(&self, kind: impl Into<OSType>) -> ChunkIndex {
+        let kind = kind.into();
         for (index, item) in self.memory_map.iter().enumerate() {
             if item.os_type == kind {
                 return ChunkIndex::new(index as i32);
             }
         }
         ChunkIndex::new(-1)
-    }
-
-    pub fn has_id(&self, id: ResourceId) -> bool {
-        self.resource_map.get(&id).is_some()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Iter<'_, T>> {
@@ -114,7 +106,7 @@ impl<T: Reader> Riff<T> {
         self.info.kind()
     }
 
-    pub fn load<R: 'static + Resource>(&self, index: ChunkIndex, context: &R::Context) -> AResult<Rc<R>> {
+    pub fn load_chunk<R: 'static + Resource>(&self, index: ChunkIndex, context: &R::Context) -> AResult<Rc<R>> {
         let entry = self.memory_map.get(index)
             .with_context(|| format!("Invalid RIFF index {}", index))?;
 
@@ -149,14 +141,6 @@ impl<T: Reader> Riff<T> {
             .with_context(|| format!("Can’t load {} chunk {} at {}", entry.os_type, index, entry.offset))
     }
 
-    pub fn load_id<R: 'static + Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {
-        if let Some(&chunk_index) = self.resource_map.get(&id) {
-            Self::load::<R>(self, chunk_index, context)
-        } else {
-            bail!("Invalid resource ID {}", id)
-        }
-    }
-
     pub fn load_riff(&self, index: ChunkIndex) -> AResult<Self> {
         let entry = self.memory_map.get(index)
             .with_context(|| format!("Invalid RIFF index {}", index))?;
@@ -170,7 +154,7 @@ impl<T: Reader> Riff<T> {
     pub fn make_free(&mut self, index: ChunkIndex) {
         let next_free_index = self.memory_map.next_free_index;
         let entry = self.memory_map.get_mut(index).unwrap();
-        entry.os_type = os!(b"free");
+        entry.os_type = b"free".into();
         entry.size = 0;
         entry.offset = 0;
         entry.flags = MemoryMapFlags::VALID | MemoryMapFlags::FREE;
@@ -182,7 +166,7 @@ impl<T: Reader> Riff<T> {
     pub fn make_junk(&mut self, index: ChunkIndex) {
         let next_junk_index = self.memory_map.next_junk_index;
         let entry = self.memory_map.get_mut(index).unwrap();
-        entry.os_type = os!(b"junk");
+        entry.os_type = b"junk".into();
         entry.flags = MemoryMapFlags::VALID;
         entry.field_e = 0;
         entry.data.replace(ChunkData::Free { next_free: next_junk_index });
@@ -242,7 +226,7 @@ impl<T: Reader> Riff<T> {
 
         while bytes_to_read != 0 {
             let os_type = input.read_os_type::<OE>()?;
-            if os_type == os!(b"\0\0\0\0") {
+            if os_type.as_bytes() == b"\0\0\0\0" {
                 break;
             }
             let size = input.read_u32::<DE>()?;
@@ -259,7 +243,7 @@ impl<T: Reader> Riff<T> {
                 data: RefCell::new(ChunkData::Free { next_free: ChunkIndex::new(-1) }),
             });
 
-            if resource_map.insert(ResourceId(os_type, id), mmap_index).is_some() {
+            if resource_map.insert(ResourceId::new(os_type, id), mmap_index).is_some() {
                 bail_sample!("Multiple {} {} in CFTC", os_type, id);
             }
 
@@ -283,7 +267,7 @@ impl<T: Reader> Riff<T> {
             .context("Can’t seek to mmap")?;
 
         let os_type = input.read_os_type::<OE>()?;
-        if os_type != os!(b"mmap") {
+        if os_type.as_bytes() != b"mmap" {
             bail!("Can’t find a valid resource map; found {} instead", os_type);
         }
 
@@ -328,7 +312,7 @@ impl<T: Reader> Riff<T> {
             // valid KEY* chunk; since we are building the map anyway, might
             // as well just get the offset now.
             if resource_map_offset.is_none()
-                && os_type == os!(b"KEY*")
+                && os_type.as_bytes() == b"KEY*"
                 && !flags.contains(MemoryMapFlags::VALID)
             {
                 resource_map_offset = Some(offset);
@@ -355,7 +339,7 @@ impl<T: Reader> Riff<T> {
     }
 
     fn read_keys<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<ResourceMap> {
-        if input.read_os_type::<OE>()? != os!(b"KEY*") {
+        if input.read_os_type::<OE>()?.as_bytes() != b"KEY*" {
             bail!("Bad KEY* offset");
         }
 
@@ -373,7 +357,7 @@ impl<T: Reader> Riff<T> {
             let id = input.read_i32::<DE>()? as i16;
             let os_type = input.read_os_type::<DE>()?;
 
-            if resource_map.insert(ResourceId(os_type, id), riff_index).is_some() {
+            if resource_map.insert(ResourceId::new(os_type, id), riff_index).is_some() {
                 bail_sample!("Multiple {} {} in KEY*", os_type, id);
             }
         }
@@ -403,6 +387,20 @@ impl<T: Reader> Riff<T> {
             resource_map,
             info
         })
+    }
+}
+
+impl <T: Reader> ResourceSource for Riff<T> {
+    fn contains(&self, id: impl Into<ResourceId>) -> bool {
+        self.resource_map.get(&id.into()).is_some()
+    }
+
+    fn load<R: 'static + Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {
+        if let Some(&chunk_index) = self.resource_map.get(&id) {
+            Self::load_chunk::<R>(self, chunk_index, context)
+        } else {
+            bail!("Invalid resource ID {}", id)
+        }
     }
 }
 

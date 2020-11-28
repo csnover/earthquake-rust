@@ -31,7 +31,7 @@ use libearthquake::{collections::{
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
 use libcommon::{Reader, SharedStream, encodings::MAC_ROMAN};
-use libmactoolbox::{OSType, ResourceFile, ResourceId, rsid, vfs::HostFileSystem};
+use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
 use pico_args::Arguments;
 use std::{env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
 
@@ -166,7 +166,7 @@ fn parse_resource_id(id: &str) -> AResult<ResourceId> {
                 .with_context(|| format!("Malformed resource kind '{}'", os_type))?;
             let resource_id = resource_id.parse::<i16>()
                 .with_context(|| format!("Malformed resource number '{}'", resource_id))?;
-            Ok(ResourceId(os_type, resource_id))
+            Ok(ResourceId::new(os_type, resource_id))
         },
         _ => bail!("Malformed cast member ID '{}'", id)
     }
@@ -257,7 +257,7 @@ fn print_resource(id: ResourceId, result: AResult<impl std::fmt::Debug>) {
 }
 
 fn print_riff_resource(riff: &Riff<impl Reader>, id: ResourceId) {
-    print_resource(id, riff.load_id::<Vec<u8>>(id, &()));
+    print_resource(id, riff.load::<Vec<u8>>(id, &()));
 }
 
 fn main() -> AResult<()> {
@@ -307,16 +307,16 @@ fn inspect_riff(stream: &mut impl Reader, options: &Options) -> AResult<()> {
 }
 
 fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult<()> {
-    let config_id = if riff.has_id(rsid!(b"VWCF", 1024)) {
-        Some(rsid!(b"VWCF", 1024))
-    } else if riff.has_id(rsid!(b"DRCF", 1024)) {
-        Some(rsid!(b"DRCF", 1024))
+    let config_id = if riff.contains((b"VWCF", 1024)) {
+        Some(ResourceId::new(b"VWCF", 1024))
+    } else if riff.contains((b"DRCF", 1024)) {
+        Some(ResourceId::new(b"DRCF", 1024))
     } else {
         None
     };
 
     let (version, min_cast_num) = if let Some(config_id) = config_id {
-        let config = riff.load_id::<Config>(config_id, &())?;
+        let config = riff.load::<Config>(config_id, &())?;
         if !config.valid() {
             eprintln!("Configuration checksum failure!");
         }
@@ -332,8 +332,8 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
     if options.print_casts() {
         for resource in riff.iter() {
             let id = resource.id();
-            if id.0.as_bytes() == b"MCsL" {
-                let cast_list = riff.load_id::<CastList>(id, &(MAC_ROMAN, ))?;
+            if id.os_type().as_bytes() == b"MCsL" {
+                let cast_list = riff.load::<CastList>(id, &(MAC_ROMAN, ))?;
                 println!("{:?}", cast_list);
                 for (i, cast) in cast_list.iter().enumerate() {
                     println!("{}: {:?}", i, cast);
@@ -363,12 +363,12 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         }
 
         // TODO: Handle multiple internal casts
-        if let Ok(cast) = riff.load_id::<CastMap>(rsid!(b"CAS*", 1024), &()) {
+        if let Ok(cast) = riff.load::<CastMap>(ResourceId::new(b"CAS*", 1024), &()) {
             for (i, &chunk_index) in cast.iter().enumerate() {
                 if chunk_index > ChunkIndex::new(0) {
                     let cast_member_num = min_cast_num + (i as i16);
                     if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0, cast_member_num)) {
-                        match riff.load::<Member>(chunk_index, &(chunk_index, version, MAC_ROMAN)) {
+                        match riff.load_chunk::<Member>(chunk_index, &(chunk_index, version, MAC_ROMAN)) {
                             Ok(member) => println!("{}: {:#?}", cast_member_num, member),
                             Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
                         }
@@ -380,34 +380,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         }
     }
 
-    if let Some((score_num, frames, fields)) = options.print_score() {
-        let id = rsid!(b"VWSC", score_num);
-        if riff.has_id(id) {
-            let score = (*riff.load_id::<Score>(id, &())?).clone();
-            let (start, end) = frames.unwrap_or((0, i16::MAX));
-            for (i, frame) in score.skip(start as usize).take((end - start) as usize).enumerate() {
-                let frame_num = i as i16 + start + 1;
-                match frame {
-                    Ok(frame) => {
-                        println!("Frame {}:", frame_num);
-                        if let Some(ref fields) = fields {
-                            let print_sprites = print_frame(&frame, fields);
-                            if print_sprites {
-                                print_frame_sprites(&frame, fields);
-                            }
-                        } else {
-                            println!("{:#?}", frame);
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error reading frame {}: {:?}", frame_num, e);
-                    },
-                }
-            }
-        } else {
-            eprintln!("No score!");
-        }
-    }
+    print_score(options, riff);
 
     Ok(())
 }
@@ -427,22 +400,57 @@ fn inspect_riff_container(stream: impl Reader, options: &Options) -> AResult<()>
     Ok(())
 }
 
+fn print_score(options: &Options, source: &impl ResourceSource) {
+    if let Some((score_num, frames, fields)) = options.print_score() {
+        let config_id = ResourceId::new(b"VWCF", score_num);
+        let config = match source.load::<Config>(config_id, &()) {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("{}", e);
+                return;
+            }
+        };
+
+        match source.load::<Score>(ResourceId::new(b"VWSC", score_num), &(config.version(), )) {
+            Ok(score) => {
+                let (start, end) = frames.unwrap_or((0, i16::MAX));
+                for (i, frame) in (*score).clone().skip(start as usize).take((end - start) as usize).enumerate() {
+                    let frame_num = i as i16 + start + 1;
+                    match frame {
+                        Ok(frame) => {
+                            println!("Frame {}:", frame_num);
+                            if let Some(ref fields) = fields {
+                                let print_sprites = print_frame(&frame, fields);
+                                if print_sprites {
+                                    print_frame_sprites(&frame, fields);
+                                }
+                            } else {
+                                println!("{:#?}", frame);
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Error reading frame {}: {:?}", frame_num, e);
+                        },
+                    }
+                }
+            },
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+}
+
 fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) -> AResult<()> {
     let rom = ResourceFile::new(stream)?;
 
     if options.print_config() {
-        for i in 0..num_movies {
-            let config_id = rsid!(b"VWCF", 1024 + (i as i16) * 1000);
-            if rom.contains(config_id) {
-                let config = rom.load::<Config>(config_id, &())?;
-                if !config.valid() {
-                    eprintln!("Configuration checksum failure!");
-                }
-                println!("{:#?}", config);
-            } else {
-                eprintln!("No config chunk for movie {}!", i + 1);
-            };
-        }
+        rom.iter_kind(b"VWCF").take(num_movies.into()).try_for_each(|config_id| -> AResult<()> {
+            let config = rom.load::<Config>(config_id, &())?;
+            if !config.valid() {
+                eprintln!("Configuration checksum failure!");
+            }
+            println!("{:#?}", config);
+            Ok(())
+        })?;
     }
 
     if options.list() {
@@ -462,6 +470,8 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
     } else if options.print_cast_member().is_some() || options.print_cast_members() {
         todo!("D3 cast member inspection");
     }
+
+    print_score(options, &rom);
 
     Ok(())
 }

@@ -27,19 +27,64 @@ impl Default for Platform {
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
 pub enum Version {
     Unknown,
+    // D2
     V1024 = 1024,
+
+    // D3, but only in the extended version field
     V1025,
+    V1028 = 1028,
+    V1029,
+
+    // D4
     V1113 = 1113,
     V1114,
     V1115,
     V1116,
     V1117,
+
+    // ?
     V1201 = 1201,
     V1214 = 1214,
+
+    // D5
     V1215 = 1215,
     V1217 = 1217,
-    V6_5  = 1223,
+    V1222 = 1222,
+    V1223,
+    V1406 = 1406,
     V5692 = 5692, // protected
+}
+
+impl Version {
+    #[must_use]
+    pub fn d2(self) -> bool {
+        matches!(self, Self::V1024)
+    }
+
+    #[must_use]
+    pub fn d3(self) -> bool {
+        matches!(self, Self::V1025 | Self::V1028 | Self::V1029)
+    }
+
+    #[must_use]
+    pub fn d4(self) -> bool {
+        matches!(self, Self::V1113 | Self::V1114 | Self::V1115 | Self::V1116 | Self::V1117)
+    }
+
+    #[must_use]
+    pub fn d5(self) -> bool {
+        matches!(self, Self::V1201 | Self::V1214 | Self::V1215 | Self::V1217)
+    }
+
+    #[must_use]
+    pub fn d6(self) -> bool {
+        matches!(self, Self::V1222 | Self::V1223)
+    }
+
+    #[must_use]
+    pub fn d7(self) -> bool {
+        matches!(self, Self::V1406)
+    }
 }
 
 impl Default for Version {
@@ -161,6 +206,11 @@ impl Config {
     #[must_use]
     pub fn min_cast_num(&self) -> MemberNum {
         self.min_cast_num
+    }
+
+    #[must_use]
+    pub fn original_version(&self) -> Version {
+        self.original_version
     }
 
     #[must_use]
