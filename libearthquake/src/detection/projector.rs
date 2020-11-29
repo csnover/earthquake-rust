@@ -12,7 +12,7 @@ use libcommon::{
     string::ReadExt,
 };
 use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode};
-use std::{path::PathBuf, io::{Read, SeekFrom}, rc::Rc};
+use std::{convert::TryInto, io::{Read, SeekFrom}, path::PathBuf, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone, Debug)]
@@ -220,7 +220,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     } else {
         let mut resource_fork = rom.into_inner();
         resource_fork.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
-        let mut data = Vec::with_capacity(resource_fork.len()? as usize);
+        let mut data = Vec::with_capacity(resource_fork.len()?.try_into().unwrap());
         resource_fork.read_to_end(&mut data).context("Can’t read system resource fork data")?;
         Some(data)
     };
@@ -265,7 +265,7 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
 
     input.seek(SeekFrom::End(-4)).context("Can’t seek to Director offset")?;
     let offset = input.read_u32::<LittleEndian>().context("Can’t read Director offset")?;
-    input.seek(SeekFrom::Start(u64::from(offset))).context("Bad Director data offset")?;
+    input.seek(SeekFrom::Start(offset.into())).context("Bad Director data offset")?;
 
     let mut header = [ 0; HEADER_SIZE as usize ];
     input.read_exact(&mut header).context("Can’t read Projector header")?;
@@ -284,27 +284,27 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
 
     let (platform, name) = get_exe_info(input)?;
     let (config, movie, system_resources) = if version == Version::D3 {
-        input.seek(SeekFrom::Start(u64::from(offset + 7)))?;
+        input.seek(SeekFrom::Start((offset + 7).into()))?;
         let config = ProjectorSettings::parse_win(version, platform, &header[0..7])?;
         let num_movies = LittleEndian::read_u16(&header);
         let movie = if config.d3().unwrap().use_external_files() {
-            let mut movies = Vec::with_capacity(usize::from(num_movies));
+            let mut movies = Vec::with_capacity(num_movies.into());
             for i in 0..num_movies {
                 let (_, filename) = d3_win_movie_info(input.by_ref(), i)?;
                 movies.push(filename);
             }
             Movie::External(movies)
         } else {
-            let mut movies = Vec::with_capacity(usize::from(num_movies));
+            let mut movies = Vec::with_capacity(num_movies.into());
             for i in 0..num_movies {
                 let (size, filename) = d3_win_movie_info(input.by_ref(), i)?;
-                let offset = input.pos()? as u32;
+                let offset: u32 = input.pos()?.try_into()?;
                 movies.push(D3WinMovie {
                     filename,
                     offset,
                     size,
                 });
-                input.skip(u64::from(size))
+                input.skip(size.into())
                     .with_context(|| format!("Can’t skip to internal movie {}", i + 1))?;
             }
             Movie::D3Win(movies)
@@ -312,7 +312,7 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
 
         (config, movie, None)
     } else {
-        input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE)))
+        input.seek(SeekFrom::Start((offset + HEADER_SIZE).into()))
             .context("Can’t seek to Projector settings")?;
 
         let settings_offset = match version {
@@ -330,7 +330,7 @@ pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
             },
         };
 
-        input.seek(SeekFrom::Start(u64::from(settings_offset)))
+        input.seek(SeekFrom::Start(settings_offset.into()))
             .context("Can’t seek to Projector settings data")?;
 
         // SETTINGS_SIZE for D7 is actually only 8
@@ -378,7 +378,7 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
 fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> {
     input.seek(SeekFrom::Start(0x3c))?;
     let exe_header_offset = input.read_u16::<LittleEndian>()?;
-    input.seek(SeekFrom::Start(u64::from(exe_header_offset)))?;
+    input.seek(SeekFrom::Start(exe_header_offset.into()))?;
 
     let signature = {
         let mut signature = [ 0; 4 ];
@@ -400,7 +400,7 @@ fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> 
         if non_resident_table_size == 0 {
             Ok((Platform::Win(WinVersion::Win3), None))
         } else {
-            input.seek(SeekFrom::Start(u64::from(non_resident_table_offset)))?;
+            input.seek(SeekFrom::Start(non_resident_table_offset.into()))?;
             Ok((Platform::Win(WinVersion::Win3), Some(input.read_pascal_str(WIN_ROMAN)?)))
         }
     } else {
@@ -412,7 +412,7 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
     let (rsrc_offset, rsrc_size) = match version {
         Version::D3 => unreachable!("D3 does not include a system resource file"),
         Version::D4 => {
-            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + 8)))
+            input.seek(SeekFrom::Start((offset + HEADER_SIZE + 8).into()))
                 .context("Can’t seek to PROJECTR.RSR offset")?;
             let rsrc_offset = input.read_u32::<LittleEndian>()
                 .context("Can’t read PROJECTR.RSR offset")?;
@@ -425,12 +425,12 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
             const DRIVERS_HEADER_SIZE: u32 = 12;
             let driver_entry_size = if version == Version::D5 { 0x204 } else { 0x208 };
 
-            input.seek(SeekFrom::Start(u64::from(offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + driver_entry_size * 2)))
+            input.seek(SeekFrom::Start((offset + HEADER_SIZE + SETTINGS_SIZE + DRIVERS_HEADER_SIZE + driver_entry_size * 2).into()))
                 .context("Can’t seek to PROJECTR.RSR offset")?;
             let rsrc_offset = input.read_u32::<LittleEndian>()
                 .context("Can’t read PROJECTOR.RSR offset")?;
             let size = if version == Version::D5 {
-                input.skip(u64::from(driver_entry_size - 4))
+                input.skip((driver_entry_size - 4).into())
                     .context("Can’t skip to fourth system file offset")?;
                 let next_offset = input.read_u32::<LittleEndian>()
                     .context("Can’t read fourth system file offset")?;
@@ -456,18 +456,18 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
         },
     };
 
-    let mut system_resources = Vec::with_capacity(rsrc_size as usize);
-    input.seek(SeekFrom::Start(u64::from(rsrc_offset)))
+    let mut system_resources = Vec::with_capacity(rsrc_size.try_into().unwrap());
+    input.seek(SeekFrom::Start(rsrc_offset.into()))
         .context("Can’t seek to PROJECTR.RSR")?;
-    let actual = input.take(u64::from(rsrc_size)).read_to_end(&mut system_resources)
+    let actual = input.take(rsrc_size.into()).read_to_end(&mut system_resources)
         .context("Can’t read PROJECTR.RSR")?;
-    ensure!(actual == rsrc_size as usize, "Expected {} bytes, read {} bytes", rsrc_size, actual);
+    ensure!(actual == rsrc_size.try_into().unwrap(), "Expected {} bytes, read {} bytes", rsrc_size, actual);
 
     Ok(Some(system_resources))
 }
 
 fn internal_movie(reader: &mut impl Reader, offset: u32) -> AResult<Movie> {
-    reader.seek(SeekFrom::Start(u64::from(offset)))
+    reader.seek(SeekFrom::Start(offset.into()))
         .with_context(|| format!("Bad RIFF offset {}", offset))?;
 
     detect_riff(reader)
@@ -477,7 +477,7 @@ fn internal_movie(reader: &mut impl Reader, offset: u32) -> AResult<Movie> {
 }
 
 mod pe {
-    use std::io;
+    use std::{convert::TryInto, io};
     use super::{
         AResult,
         ByteOrder,
@@ -528,7 +528,7 @@ mod pe {
 
         let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
         if key_padding_size != 0 {
-            input.skip(key_padding_size as u64)?;
+            input.skip(key_padding_size.try_into().unwrap())?;
         }
 
         let is_string_table = key == "StringFileInfo" || (key.len() == 8 && &key[4..8] == "04b0");
@@ -536,7 +536,7 @@ mod pe {
         match key.as_ref() {
             "ProductName" => Ok(Some(input.read_utf16_c_str::<LittleEndian>()?)),
             "VS_VERSION_INFO" => {
-                input.skip(u64::from(value_size + value_padding))?;
+                input.skip((value_size + value_padding).into())?;
                 read_version_struct(input)
             },
             _ if is_string_table => {
@@ -559,7 +559,7 @@ mod pe {
         input.skip(12)?;
         let skip_entries = input.read_u16::<LittleEndian>()?;
         let num_entries = input.read_u16::<LittleEndian>()?;
-        input.skip(u64::from(ENTRY_SIZE as u16 * skip_entries))?;
+        input.skip((ENTRY_SIZE * usize::from(skip_entries)).try_into().unwrap())?;
         for _ in 0..num_entries {
             let mut entry = [ 0; ENTRY_SIZE ];
             input.read_exact(&mut entry)?;
@@ -567,7 +567,7 @@ mod pe {
             if found_id == id {
                 const HAS_CHILDREN_FLAG: u32 = 0x8000_0000;
                 let offset = LittleEndian::read_u32(&entry[4..]) & !HAS_CHILDREN_FLAG;
-                input.seek(SeekFrom::Start(u64::from(from_offset + offset)))?;
+                input.seek(SeekFrom::Start((from_offset + offset).into()))?;
                 return Ok(());
             }
         }
@@ -588,7 +588,7 @@ mod pe {
         let optional_header_size = input.read_u16::<LittleEndian>()?;
         input.skip(2 + u64::from(optional_header_size))?;
         let (virtual_address, offset) = find_resource_segment_offset(input, num_sections).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
-        input.seek(SeekFrom::Start(u64::from(offset)))?;
+        input.seek(SeekFrom::Start(offset.into()))?;
         Ok((virtual_address, offset))
     }
 }

@@ -12,7 +12,7 @@ use num_traits::FromPrimitive;
 use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, UnkPtr, resource::Input};
 use libmactoolbox::{quickdraw::Pen, Point, Rect, TEHandle};
 use smart_default::SmartDefault;
-use std::{io::{Cursor, Read}, iter::Rev};
+use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, iter::Rev};
 
 macro_rules! load_enum {
     ($name: expr, $kind: expr, $input: expr) => (
@@ -189,7 +189,7 @@ impl SpriteBitmask {
 
     fn all() -> Self {
         let mut bits = [ 0xFF; Self::SIZE ];
-        bits[Self::SIZE - 1] &= ((1_u16 << (Self::NUM_CHANNELS % 8)) - 1) as u8;
+        bits[Self::SIZE - 1] &= u8::try_from((1_u16 << (Self::NUM_CHANNELS % 8)) - 1).unwrap();
         SpriteBitmask(bits)
     }
 
@@ -268,7 +268,7 @@ impl std::ops::BitOrAssign for SpriteBitmask {
         for i in 0..Self::SIZE - 1 {
             self.0[i] |= rhs.0[i];
         }
-        self.0[Self::SIZE - 1] |= rhs.0[Self::SIZE - 1] & ((1_u16 << (Self::NUM_CHANNELS % 8)) - 1) as u8;
+        self.0[Self::SIZE - 1] |= rhs.0[Self::SIZE - 1] & u8::try_from((1_u16 << (Self::NUM_CHANNELS % 8)) - 1).unwrap();
     }
 }
 
@@ -403,7 +403,7 @@ impl Resource for Transition {
 
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut data = [ 0; 4 ];
-        input.take(u64::from(size)).read_exact(&mut data).context("Can’t read score frame transition")?;
+        input.take(size.into()).read_exact(&mut data).context("Can’t read score frame transition")?;
         Ok(if context.0 < Version::V6 {
             if data[3] == 0 {
                 Self::None
@@ -425,15 +425,15 @@ impl Resource for Transition {
 
 #[derive(Clone, Debug, SmartDefault)]
 pub struct Score {
-    #[default(Self::V5_HEADER_SIZE)]
+    #[default(Self::V5_HEADER_SIZE.into())]
     current_frame_vwsc_position: u32,
     next_frame_vwsc_position: u32,
     #[default(Input::new(<_>::default(), Endianness::Big))]
     vwsc: Input<Cursor<Vec<u8>>>,
     score_header: Vec<u8>,
-    #[default(Self::V5_HEADER_SIZE)]
+    #[default(Self::V5_HEADER_SIZE.into())]
     vwsc_frame_data_maybe_start_pos: u32,
-    #[default(Self::V5_HEADER_SIZE)]
+    #[default(Self::V5_HEADER_SIZE.into())]
     vwsc_frame_data_maybe_end_pos: u32,
     next_frame: SpriteFrame,
     current_frame: SpriteFrame,
@@ -506,7 +506,7 @@ impl Iterator for Score {
     type Item = AResult<Frame>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.vwsc.pos().unwrap() == u64::from(self.vwsc_own_size) {
+        if self.vwsc.pos().unwrap() == self.vwsc_own_size.into() {
             None
         } else {
             // TODO: If this call fails, it will not be possible to correctly
@@ -523,8 +523,8 @@ impl Iterator for Score {
 }
 
 impl Score {
-    const V4_HEADER_SIZE: u32 = 20;
-    const V5_HEADER_SIZE: u32 = 20;
+    const V4_HEADER_SIZE: u8 = 20;
+    const V5_HEADER_SIZE: u8 = 20;
 
     fn unpack_frame(input: &mut Input<impl Reader>, last_frame: &Frame, channels_to_keep: SpriteBitmask, version: Version) -> AResult<Frame> {
         let mut bytes_to_read = input.read_i16().context("Can’t read compressed score frame size")?;
@@ -544,8 +544,8 @@ impl Score {
                 break;
             }
             ensure_sample!(chunk_size & 1 == 0, "Chunk size {} is not a multiple of two", chunk_size);
-            let chunk_offset = input.read_i16().context("Can’t read compressed score frame chunk offset")? as usize;
-            input.read_exact(&mut new_data[chunk_offset..chunk_offset + chunk_size as usize]).context("Can’t read frame chunk data")?;
+            let chunk_offset = usize::try_from(input.read_i16().context("Can’t read compressed score frame chunk offset")?).unwrap();
+            input.read_exact(&mut new_data[chunk_offset..chunk_offset + usize::try_from(chunk_size).unwrap()]).context("Can’t read frame chunk data")?;
             bytes_to_read -= chunk_size + 4;
         }
 
@@ -592,8 +592,8 @@ impl Resource for Score {
     type Context = (crate::resources::config::Version, );
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut data = Vec::with_capacity(size as usize);
-        input.take(u64::from(size))
+        let mut data = Vec::with_capacity(size.try_into().unwrap());
+        input.take(size.into())
             .read_to_end(&mut data)
             .context("Can’t read score data into memory")?;
 
@@ -624,13 +624,13 @@ impl Resource for Score {
             };
 
             let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
-            ensure_sample!(sprite_size == expect_sprite_size as i16, "Invalid sprite size {} for V5 score", sprite_size);
+            ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
             // Technically this is the number of `sizeof(Sprite)`s to make one
             // `sizeof(Frame)`; the header of the frame is exactly two
             // `sizeof(Sprite)`s, even though it does not actually contain sprite
             // data
             let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
-            ensure_sample!(num_sprites == expect_num_sprites as i16, "Invalid sprite count {} for V5 score", num_sprites);
+            ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
             let field_12 = input.read_u8().context("Can’t read score field_12")?;
             ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
             let field_13 = input.read_u8().context("Can’t read score field_13")?;
@@ -701,7 +701,7 @@ impl Palette {
         let cycle_start_color = load_value!("palette cycle start color", input.read_i8())?;
         let cycle_end_color = load_value!("palette cycle end color", input.read_i8())?;
         let flags = load_flags!("palette flags", PaletteFlags, input.read_u8())?;
-        let rate = FPS(i16::from(load_value!("palette rate", input.read_i8())?));
+        let rate = FPS(load_value!("palette rate", input.read_i8())?.into());
         let num_frames = load_value!("palette num frames", input.read_i16())?;
         let num_cycles = load_value!("palette cycles", input.read_i16())?;
         let field_c = Unk8(load_value!("palette field_c", input.read_u8())?);
@@ -710,7 +710,7 @@ impl Palette {
         input.skip(5).context("Can’t skip unused palette fields")?;
         let field_f = Unk8(load_value!("palette field_f", input.read_u8())?);
         if size > 19 {
-            input.skip(u64::from(size - 19)).context("Can’t skip end of frame palette")?;
+            input.skip((size - 19).into()).context("Can’t skip end of frame palette")?;
         }
         Ok(Self {
             id,
@@ -729,7 +729,7 @@ impl Palette {
 
     fn load_v5(input: &mut Input<impl Reader>, size: u32) -> AResult<Self> {
         let id = load_resource!("palette transition ID", MemberId, input)?;
-        let rate = FPS(i16::from(load_value!("palette rate", input.read_i8())?));
+        let rate = FPS(load_value!("palette rate", input.read_i8())?.into());
         let flags = load_flags!("palette flags", PaletteFlags, input.read_u8())?;
         let cycle_start_color = load_value!("palette cycle start color", input.read_i8())?;
         let cycle_end_color = load_value!("palette cycle end color", input.read_i8())?;
@@ -740,7 +740,7 @@ impl Palette {
         let field_e = Unk8(load_value!("palette field_e", input.read_u8())?);
         let field_f = Unk8(load_value!("palette field_f", input.read_u8())?);
         if size > 16 {
-            input.skip(u64::from(size - 16)).context("Can’t skip end of frame palette")?;
+            input.skip((size - 16).into()).context("Can’t skip end of frame palette")?;
         }
         Ok(Self {
             id,
@@ -824,12 +824,12 @@ pub struct Frame {
 }
 
 impl Frame {
-    const V4_CELL_COUNT: u32 = 48;
-    const V0_SIZE_IN_CELLS: u32 = 50;
-    const V0_SIZE: u32 = Sprite::V0_SIZE * Self::V0_SIZE_IN_CELLS;
-    const V5_CELL_COUNT: u32 = 48;
-    const V5_SIZE_IN_CELLS: u32 = 50;
-    const V5_SIZE: u32 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
+    const V4_CELL_COUNT: u16 = 48;
+    const V0_SIZE_IN_CELLS: u16 = 50;
+    const V0_SIZE: u16 = Sprite::V0_SIZE * Self::V0_SIZE_IN_CELLS;
+    const V5_CELL_COUNT: u16 = 48;
+    const V5_SIZE_IN_CELLS: u16 = 50;
+    const V5_SIZE: u16 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
 
     fn new(data: Vec<u8>, version: Version) -> AResult<Self> {
         let input = Input::new(Cursor::new(data), Endianness::Big);
@@ -859,8 +859,8 @@ impl Frame {
         let palette = load_resource!("frame palette", Palette, &mut input, Palette::V0_SIZE, (version, ))?;
 
         let mut sprites = [ Sprite::default(); NUM_SPRITES ];
-        for (i, sprite) in sprites.iter_mut().enumerate().take(Self::V4_CELL_COUNT as usize) {
-            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V0_SIZE, (version, ))?;
+        for (i, sprite) in sprites.iter_mut().enumerate().take(Self::V4_CELL_COUNT.into()) {
+            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V0_SIZE.into(), (version, ))?;
         }
 
         Ok(Frame {
@@ -894,14 +894,14 @@ impl Frame {
             input.skip(1).context("Can’t skip frame tempo")?;
             v0_tempo
         } else {
-            Tempo::new(i16::from(load_value!("frame tempo", input.read_i8())?))?
+            Tempo::new(load_value!("frame tempo", input.read_i8())?.into())?
         };
         input.skip(2).context("Can’t skip after frame tempo")?;
         let palette = load_resource!("frame palette", Palette, &mut input, (version, ))?;
 
         let mut sprites = [ Sprite::default(); NUM_SPRITES ];
         for (i, sprite) in sprites.iter_mut().enumerate().take(Self::V5_CELL_COUNT as usize) {
-            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V5_SIZE, (version, ))?;
+            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V5_SIZE.into(), (version, ))?;
         }
 
         Ok(Frame {
@@ -925,7 +925,7 @@ impl Frame {
         let mut data = [ 0; 4 ];
         input.read_exact(&mut data).context("Can’t read frame transition data")?;
         let transition = load_resource!("frame transition", Transition, &mut Input::new(Cursor::new(&data), Endianness::Big), (version, ))?;
-        Ok((transition, Tempo::new(i16::from(if version < Version::V7 { data[3] } else { 0 }))?))
+        Ok((transition, Tempo::new(if version < Version::V7 { data[3].into() } else { 0 })?))
     }
 }
 
@@ -1013,8 +1013,8 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    const V0_SIZE: u32 = 20;
-    const V5_SIZE: u32 = 24;
+    const V0_SIZE: u16 = 20;
+    const V5_SIZE: u16 = 24;
 
     #[must_use]
     pub fn back_color_index(&self) -> u8 {

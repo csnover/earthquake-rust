@@ -20,13 +20,7 @@ use libcommon::{
     SharedStream,
 };
 use libmactoolbox::{OSType, OSTypeReadExt, ResourceId, ResourceSource};
-use std::{
-    any::Any,
-    cell::RefCell,
-    collections::HashMap,
-    io::{Seek, SeekFrom},
-    rc::{Rc, Weak},
-};
+use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, io::{Seek, SeekFrom}, rc::{Rc, Weak}};
 
 #[derive(Clone, Copy, Constructor, Debug, Display, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ChunkIndex(i32);
@@ -87,7 +81,7 @@ impl<T: Reader> Riff<T> {
         let kind = kind.into();
         for (index, item) in self.memory_map.iter().enumerate() {
             if item.os_type == kind {
-                return ChunkIndex::new(index as i32);
+                return ChunkIndex::new(index.try_into().unwrap());
             }
         }
         ChunkIndex::new(-1)
@@ -116,7 +110,7 @@ impl<T: Reader> Riff<T> {
         }
 
         let mut input = self.input.borrow_mut();
-        input.seek(SeekFrom::Start(u64::from(entry.offset) + Self::CHUNK_HEADER_SIZE))
+        input.seek(SeekFrom::Start((entry.offset + Self::CHUNK_HEADER_SIZE).into()))
             .with_context(|| format!("Can’t seek to {} for RIFF index {}", entry.offset, index))?;
 
         let mut entry_size = entry.size;
@@ -129,7 +123,7 @@ impl<T: Reader> Riff<T> {
                 name_size += 1;
             }
             entry_size -= u32::from(name_size) + 5;
-            input.skip(u64::from(name_size)).with_context(|| format!("Can’t skip resource name in index {}", index))?;
+            input.skip(name_size.into()).with_context(|| format!("Can’t skip resource name in index {}", index))?;
         }
 
         R::load(&mut input, entry_size, context)
@@ -146,7 +140,7 @@ impl<T: Reader> Riff<T> {
             .with_context(|| format!("Invalid RIFF index {}", index))?;
 
         let mut input = self.input.borrow_mut().inner_mut().clone();
-        input.seek(SeekFrom::Start(u64::from(entry.offset)))
+        input.seek(SeekFrom::Start(entry.offset.into()))
             .with_context(|| format!("Invalid RIFF offset {} for index {}", entry.offset, index))?;
         Self::with_identity(Identity::Child(index), input)
     }
@@ -188,13 +182,13 @@ impl<T: Reader> Riff<T> {
         self.info.version()
     }
 
-    const CHUNK_HEADER_SIZE: u64 = 8;
-    const KEYS_HEADER_SIZE: u64 = 12;
-    const MMAP_HEADER_SIZE: u64 = 24;
-    const MMAP_ENTRY_SIZE: u64 = 20;
+    const CHUNK_HEADER_SIZE: u32 = 8;
+    const KEYS_HEADER_SIZE: u32 = 12;
+    const MMAP_HEADER_SIZE: u32 = 24;
+    const MMAP_ENTRY_SIZE: u32 = 20;
     // n.b. Number of entries is limited to 3275 so the mmap always fits
     // in a 64k page (`(0xffff - header_size) / entry_size`)
-    const MMAP_MAX_ENTRIES: usize = ((0xFFFF - Self::MMAP_HEADER_SIZE) / Self::MMAP_ENTRY_SIZE) as usize;
+    const MMAP_MAX_ENTRIES: u32 = ((0xFFFF - Self::MMAP_HEADER_SIZE) / Self::MMAP_ENTRY_SIZE);
 
     fn init<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<(MemoryMap, ResourceMap)> {
         let os_type = input.read_os_type::<OE>()?;
@@ -220,7 +214,7 @@ impl<T: Reader> Riff<T> {
         bytes_to_read -= 4;
 
         let (mut memory_map_items, mut resource_map) = {
-            let num_entries = (bytes_to_read / ENTRY_SIZE - 1) as usize;
+            let num_entries = usize::try_from(bytes_to_read / ENTRY_SIZE - 1).unwrap();
             (Vec::with_capacity(num_entries), HashMap::with_capacity(num_entries))
         };
 
@@ -230,10 +224,10 @@ impl<T: Reader> Riff<T> {
                 break;
             }
             let size = input.read_u32::<DE>()?;
-            let id = input.read_i32::<DE>()? as i16;
+            let id = i16::try_from(input.read_i32::<DE>()?).unwrap();
             let offset = input.read_u32::<DE>()?;
 
-            let mmap_index = ChunkIndex(memory_map_items.len() as i32);
+            let mmap_index = ChunkIndex(memory_map_items.len().try_into().unwrap());
             memory_map_items.push(MemoryMapItem {
                 os_type,
                 size,
@@ -263,7 +257,7 @@ impl<T: Reader> Riff<T> {
         let map_offset = input.read_u32::<DE>()?;
         // imap contains the reference to the active mmap chunk for the file
         // along with some other unknown data which we can ignore for now
-        input.seek(SeekFrom::Start(u64::from(map_offset)))
+        input.seek(SeekFrom::Start(map_offset.into()))
             .context("Can’t seek to mmap")?;
 
         let os_type = input.read_os_type::<OE>()?;
@@ -278,14 +272,14 @@ impl<T: Reader> Riff<T> {
         let entry_size = input.read_u16::<DE>()?;
         ensure_sample!(entry_size == 0x14, "Unexpected mmap entry size {}", entry_size);
         let _table_capacity = input.skip(4)?;
-        let num_entries = input.read_u32::<DE>()? as usize;
+        let num_entries = input.read_u32::<DE>()?;
         ensure_sample!(num_entries <= Self::MMAP_MAX_ENTRIES, "Invalid number of mmap entries {}", num_entries);
         let next_junk_index = ChunkIndex::new(input.read_i32::<DE>()?);
         let _garbage = input.skip(4)?;
         let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
-        input.skip(u64::from(header_size) - Self::MMAP_HEADER_SIZE)?;
+        input.skip((u32::from(header_size) - Self::MMAP_HEADER_SIZE).into())?;
 
-        let mut memory_map_items = Vec::with_capacity(num_entries);
+        let mut memory_map_items = Vec::with_capacity(num_entries.try_into().unwrap());
 
         let mut resource_map_offset = None;
         for index in 0..num_entries {
@@ -298,7 +292,7 @@ impl<T: Reader> Riff<T> {
             })?;
             let field_e = input.read_u16::<DE>()?;
             let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
-            input.skip(u64::from(entry_size) - Self::MMAP_ENTRY_SIZE)?;
+            input.skip((u32::from(entry_size) - Self::MMAP_ENTRY_SIZE).into())?;
             memory_map_items.push(MemoryMapItem {
                 os_type,
                 size,
@@ -324,7 +318,7 @@ impl<T: Reader> Riff<T> {
         // where it was not expected, but we just always look since there is no
         // reason to have a separate code path for container RIFFs
         let resource_map = if let Some(offset) = resource_map_offset {
-            input.seek(SeekFrom::Start(u64::from(offset)))
+            input.seek(SeekFrom::Start(offset.into()))
                 .context("Can’t seek to KEY*")?;
             Self::read_keys::<R, OE, DE>(input)?
         } else {
@@ -348,13 +342,13 @@ impl<T: Reader> Riff<T> {
         let _item_size = input.skip(2)?;
         let _capacity = input.skip(4)?;
         let num_entries = input.read_u32::<DE>()?;
-        input.skip(u64::from(header_size) - Self::KEYS_HEADER_SIZE)?;
+        input.skip((u32::from(header_size) - Self::KEYS_HEADER_SIZE).into())?;
 
-        let mut resource_map = HashMap::with_capacity(num_entries as usize);
+        let mut resource_map = HashMap::with_capacity(num_entries.try_into().unwrap());
 
         for _ in 0..num_entries {
             let riff_index = ChunkIndex::new(input.read_i32::<DE>()?);
-            let id = input.read_i32::<DE>()? as i16;
+            let id = i16::try_from(input.read_i32::<DE>()?).unwrap();
             let os_type = input.read_os_type::<DE>()?;
 
             if resource_map.insert(ResourceId::new(os_type, id), riff_index).is_some() {
@@ -445,24 +439,24 @@ struct MemoryMap {
 
 impl MemoryMap {
     fn get(&self, index: ChunkIndex) -> Option<&MemoryMapItem> {
-        self.items.get(index.0 as usize)
+        self.items.get(usize::try_from(index.0).unwrap())
     }
 
     fn get_mut(&mut self, index: ChunkIndex) -> Option<&mut MemoryMapItem> {
-        self.items.get_mut(index.0 as usize)
+        self.items.get_mut(usize::try_from(index.0).unwrap())
     }
 }
 
 impl ::core::ops::Index<ChunkIndex> for MemoryMap {
     type Output = MemoryMapItem;
     fn index(&self, index: ChunkIndex) -> &Self::Output {
-        &self.items[index.0 as usize]
+        &self.items[usize::try_from(index.0).unwrap()]
     }
 }
 
 impl ::core::ops::IndexMut<ChunkIndex> for MemoryMap {
     fn index_mut(&mut self, index: ChunkIndex) -> &mut Self::Output {
-        &mut self.items[index.0 as usize]
+        &mut self.items[usize::try_from(index.0).unwrap()]
     }
 }
 

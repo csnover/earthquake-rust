@@ -30,7 +30,7 @@ impl<T: Reader> MacBinary<T> {
             bail!("Bad magic byte 1");
         }
 
-        if OSType::from(BigEndian::read_u32(&header[102..])).as_bytes() == b"mBIN" {
+        if &header[102..106] == b"mBIN" {
             return Ok(Self::build(data, &header, Version::V3));
         }
 
@@ -91,7 +91,7 @@ impl<T: Reader> MacBinary<T> {
         let aligned_header_size = HEADER_SIZE + if version == Version::V1 {
             0
         } else {
-            align_power_of_two(u32::from(BigEndian::read_u16(&header[120..])), BLOCK_SIZE)
+            align_power_of_two(BigEndian::read_u16(&header[120..]).into(), BLOCK_SIZE)
         };
 
         let data_fork_size = BigEndian::read_u32(&header[83..]);
@@ -108,21 +108,21 @@ impl<T: Reader> MacBinary<T> {
             decode_text(&mut Cursor::new(raw_name), script_code)
         };
 
-        let data_fork_start = u64::from(aligned_header_size);
-        let data_fork_end = data_fork_start + u64::from(data_fork_size);
-        let resource_fork_start = u64::from(aligned_header_size + align_power_of_two(data_fork_size, BLOCK_SIZE));
-        let resource_fork_end = resource_fork_start + u64::from(BigEndian::read_u32(&header[87..]));
+        let data_fork_start = aligned_header_size;
+        let data_fork_end = data_fork_start + data_fork_size;
+        let resource_fork_start = aligned_header_size + align_power_of_two(data_fork_size, BLOCK_SIZE);
+        let resource_fork_end = resource_fork_start + BigEndian::read_u32(&header[87..]);
 
         let input = SharedStream::from(data);
         let data_fork = if data_fork_start == data_fork_end {
             None
         } else {
-            Some(input.substream(data_fork_start, data_fork_end))
+            Some(input.substream(data_fork_start.into(), data_fork_end.into()))
         };
         let resource_fork = if resource_fork_start == resource_fork_end {
             None
         } else {
-            Some(input.substream(resource_fork_start, resource_fork_end))
+            Some(input.substream(resource_fork_start.into(), resource_fork_end.into()))
         };
 
         Self {

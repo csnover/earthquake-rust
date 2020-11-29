@@ -46,16 +46,16 @@ pub struct Meta {
     frame: Frame,
     alignment: Alignment,
     back_color: RGBColor,
-    scroll_top: u16,
+    scroll_top: i16,
     /// The viewport of the field, excluding decorations.
     bounds: Rect,
     /// The height of the field, excluding decorations.
-    height: u16,
+    height: i16,
     text_shadow_size: u8,
     flags: Flags,
     /// The total height of content, which may be larger than the viewport
     /// if the field is scrollable.
-    scroll_height: u16,
+    scroll_height: i16,
     button_kind: ButtonKind,
 }
 
@@ -75,16 +75,16 @@ impl Resource for Meta {
             Alignment::from_i16(value).with_context(|| format!("Invalid value {} for field alignment", value))?
         };
         let back_color = RGBColor::load(input, RGBColor::SIZE, &()).context("Can’t read background color")?;
-        let scroll_top = input.read_u16().context("Can’t read scroll top")?;
+        let scroll_top = input.read_i16().context("Can’t read scroll top")?;
         let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read bounds")?;
-        let height = input.read_u16().context("Can’t read height")?;
-        ensure_sample!(height == bounds.height() as u16, "Height {} does not match bounds height {}", height, bounds.height());
+        let height = input.read_i16().context("Can’t read height")?;
+        ensure_sample!(height == bounds.height(), "Height {} does not match bounds height {}", height, bounds.height());
         let text_shadow_size = input.read_u8().context("Can’t read text shadow size")?;
         let flags = {
             let value = input.read_u8().context("Can’t read field flags")?;
             Flags::from_bits(value).with_context(|| format!("Invalid field flags (0x{:x})", value))?
         };
-        let scroll_height = input.read_u16().context("Can’t read scroll height")?;
+        let scroll_height = input.read_i16().context("Can’t read scroll height")?;
         let button_kind = if size == 0x1e {
             let value = input.read_u16().context("Can’t read button kind")?;
             ButtonKind::from_u16(value).with_context(|| format!("Invalid button kind {}", value))?

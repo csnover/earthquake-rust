@@ -6,7 +6,7 @@ use byteordered::{ByteOrdered, Endianness};
 use crate::{ApplicationVise, OSType, ResourceId};
 use derive_more::Display;
 use libcommon::{encodings::MAC_ROMAN, Reader, string::ReadExt};
-use std::{any::Any, cell::RefCell, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
+use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
 pub struct RefNum(pub i16);
@@ -36,7 +36,7 @@ impl<T: Reader> ResourceFile<T> {
         let map_size = input.read_u32().context("Can’t read map size")?;
         ensure!(map_size >= 30, "Bad resource map size {}", map_size);
 
-        input.seek(SeekFrom::Start(u64::from(map_offset)))
+        input.seek(SeekFrom::Start(map_offset.into()))
             .map_err(|_| anyhow!("Bad resource map offset {}", map_offset))?;
 
         let resource_map = ResourceMap::read(&mut input)
@@ -62,8 +62,8 @@ impl<T: Reader> ResourceFile<T> {
                     return false;
                 }
 
-                let start = res.name_offset as usize;
-                let end = start + self.resource_map.names[start] as usize;
+                let start = usize::try_from(res.name_offset).unwrap();
+                let end = start + usize::from(self.resource_map.names[start]);
                 *name.as_ref() == self.resource_map.names[start + 1..=end]
             }))
             .map(|res| ResourceId::new(os_type, res.id))
@@ -72,7 +72,7 @@ impl<T: Reader> ResourceFile<T> {
     pub fn id_of_index(&self, os_type: impl Into<OSType>, index: i16) -> Option<ResourceId> {
         let os_type = os_type.into();
         self.find_kind(os_type)
-            .and_then(|kind| kind.resources.get(index as usize))
+            .and_then(|kind| kind.resources.get(usize::try_from(index).unwrap()))
             .map(|res| ResourceId::new(os_type, res.id))
     }
 
@@ -162,7 +162,7 @@ impl <T: Reader> ResourceSource for ResourceFile<T> {
         }
 
         let mut input = self.input.try_borrow_mut()?;
-        input.seek(SeekFrom::Start(u64::from(entry.data_offset)))
+        input.seek(SeekFrom::Start(entry.data_offset.into()))
             .with_context(|| format!("Can’t seek to resource {}", id))?;
 
         let size = input.read_u32()
@@ -171,19 +171,19 @@ impl <T: Reader> ResourceSource for ResourceFile<T> {
         let is_vise_compressed = {
             let mut sig = [ 0; 4 ];
             input.read_exact(&mut sig).ok();
-            input.seek(SeekFrom::Start(u64::from(entry.data_offset) + 4))
+            input.seek(SeekFrom::Start((entry.data_offset + 4).into()))
                 .with_context(|| format!("Can’t seek to resource {}", id))?;
             ApplicationVise::is_compressed(&sig)
         };
 
         if is_vise_compressed {
             let data = {
-                let mut compressed_data = Vec::with_capacity(size as usize);
-                input.as_mut().take(u64::from(size)).read_to_end(&mut compressed_data)?;
+                let mut compressed_data = Vec::with_capacity(size.try_into().unwrap());
+                input.as_mut().take(size.into()).read_to_end(&mut compressed_data)?;
                 self.decompress(&compressed_data)
                     .with_context(|| format!("Can’t decompress resource {}", id))?
             };
-            let decompressed_size = data.len() as u32;
+            let decompressed_size = u32::try_from(data.len()).unwrap();
             R::load(&mut ByteOrdered::new(Cursor::new(data), Endianness::Big), decompressed_size, context)
         } else {
             R::load(&mut input.as_mut(), size, context)
@@ -230,7 +230,7 @@ impl BinRead for ResourceFlags {
 
     fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
         use binread::BinReaderExt;
-        let pos = reader.seek(SeekFrom::Current(0))? as usize;
+        let pos = usize::try_from(reader.seek(SeekFrom::Current(0))?).unwrap();
         let value = reader.read_ne::<u8>()?;
         Self::from_bits(value).ok_or_else(|| binread::Error::Custom {
             pos,
@@ -256,24 +256,24 @@ struct ResourceMap {
     #[br(pad_before(2), calc = RefNum(REF_NUM.fetch_add(1, Ordering::Relaxed)))]
     ref_num: RefNum,
     _attributes: i16,
-    type_list_offset: i16,
-    name_list_offset: i16,
+    type_list_offset: u16,
+    name_list_offset: u16,
     #[br(assert(count < 2727, anyhow!("Bad resource kind count")), map = |count: i16| count + 1)]
     count: i16,
-    #[br(args(data_offset, map_offset), count(count), offset(type_list_offset as u64 - 28))]
+    #[br(args(data_offset, map_offset), count(count), offset(u64::from(type_list_offset) - 28))]
     kinds: Vec<ResourceKind>,
-    #[br(count(map_size - name_list_offset as u32), seek_before(SeekFrom::Start(u64::from(map_offset) + name_list_offset as u64)))]
+    #[br(count(map_size - u32::from(name_list_offset)), seek_before(SeekFrom::Start((map_offset + u32::from(name_list_offset)).into())))]
     names: Vec<u8>,
 }
 
 #[derive(BinRead, Debug)]
 #[br(big, import(data_offset: u32, map_offset: u32))]
 struct ResourceKind {
-    #[br(map = |b: u32| OSType::from(b))]
+    #[br(map = |b: u32| b.into())]
     kind: OSType,
     #[br(assert(count < 2727, anyhow!("Bad resource count")), map = |count: i16| count + 1)]
     count: i16,
-    #[br(args(data_offset), count(count), offset(u64::from(map_offset) + 28), parse_with = binread::FilePtr16::parse)]
+    #[br(args(data_offset), count(count), offset((map_offset + 28).into()), parse_with = binread::FilePtr16::parse)]
     resources: Vec<ResourceItem>,
 }
 

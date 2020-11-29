@@ -11,18 +11,18 @@ pub mod transition;
 pub mod video;
 pub mod xtra;
 
-use anyhow::{Context, Result as AResult};
+use anyhow::{Context, Result as AResult, ensure};
 use byteordered::{Endianness, ByteOrdered};
 use crate::ensure_sample;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use libcommon::{encodings::DecoderRef, Reader, Resource, resource::Input};
-use std::{cell::RefCell, io::{Cursor, Read, Seek, SeekFrom}};
+use std::{cell::RefCell, convert::TryInto, io::{Cursor, Read, Seek, SeekFrom}};
 
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
 pub struct ByteVec(Vec<u8>);
 
 impl ByteVec {
-    pub const HEADER_SIZE: usize = 0x12;
+    pub const HEADER_SIZE: u32 = 0x12;
 }
 
 impl Resource for ByteVec {
@@ -32,21 +32,21 @@ impl Resource for ByteVec {
         let used = input.read_u32()?;
         let capacity = input.read_u32()?;
         let header_size = input.read_u16()?;
-        let mut data = Vec::with_capacity(capacity as usize);
+        let mut data = Vec::with_capacity(capacity.try_into().unwrap());
         ensure_sample!(
             used <= size,
             "Bad ByteVec size at {} ({} > {})",
-            input.pos()? - Self::HEADER_SIZE as u64,
+            input.pos()? - u64::from(Self::HEADER_SIZE),
             used,
             size
         );
         ensure_sample!(
-            header_size == Self::HEADER_SIZE as u16,
+            header_size == Self::HEADER_SIZE.try_into().unwrap(),
             "Generic ByteVec loader called on specialised ByteVec with header size {} at {}",
             header_size,
-            input.pos()? - Self::HEADER_SIZE as u64
+            input.pos()? - u64::from(Self::HEADER_SIZE)
         );
-        input.inner_mut().take(u64::from(used) - u64::from(header_size)).read_to_end(&mut data)?;
+        input.inner_mut().take((used - u32::from(header_size)).into()).read_to_end(&mut data)?;
 
         Ok(Self(data))
     }
@@ -61,13 +61,13 @@ impl <T: Resource> Resource for List<T> {
         Rc::load(input, Rc::SIZE, &Default::default())?;
         let used = input.read_u32()?;
         let capacity = input.read_u32()?;
-        let header_size = input.read_u16()?;
-        let item_size = input.read_u16()?;
-        ensure_sample!(u32::from(header_size) + u32::from(item_size) * used <= size, "Bad List size at {}", input.pos()? - 0x14);
-        input.skip(u64::from(header_size) - 0x14)?;
-        let mut data = Vec::with_capacity(capacity as usize);
+        let header_size = u32::from(input.read_u16()?);
+        let item_size = u32::from(input.read_u16()?);
+        ensure_sample!(header_size + item_size * used <= size, "Bad List size at {}", input.pos()? - 0x14);
+        input.skip((header_size - 0x14).into())?;
+        let mut data = Vec::with_capacity(capacity.try_into().unwrap());
         for _ in 0..used {
-            data.push(T::load(input, u32::from(item_size), context)?);
+            data.push(T::load(input, item_size, context)?);
         }
 
         Ok(Self(data))
@@ -85,7 +85,7 @@ impl Resource for Rc {
     type Context = ();
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
         assert_eq!(size, Self::SIZE);
-        input.skip(u64::from(Self::SIZE))?;
+        input.skip(Self::SIZE.into())?;
         Ok(Self)
     }
 }
@@ -115,14 +115,14 @@ impl PVec {
         if index < self.offsets.len() - 1 {
             let start = self.offset(index);
             let end = self.offset(index + 1);
-            self.load_offset(u64::from(start), u64::from(end), context)
+            self.load_offset(start.into(), end.into(), context)
         } else {
             None
         }
     }
 
     fn load_header<T: Resource>(&self, start: u64, end: u64, context: &T::Context) -> Option<T> {
-        if end <= u64::from(self.header_size()) {
+        if end <= self.header_size().into() {
             self.load_offset(start, end, context)
         } else {
             None
@@ -133,7 +133,7 @@ impl PVec {
         if start < end {
             let mut input = self.inner.borrow_mut();
             input.seek(SeekFrom::Start(start)).unwrap();
-            T::load(&mut input.as_mut(), end as u32 - start as u32, context).ok()
+            T::load(&mut input.as_mut(), (end - start).try_into().unwrap(), context).ok()
         } else {
             None
         }
@@ -148,13 +148,14 @@ impl Resource for PVec {
     type Context = (DecoderRef, );
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         const NUM_ENTRIES_SIZE: u32 = 2;
-        let mut data = Vec::with_capacity(size as usize);
-        input.take(u64::from(size)).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
+        let mut data = Vec::with_capacity(size.try_into().unwrap());
+        let actual = input.take(size.into()).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
+        ensure!(size == actual.try_into().unwrap(), "Expected {} bytes, read {} bytes", size, actual);
         let mut inner = ByteOrdered::new(Cursor::new(data), Endianness::Big);
         let header_size = inner.read_u32().context("Can’t read PVec header size")?;
-        inner.seek(SeekFrom::Start(u64::from(header_size))).context("Can’t seek past PVec header")?;
+        inner.seek(SeekFrom::Start(header_size.into())).context("Can’t seek past PVec header")?;
         let num_entries = inner.read_u16().context("Can’t read number of PVec entries")?;
-        let mut offsets = Vec::with_capacity(num_entries as usize);
+        let mut offsets = Vec::with_capacity(num_entries.try_into().unwrap());
         for i in 0..=num_entries {
             offsets.push(
                 header_size

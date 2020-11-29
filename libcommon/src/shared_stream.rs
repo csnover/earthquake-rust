@@ -1,6 +1,7 @@
 use crate::Reader;
 use std::{
     cell::RefCell,
+    convert::TryFrom,
     io::{Error, ErrorKind, Read, Result, Seek, SeekFrom},
     rc::Rc,
 };
@@ -96,12 +97,12 @@ impl<T> Read for SharedStream<T> where T: Reader {
             Err(err) => return Err(Error::new(ErrorKind::Other, err))
         };
         inner.seek(SeekFrom::Start(self.current_pos))?;
-        let n = if self.current_pos + buf.len() as u64 > self.end_pos {
-            inner.read(&mut buf[0..(self.end_pos - self.current_pos) as usize])?
+        let n = if self.current_pos + u64::try_from(buf.len()).unwrap() > self.end_pos {
+            inner.read(&mut buf[0..usize::try_from(self.end_pos - self.current_pos).unwrap()])?
         } else {
             inner.read(buf)?
         };
-        self.current_pos += n as u64;
+        self.current_pos += u64::try_from(n).unwrap();
         Ok(n)
     }
 }
@@ -109,7 +110,7 @@ impl<T> Read for SharedStream<T> where T: Reader {
 impl<T> Seek for SharedStream<T> where T: Reader {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         let (base_pos, offset) = match pos {
-            SeekFrom::Start(n) => (self.start_pos, n as i64),
+            SeekFrom::Start(n) => (self.start_pos, i64::try_from(n).unwrap()),
             SeekFrom::End(n) => (self.end_pos, n),
             SeekFrom::Current(n) => (self.current_pos, n),
         };
@@ -136,25 +137,25 @@ mod tests {
     #[test]
     fn test_substream() {
         use std::io::Cursor;
-        const IN_START: usize = 2;
-        const OUT_START: usize = 1;
-        const IN_SIZE: usize = 4;
+        const IN_START: u16 = 2;
+        const OUT_START: u16 = 1;
+        const IN_SIZE: u16 = 4;
         let mut data = Cursor::new(vec![ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ]);
-        let mut out = Vec::with_capacity(IN_SIZE);
-        let mut out2 = Vec::with_capacity(IN_SIZE);
+        let mut out = Vec::with_capacity(IN_SIZE.into());
+        let mut out2 = Vec::with_capacity(IN_SIZE.into());
 
-        data.seek(SeekFrom::Start(IN_SIZE as u64)).unwrap();
+        data.seek(SeekFrom::Start(IN_SIZE.into())).unwrap();
 
-        let mut stream = SharedStream::with_bounds(data, IN_START as u64, IN_START as u64 + IN_SIZE as u64);
-        stream.seek(SeekFrom::Start(OUT_START as u64)).unwrap();
-        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), OUT_START as u64);
+        let mut stream = SharedStream::with_bounds(data, IN_START.into(), (IN_START + IN_SIZE).into());
+        stream.seek(SeekFrom::Start(OUT_START.into())).unwrap();
+        assert_eq!(stream.seek(SeekFrom::Current(0)).unwrap(), OUT_START.into());
 
         let mut stream2 = stream.clone();
         let size = stream.read_to_end(&mut out).unwrap();
         let size2 = stream2.read_to_end(&mut out2).unwrap();
-        assert_eq!(size, IN_SIZE - OUT_START);
+        assert_eq!(size, (IN_SIZE - OUT_START).into());
         assert_eq!(size, size2);
-        assert_eq!(out[0..IN_SIZE - OUT_START], [ 3, 4, 5 ]);
+        assert_eq!(out[0..(IN_SIZE - OUT_START).into()], [ 3, 4, 5 ]);
         assert_eq!(out, out2);
     }
 }

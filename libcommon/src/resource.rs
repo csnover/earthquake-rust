@@ -1,7 +1,7 @@
 use anyhow::{Context, Result as AResult, ensure};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{encodings::DecoderRef, Reader, string::ReadExt};
-use std::io::Read;
+use std::{convert::TryInto, io::Read};
 
 pub type Input<T> = ByteOrdered<T, Endianness>;
 
@@ -41,9 +41,9 @@ impl Resource for u32 {
 impl Resource for Vec<u8> {
     type Context = ();
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut vec = Vec::with_capacity(size as usize);
-        let actual = input.take(u64::from(size)).read_to_end(&mut vec)?;
-        ensure!(actual == size as usize, "Expected {} bytes, read {} bytes", size, actual);
+        let mut vec = Vec::with_capacity(size.try_into().unwrap());
+        let actual = input.take(size.into()).read_to_end(&mut vec)?;
+        ensure!(actual == size.try_into().unwrap(), "Expected {} bytes, read {} bytes", size, actual);
         Ok(vec)
     }
 }
@@ -67,9 +67,9 @@ impl Resource for String {
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         match context.0 {
             StringKind::Sized => Ok({
-                let mut result = Vec::with_capacity(size as usize);
-                let actual = input.take(u64::from(size)).read_to_end(&mut result).context("Can’t read sized string")?;
-                ensure!(actual == size as usize, "Expected {} bytes, read {} bytes", size, actual);
+                let mut result = Vec::with_capacity(size.try_into().unwrap());
+                let actual = input.take(size.into()).read_to_end(&mut result).context("Can’t read sized string")?;
+                ensure!(actual == size.try_into().unwrap(), "Expected {} bytes, read {} bytes", size, actual);
                 context.1.decode(&result)
             }),
             StringKind::CStr => input.read_c_str(context.1).context("Invalid C string"),

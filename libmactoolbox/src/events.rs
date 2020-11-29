@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use crate::{OSType, Point};
 use libcommon::UnkPtr;
 use smart_default::SmartDefault;
-use std::{time::Instant, collections::VecDeque, rc::Weak, time::Duration};
+use std::{collections::VecDeque, convert::TryInto, rc::Weak, time::{Duration, Instant}};
 use qt_core::{MouseButton, KeyboardModifier};
 use qt_gui::{QCursor, QGuiApplication};
 
@@ -298,13 +298,13 @@ impl EventManager {
     fn mouse_pos(&self) -> Point {
         unsafe {
             let p = QCursor::pos_0a();
-            Point { x: p.x() as i16, y: p.y() as i16 }
+            Point { x: p.x().try_into().unwrap(), y: p.y().try_into().unwrap() }
         }
     }
 
     pub fn get_double_time(&self) -> Duration {
         Duration::from_millis(unsafe {
             QGuiApplication::style_hints().mouse_double_click_interval()
-        } as u64)
+        }.try_into().unwrap())
     }
 }

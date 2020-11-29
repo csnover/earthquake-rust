@@ -55,16 +55,16 @@ impl<T: Reader> AppleDouble<T> {
             match entry_id {
                 0 => bail!("Invalid ID 0 for entry {}", index),
                 1 => {
-                    data_fork = Some(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
+                    data_fork = Some(input.inner_mut().substream(offset.into(), (offset + length).into()));
                 },
                 2 => {
-                    resource_fork = Some(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
+                    resource_fork = Some(input.inner_mut().substream(offset.into(), (offset + length).into()));
                 },
                 3 => {
-                    name_input = Some(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
+                    name_input = Some(input.inner_mut().substream(offset.into(), (offset + length).into()));
                 },
                 9 => {
-                    let mut finder_info = ByteOrdered::be(input.inner_mut().substream(u64::from(offset), u64::from(offset + length)));
+                    let mut finder_info = ByteOrdered::be(input.inner_mut().substream(offset.into(), (offset + length).into()));
                     finder_info.skip(26).context("Can’t seek to filename script code")?;
                     name_script_code = finder_info.read_u8().context("Can’t read script code")?;
                 },

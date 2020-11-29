@@ -6,6 +6,7 @@ use libcommon::{Reader, Resource, resource::Input};
 use libmactoolbox::Rect;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use std::convert::TryInto;
 use super::cast::{MemberId, MemberNum};
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
@@ -296,7 +297,7 @@ impl Resource for Config {
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut input = input.as_mut().into_endianness(Endianness::Big);
         let own_size = input.read_i16().context("Can’t read movie config size")?;
-        ensure_sample!(own_size as u32 == size, "Recorded size is not true size ({} != {})", own_size, size);
+        ensure_sample!(size == own_size.try_into().unwrap(), "Recorded size is not true size ({} != {})", own_size, size);
         let version = {
             let value = input.read_i16().context("Can’t read movie config version")?;
             Version::from_i16(value).with_context(|| format!("Unknown config version {}", value))?

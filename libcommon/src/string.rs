@@ -1,10 +1,10 @@
 use byteorder::ByteOrder;
 use crate::encodings::Decoder;
-use std::io::{Error, ErrorKind, Read, Result as IoResult};
+use std::{convert::TryInto, io::{Error, ErrorKind, Read, Result as IoResult}};
 
 fn read_pascal_int<T: Read + ?Sized>(decoder: &dyn Decoder, reader: &mut T, size: usize) -> IoResult<String> {
     let mut result = Vec::with_capacity(size);
-    match reader.take(size as u64).read_to_end(&mut result) {
+    match reader.take(size.try_into().unwrap()).read_to_end(&mut result) {
         Ok(_) => Ok(decoder.decode(&result)),
         Err(e) => Err(Error::new(ErrorKind::InvalidData, e))
     }
@@ -23,7 +23,7 @@ pub trait ReadExt: Read {
             }
         }
 
-        Err(Error::from(ErrorKind::UnexpectedEof))
+        Err(ErrorKind::UnexpectedEof.into())
     }
 
     #[inline]

@@ -23,7 +23,7 @@ impl Resource for StringList {
     fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let count = input.read_u16()
             .context("Failed to read StringList count")?;
-        let mut strings = Vec::with_capacity(count as usize);
+        let mut strings = Vec::with_capacity(count.into());
         for index in 0..count {
             strings.push(
                 String::load(input, 0, &StringContext(StringKind::PascalStr, *context))

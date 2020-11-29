@@ -6,7 +6,7 @@ use derive_more::{Deref, DerefMut, Index, IndexMut};
 use libcommon::{Reader, Resource, resource::{Input, StringContext, StringKind}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::path::PathBuf;
+use std::{convert::TryFrom, path::PathBuf};
 use super::{List, cast::{MemberId, MemberNum}};
 
 pvec! {
@@ -77,7 +77,7 @@ impl <'owner> Iterator for CastListIter<'owner> {
         if self.index == self.count {
             None
         } else {
-            let base_index = (self.index * self.entries_per_cast) as usize;
+            let base_index = usize::try_from(self.index * self.entries_per_cast).unwrap();
             self.index += 1;
 
             let name = if self.entries_per_cast < 1 {

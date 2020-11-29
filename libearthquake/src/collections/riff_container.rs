@@ -13,7 +13,7 @@ encodings::DecoderRef, encodings::MAC_ROMAN, encodings::Decoder};
 use derive_more::{Deref, Index};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::{collections::HashMap, ffi::OsString, rc::Rc};
+use std::{collections::HashMap, convert::TryFrom, ffi::OsString, rc::Rc, convert::TryInto};
 use super::riff::{ChunkIndex, Riff};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, FromPrimitive)]
@@ -106,11 +106,11 @@ impl Resource for Dict {
         let mut dict = HashMap::new();
 
         for item in list.iter() {
-            let start = item.key_offset as usize - ByteVec::HEADER_SIZE;
+            let start = usize::try_from(item.key_offset - ByteVec::HEADER_SIZE).unwrap();
             let end = start + 4;
-            let size = BigEndian::read_u32(&keys[start..end]) as usize;
-            let key = OsString::from(context.decode(&keys[end..end + size]));
-            dict.insert(key, item.value as usize);
+            let size = BigEndian::read_u32(&keys[start..end]);
+            let key = OsString::from(context.decode(&keys[end..end + usize::try_from(size).unwrap()]));
+            dict.insert(key, item.value.try_into().unwrap());
         }
 
         Ok(Self { list, dict })

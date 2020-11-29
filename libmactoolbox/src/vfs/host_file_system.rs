@@ -34,13 +34,13 @@ impl HostFileSystem {
 
     fn try_apple_double(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
         AppleDouble::new(File::open(&path)?, open_apple_double(&path).ok())
-            .map(|f| {
-                (f.name().map(PathBuf::from),
+            .map(|f| (
+                f.name().map(PathBuf::from),
                 match kind {
                     ForkKind::Data => f.data_fork(),
                     ForkKind::Resource => f.resource_fork(),
-                }.cloned())
-            })
+                }.cloned()
+            ))
             .map_err(|e| anyhow!("Not an AppleSingle/AppleDouble file: {}", e))
     }
 
@@ -49,13 +49,13 @@ impl HostFileSystem {
             .or_else(|_| open_file_with_ext(&path, "bin"))?;
 
         MacBinary::new(file)
-            .map(|f| {
-                (Some(PathBuf::from(f.name())),
+            .map(|f| (
+                Some(f.name().into()),
                 match kind {
                     ForkKind::Data => f.data_fork(),
                     ForkKind::Resource => f.resource_fork(),
-                }.cloned())
-            })
+                }.cloned()
+            ))
             .map_err(|e| anyhow!("Not a MacBinary file: {}", e))
     }
 
@@ -139,7 +139,7 @@ fn open_named_fork<T: AsRef<Path>>(path: T) -> io::Result<File> {
     if metadata.len() > 0 {
         File::open(&path)
     } else {
-        Err(io::Error::from(io::ErrorKind::NotFound))
+        Err(io::ErrorKind::NotFound.into())
     }
 }
 

@@ -33,7 +33,7 @@ use libearthquake::{collections::{
 use libcommon::{Reader, SharedStream, encodings::MAC_ROMAN};
 use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
 use pico_args::Arguments;
-use std::{env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
+use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
 
 enum Command {
     Detect(bool),
@@ -366,7 +366,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         if let Ok(cast) = riff.load::<CastMap>(ResourceId::new(b"CAS*", 1024), &()) {
             for (i, &chunk_index) in cast.iter().enumerate() {
                 if chunk_index > ChunkIndex::new(0) {
-                    let cast_member_num = min_cast_num + (i as i16);
+                    let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
                     if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0, cast_member_num)) {
                         match riff.load_chunk::<Member>(chunk_index, &(chunk_index, version, MAC_ROMAN)) {
                             Ok(member) => println!("{}: {:#?}", cast_member_num, member),
@@ -414,8 +414,8 @@ fn print_score(options: &Options, source: &impl ResourceSource) {
         match source.load::<Score>(ResourceId::new(b"VWSC", score_num), &(config.version(), )) {
             Ok(score) => {
                 let (start, end) = frames.unwrap_or((0, i16::MAX));
-                for (i, frame) in (*score).clone().skip(start as usize).take((end - start) as usize).enumerate() {
-                    let frame_num = i as i16 + start + 1;
+                for (i, frame) in (*score).clone().skip(start.try_into().unwrap()).take((end - start).try_into().unwrap()).enumerate() {
+                    let frame_num = i16::try_from(i).unwrap() + start + 1;
                     match frame {
                         Ok(frame) => {
                             println!("Frame {}:", frame_num);
@@ -517,14 +517,14 @@ fn read_projector(
             for movie in movies {
                 println!("Internal movie at {}", movie.offset);
                 if options.recursive() {
-                    let mut stream = stream.substream(u64::from(movie.offset), u64::from(movie.offset + movie.size));
+                    let mut stream = stream.substream(movie.offset.into(), (movie.offset + movie.size).into());
                     inspect_riff(&mut stream, options)?;
                 }
             }
         },
-        MovieInfo::Internal(offset) => {
+        &MovieInfo::Internal(offset) => {
             println!("Internal movie at {}", offset);
-            stream.seek(SeekFrom::Start(u64::from(*offset)))?;
+            stream.seek(SeekFrom::Start(offset.into()))?;
             inspect_riff_container(stream, options)?;
         },
         MovieInfo::External(filenames) => {

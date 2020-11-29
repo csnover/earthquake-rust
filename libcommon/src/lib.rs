@@ -24,7 +24,7 @@ pub use resource::Resource;
 pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
-use std::{fmt, io};
+use std::{convert::TryInto, fmt, io};
 
 pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
     for error in chained_error.chain() {
@@ -54,7 +54,7 @@ pub trait Reader: io::Read + io::Seek + fmt::Debug {
     }
 
     fn skip(&mut self, pos: u64) -> io::Result<u64> {
-        self.seek(io::SeekFrom::Current(pos as i64))
+        self.seek(io::SeekFrom::Current(pos.try_into().unwrap()))
     }
 }
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}

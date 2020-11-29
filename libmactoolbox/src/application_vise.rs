@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, BigEndian};
-use std::io::{Error, ErrorKind, Result as IoResult};
+use std::{convert::{TryFrom, TryInto}, io::{Error, ErrorKind, Result as IoResult}};
 
 /// A decompressor for the Application VISE runtime executable compression
 /// format.
@@ -22,12 +22,12 @@ impl ApplicationVise {
 
         Self::validate(data)?;
 
-        let decompressed_size = BigEndian::read_u32(&data[8..]) as usize;
+        let decompressed_size = usize::try_from(BigEndian::read_u32(&data[8..])).unwrap();
         let odd_sized_output = decompressed_size & 1 == 1;
         let mut local_data = &data[16..];
 
         let (mut op_stream, mut op_count) = {
-            let local_data_size = consume_u32(&mut local_data) as usize;
+            let local_data_size = usize::try_from(consume_u32(&mut local_data)).unwrap();
             (
                 &data[local_data_size..],
                 data.len() - local_data_size - if odd_sized_output { 2 } else { 1 }
@@ -38,10 +38,10 @@ impl ApplicationVise {
             let config = consume_u32(&mut local_data);
             if config & USE_SHARED_DICT == 0 {
                 // TODO: This branch is untested. Find a sample!
-                &data[config as usize..]
+                &data[config.try_into().unwrap()..]
             } else {
-                let offset = BigEndian::read_u16(&self.shared_data[(1 << (config & 3)) + 6..]);
-                &self.shared_data[offset as usize..]
+                let offset = usize::from(BigEndian::read_u16(&self.shared_data[(1 << (config & 3)) + 6..]));
+                &self.shared_data[offset..]
             }
         };
 
@@ -50,12 +50,12 @@ impl ApplicationVise {
         loop {
             match consume_op(&mut op_stream) {
                 Op::Shared { offset } => {
-                    copy_u16(&shared_data[offset as usize..], &mut output);
+                    copy_u16(&shared_data[offset.into()..], &mut output);
                 },
 
                 Op::DecompressedEnd { offset, count } => {
                     for _ in 0..(count + 1) * 2 {
-                        output.push(output[output.len() - offset as usize]);
+                        output.push(output[output.len() - usize::from(offset)]);
                     }
                     op_count -= 1;
                 },
@@ -64,7 +64,7 @@ impl ApplicationVise {
                     if add_local {
                         copy_consume_u16(&mut local_data, &mut output);
                     }
-                    copy_u16(&shared_data[offset as usize..], &mut output);
+                    copy_u16(&shared_data[offset.into()..], &mut output);
                     op_count -= 1;
                 },
 
@@ -73,7 +73,7 @@ impl ApplicationVise {
                         copy_consume_u16(&mut local_data, &mut output);
                     }
                     for i in 0..(count + 1) * 2 {
-                        output.push(output[offset as usize + i as usize]);
+                        output.push(output[usize::from(offset) + usize::from(i)]);
                     }
                     op_count -= 2;
                 },
@@ -110,8 +110,8 @@ impl ApplicationVise {
         if data.get(18..22)? != b"VISE" || data.get(60..62)? != b"\x47\xfa" {
             None
         } else {
-            let offset = BigEndian::read_u16(&data.get(62..)?);
-            data.get(62 + offset as usize..)
+            let offset = usize::from(BigEndian::read_u16(&data.get(62..)?));
+            data.get(62 + offset..)
         }
     }
 
@@ -175,7 +175,7 @@ enum Op {
 fn consume_bit(data: &mut u16) -> u16 {
     let flag = *data & 1;
     *data >>= 1;
-    flag as u16
+    flag
 }
 
 #[inline]
@@ -217,7 +217,7 @@ fn consume_op(op_stream: &mut &[u8]) -> Op {
 fn consume_u8(data: &mut &[u8]) -> u16 {
     let value = data[0];
     *data = &data[1..];
-    u16::from(value)
+    value.into()
 }
 
 #[inline]

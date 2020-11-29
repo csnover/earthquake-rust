@@ -355,7 +355,7 @@ impl Resource for MemberMetadata {
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         Ok(match context.0 {
             MemberKind::None => {
-                input.skip(u64::from(size))?;
+                input.skip(size.into())?;
                 MemberMetadata::None
             },
             MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::load(input, size, &())?),

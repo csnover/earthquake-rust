@@ -7,7 +7,7 @@ use crate::{
     resources::string_list::StringList,
 };
 use libcommon::{Resource, encodings::DecoderRef, Reader, resource::{StringContext, StringKind}, vfs::{VirtualFile, VirtualFileSystem}};
-use std::{io::Cursor, path::Path, rc::Rc};
+use std::{convert::TryFrom, io::Cursor, path::Path, rc::Rc};
 
 pub struct ResourceManager<'vfs> {
     fs: Rc<dyn VirtualFileSystem + 'vfs>,
@@ -78,7 +78,7 @@ impl <'vfs> ResourceManager<'vfs> {
         self.get_resource::<StringList>(ResourceId::new(b"STR#", id), &self.decoder.1)
             .unwrap_or(None)
             .map(|list| {
-                list.get(index as usize).unwrap_or(&String::new()).to_owned()
+                list.get(usize::try_from(index).unwrap()).unwrap_or(&String::new()).to_owned()
             })
     }
 

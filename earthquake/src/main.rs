@@ -34,7 +34,7 @@ use qt_core::{
 };
 use qt_gui::QIcon;
 use qt_widgets::QApplication;
-use std::{env, path::PathBuf, process::exit, rc::Rc};
+use std::{convert::TryInto, env, path::PathBuf, process::exit, rc::Rc};
 use strum::VariantNames;
 
 // TODO: This imperative style of translation does not handle the case where the
@@ -60,7 +60,7 @@ fn main() -> AResult<()> {
     let localizer = Rc::new({
         let mut localizer = FluentErgo::new(&unsafe {
             let qt_languages = QLocale::system().ui_languages();
-            let mut languages = Vec::with_capacity(qt_languages.size() as usize);
+            let mut languages = Vec::with_capacity(qt_languages.size().try_into().unwrap());
             for lang in qt_languages.static_upcast::<qt_core::QListOfQString>().iter() {
                 languages.push(lang.to_std_string().parse::<unic_langid::LanguageIdentifier>().unwrap());
             }

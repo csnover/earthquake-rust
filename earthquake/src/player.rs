@@ -46,7 +46,7 @@ impl <'vfs> MovieList<'vfs> {
             MovieList::SingleRiff(_) => 1,
             MovieList::D3Win(l) => l.len(),
             MovieList::D3Mac(l) => l.len(),
-            MovieList::Embeds(_, c) => *c as usize
+            MovieList::Embeds(_, c) => usize::from(*c)
         }
     }
 }
@@ -91,19 +91,19 @@ impl <'vfs> Player<'vfs> {
                 p.charset().unwrap_or_else(|| charset.unwrap_or(ScriptCode::Roman)),
                 p.system_resources().cloned(),
                 match p.movie() {
-                    ProjectorMovie::Embedded(count) => {
+                    &ProjectorMovie::Embedded(count) => {
                         if let Some(resource_fork) = file.resource_fork.take() {
                             let resource_file = ResourceFile::new(resource_fork)
                                 .context("Can’t create resource file for projector")?;
-                            MovieList::Embeds(resource_file, *count)
+                            MovieList::Embeds(resource_file, count)
                         } else {
                             bail!("Missing resource fork for projector");
                         }
                     },
                     ProjectorMovie::D3Win(movies) => MovieList::D3Win(movies.clone()),
-                    ProjectorMovie::Internal(offset) => MovieList::RiffContainer({
+                    &ProjectorMovie::Internal(offset) => MovieList::RiffContainer({
                         if let Some(mut input) = file.data_fork.take() {
-                            input.seek(SeekFrom::Start(u64::from(*offset))).context("Can’t seek to RIFF container")?;
+                            input.seek(SeekFrom::Start(offset.into())).context("Can’t seek to RIFF container")?;
                             RiffContainer::new(input).context("Can’t create RIFF container from data fork")?
                         } else {
                             bail!("Missing data fork for RIFF container");
