@@ -99,7 +99,7 @@ impl ApplicationVise {
         if output.len() == decompressed_size {
             Ok(output)
         } else {
-            Err(Error::new(ErrorKind::UnexpectedEof, format!("Incomplete data (expected {}, got {})", output.len(), decompressed_size)))
+            Err(Error::new(ErrorKind::UnexpectedEof, format!("Incomplete data (expected {}, got {})", decompressed_size, output.len())))
         }
     }
 
