@@ -11,7 +11,7 @@ use super::{
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Kind {
-    Xtra,
+    Xtra = 0,
     WipeRight,
     WipeLeft,
     WipeDown,
