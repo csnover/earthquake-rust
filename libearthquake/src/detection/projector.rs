@@ -231,10 +231,10 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     let system_resources = if version == Version::D3 {
         None
     } else {
-        let mut resource_fork = rom.into_inner();
-        resource_fork.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
-        let mut data = Vec::with_capacity(resource_fork.len()?.try_into().unwrap());
-        resource_fork.read_to_end(&mut data).context("Can’t read system resource fork data")?;
+        let mut rom_data = rom.into_inner();
+        rom_data.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
+        let mut data = Vec::with_capacity(rom_data.len()?.try_into().unwrap());
+        rom_data.read_to_end(&mut data).context("Can’t read system resource fork data")?;
         Some(data)
     };
 
