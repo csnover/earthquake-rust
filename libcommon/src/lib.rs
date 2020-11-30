@@ -77,15 +77,15 @@ pub struct Unk8(pub u8);
 
 #[macro_export]
 macro_rules! binread_flags {
-    ($name: ident, $size: ty) => {
+    ($name: ident, $ty: ty) => {
         impl BinRead for $name {
             type Args = ();
 
-            fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
-                use binread::BinReaderExt;
-                let last_pos = reader.seek(SeekFrom::Current(0))?;
-                let value = reader.read_type::<$size>(options.endian)?;
-                Self::from_bits(value).ok_or_else(|| binread::Error::AssertFail {
+            fn read_options<R: ::binread::io::Read + ::binread::io::Seek>(reader: &mut R, options: &::binread::ReadOptions, _: Self::Args) -> ::binread::BinResult<Self> {
+                use ::binread::BinReaderExt;
+                let last_pos = reader.seek(::std::io::SeekFrom::Current(0))?;
+                let value = reader.read_type::<$ty>(options.endian)?;
+                Self::from_bits(value).ok_or_else(|| ::binread::Error::AssertFail {
                     pos: last_pos.try_into().unwrap(),
                     message: format!(concat!("Invalid ", stringify!($name), " flags 0x{:x}"), value),
                 })
