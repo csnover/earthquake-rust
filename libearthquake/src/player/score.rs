@@ -411,9 +411,9 @@ impl BinRead for Transition {
         } else if data == [ 0; 4 ] {
             Self::None
         } else {
-            let mut options = ReadOptions::default();
-            options.endian = binread::Endian::Big;
-            Self::Cast(MemberId::read_options(&mut Cursor::new(data), &options, ())?)
+            use binread::BinReaderExt;
+            let reader = &mut Cursor::new(data);
+            Self::Cast(reader.read_be::<MemberId>()?)
         })
     }
 }
