@@ -24,6 +24,7 @@ pub use resource::Resource;
 pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
+use binread::BinRead;
 use std::{convert::TryInto, fmt, io};
 
 pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
@@ -59,17 +60,58 @@ pub trait Reader: io::Read + io::Seek + fmt::Debug {
 }
 impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct UnkHnd(pub u32);
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct UnkPtr(pub u32);
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Unk32(pub u32);
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Unk16(pub u16);
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Unk8(pub u8);
+
+#[macro_export]
+macro_rules! binread_flags {
+    ($name: ident, $size: ty) => {
+        impl BinRead for $name {
+            type Args = ();
+
+            fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
+                use binread::BinReaderExt;
+                let last_pos = reader.seek(SeekFrom::Current(0))?;
+                let value = reader.read_type::<$size>(options.endian)?;
+                Self::from_bits(value).ok_or_else(|| binread::Error::AssertFail {
+                    pos: last_pos.try_into().unwrap(),
+                    message: format!(concat!("Invalid ", stringify!($name), " flags 0x{:x}"), value),
+                })
+            }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! binread_enum {
+    ($name: ident, $size: ty) => {
+        impl BinRead for $name {
+            type Args = ();
+
+            fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
+                use binread::BinReaderExt;
+                use paste::paste;
+                let last_pos = reader.seek(SeekFrom::Current(0))?;
+                let value = reader.read_type::<$size>(options.endian)?;
+                paste! {
+                    Self::[<from_ $size>](value).ok_or_else(|| binread::Error::AssertFail {
+                        pos: last_pos.try_into().unwrap(),
+                        message: format!(concat!("Invalid ", stringify!($name), " value 0x{:x}"), value),
+                    })
+                }
+            }
+        }
+    }
+}

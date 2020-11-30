@@ -2,60 +2,18 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(dead_code)]
 
-use anyhow::{bail, Context, Result as AResult};
+use anyhow::{anyhow, bail, Context, Result as AResult};
+use binread::{BinRead, ReadOptions};
 use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
 use crate::{ensure_sample, resources::{transition::{Kind as TransitionKind, QuarterSeconds}, cast::{MemberId, MemberKind}}};
 use derive_more::{Add, AddAssign, Display};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, UnkPtr, resource::Input};
+use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, UnkPtr, binread_enum, binread_flags, resource::Input};
 use libmactoolbox::{quickdraw::Pen, Point, Rect, TEHandle};
 use smart_default::SmartDefault;
-use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, iter::Rev};
-
-macro_rules! load_enum {
-    ($name: expr, $kind: expr, $input: expr) => (
-        $input
-        .context(concat!("Can’t read ", $name))
-        .and_then(|value| {
-            $kind(value)
-                .with_context(|| format!(concat!("Invalid value 0x{:x} for ", $name), value))
-        })
-    )
-}
-
-macro_rules! load_flags {
-    ($name: expr, $kind: ty, $input: expr) => (
-        $input
-        .context(concat!("Can’t read", $name))
-        .and_then(|value| {
-            <$kind>::from_bits(value)
-                .with_context(|| format!(concat!("Invalid value 0x{:x} for ", $name), value))
-        })
-    )
-}
-
-macro_rules! load_member_num {
-    ($name: expr, $input: expr) => (
-        load_value!($name, $input)
-            .map(|num| MemberId::new(if num == 0 { 0 } else { 1 }, num))
-    );
-}
-
-macro_rules! load_resource {
-    ($name: literal, $kind: ty, $input: expr, $size: expr, $context: expr) => (<$kind>::load($input, $size, &$context).context(concat!("Can’t read ", $name)));
-    ($name: literal, $kind: ty, $input: expr, $context: expr) => (<$kind>::load($input, <$kind>::SIZE, &$context).context(concat!("Can’t read ", $name)));
-    ($name: literal, $kind: ty, $input: expr) => (<$kind>::load($input, <$kind>::SIZE, &()).context(concat!("Can’t read", $name)));
-    ($name: expr, $kind: ty, $input: expr, $size: expr, $context: expr) => (<$kind>::load($input, $size, &$context).with_context(|| format!("Can’t read {}", $name)));
-    ($name: expr, $kind: ty, $input: expr, $context: expr) => (<$kind>::load($input, <$kind>::SIZE, &$context).with_context(|| format!("Can’t read {}", $name)));
-    ($name: expr, $kind: ty, $input: expr) => (<$kind>::load($input, <$kind>::SIZE, &()).with_context(|| format!("Can’t read {}", $name)));
-}
-
-macro_rules! load_value {
-    ($name: literal, $input: expr) => ($input.context(concat!("Can’t read ", $name)));
-    ($name: expr, $input: expr) => ($input.with_context(|| format!("Can’t read {}", $name)));
-}
+use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
 
 bitflags! {
     #[derive(Default)]
@@ -73,6 +31,8 @@ bitflags! {
         const WAIT_TICKS               = 0x40;
     }
 }
+
+binread_flags!(Flags, u16);
 
 #[derive(Add, AddAssign, Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FrameNum(pub i16);
@@ -386,40 +346,185 @@ pub enum Transition {
     #[default]
     None,
     Cast(MemberId),
-    Custom {
+    LegacyTempo(Tempo),
+    Legacy {
         chunk_size: u8,
         which_transition: TransitionKind,
         time: QuarterSeconds,
         change_area: bool,
+        tempo: Tempo,
     },
 }
 
 impl Transition {
-    const SIZE: u32 = 4;
+    fn tempo(&self) -> Tempo {
+        match self {
+            Self::Legacy { tempo, .. } | Self::LegacyTempo(tempo) => *tempo,
+            Self::None | Self::Cast(..) => Tempo::default(),
+        }
+    }
 }
 
-impl Resource for Transition {
-    type Context = (Version, );
+impl BinRead for Transition {
+    type Args = (Version, );
 
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+        let last_pos = reader.seek(SeekFrom::Current(0))?;
+
+        let make_tempo = |tempo: u8| {
+            Tempo::new((tempo as i8).into()).map_err(|e| binread::Error::AssertFail {
+                pos: last_pos.try_into().unwrap(),
+                message: format!("{}", e),
+            })
+        };
+
         let mut data = [ 0; 4 ];
-        input.take(size.into()).read_exact(&mut data).context("Can’t read score frame transition")?;
-        Ok(if context.0 < Version::V6 {
+        reader.read_exact(&mut data)?;
+        Ok(if args.0 < Version::V6 {
             if data[3] == 0 {
-                Self::None
+                if data[2] == 0 {
+                    Self::None
+                } else {
+                    Self::LegacyTempo(make_tempo(data[2])?)
+                }
             } else {
-                Self::Custom {
+                Self::Legacy {
                     chunk_size: data[1],
-                    which_transition: TransitionKind::from_u8(data[3]).with_context(|| format!("Invalid transition kind {}", data[3]))?,
+                    which_transition: TransitionKind::from_u8(data[3])
+                        .ok_or_else(|| binread::Error::AssertFail {
+                            pos: last_pos.try_into().unwrap(),
+                            message: format!("Invalid transition kind {}", data[3]),
+                        })?,
                     time: QuarterSeconds(data[0] & !0x80),
                     change_area: data[0] & 0x80 != 0,
+                    tempo: make_tempo(data[2])?
                 }
             }
         } else if data == [ 0; 4 ] {
             Self::None
         } else {
-            Self::Cast(load_resource!("score frame transition", MemberId, &mut Input::new(Cursor::new(data), Endianness::Big))?)
+            let mut options = ReadOptions::default();
+            options.endian = binread::Endian::Big;
+            Self::Cast(MemberId::read_options(&mut Cursor::new(data), &options, ())?)
         })
+    }
+}
+
+#[derive(Clone, Debug, SmartDefault)]
+struct ScoreStream {
+    #[default(Input::new(<_>::default(), Endianness::Big))]
+    input: Input<Cursor<Vec<u8>>>,
+    data_start_pos: u32,
+    data_end_pos: u32,
+    version: Version,
+    last_frame: Frame,
+    #[default([ 0; Frame::V5_SIZE as usize ])]
+    raw_last_frame: [ u8; Frame::V5_SIZE as usize ],
+}
+
+impl ScoreStream {
+    fn new(mut input: Input<Cursor<Vec<u8>>>, data_start_pos: u32, data_end_pos: u32, version: Version) -> Self {
+        input.seek(SeekFrom::Start(data_start_pos.into())).unwrap();
+        Self {
+            input,
+            data_start_pos,
+            data_end_pos,
+            version,
+            last_frame: Frame::default(),
+            raw_last_frame: [ 0; Frame::V5_SIZE as usize ],
+        }
+    }
+
+    fn next(&mut self, channels_to_keep: SpriteBitmask) -> AResult<Option<Frame>> {
+        if self.input.pos()? >= self.data_end_pos.into() {
+            return Ok(None);
+        }
+
+        let mut bytes_to_read = self.input.read_i16().context("Can’t read compressed score frame size")?;
+
+        if self.version < Version::V4 {
+            bytes_to_read = std::cmp::max(0, bytes_to_read - 2);
+        } else {
+            // In D5 this check was >= 1 but obviously it needs to be at least 2
+            // bytes to read a chunk size
+            ensure_sample!(bytes_to_read > 1, "Invalid compressed score frame size {}", bytes_to_read);
+            bytes_to_read -= 2;
+        }
+
+        let mut new_data = self.raw_last_frame;
+
+        while bytes_to_read > 0 {
+            let (chunk_size, chunk_offset) = if self.version < Version::V4 {
+                let chunk_size = i16::from(self.input.read_u8().context("Can’t read compressed score frame chunk size")?) * 2;
+                let chunk_offset = usize::from(self.input.read_u8().context("Can’t read compressed score frame chunk offset")?) * 2;
+                bytes_to_read -= chunk_size + 2;
+                (chunk_size, chunk_offset)
+            } else {
+                let chunk_size = self.input.read_i16().context("Can’t read compressed score frame chunk size")?;
+                if chunk_size < 0 {
+                    break;
+                }
+                ensure_sample!(chunk_size & 1 == 0, "Chunk size {} is not a multiple of two", chunk_size);
+                let chunk_offset = usize::try_from(self.input.read_i16().context("Can’t read compressed score frame chunk offset")?).unwrap();
+                bytes_to_read -= chunk_size + 4;
+                (chunk_size, chunk_offset)
+            };
+
+            self.input.read_exact(&mut new_data[chunk_offset..chunk_offset + usize::try_from(chunk_size).unwrap()]).context("Can’t read frame chunk data")?;
+        }
+
+        let cursor = &mut Cursor::new(&new_data);
+        let args = (self.version, );
+        let mut new_frame = match self.version {
+            Version::V3 => FrameV3::read_args(cursor, args).map(Frame::from),
+            Version::V4 => FrameV4::read_args(cursor, args).map(Frame::from),
+            Version::V5 | Version::V6 | Version::V7 => Frame::read_args(cursor, args),
+            Version::Unknown => bail!("Unknown score version"),
+        }.context("Can’t read frame")?;
+
+        for channel_index in channels_to_keep.iter() {
+            match channel_index {
+                SpriteBitmask::PALETTE => {
+                    new_frame.palette = self.last_frame.palette;
+                },
+                SpriteBitmask::SOUND_1 => {
+                    new_frame.sound_1 = self.last_frame.sound_1;
+                },
+                SpriteBitmask::SOUND_2 => {
+                    new_frame.sound_2 = self.last_frame.sound_2;
+                },
+                SpriteBitmask::TEMPO => {
+                    new_frame.tempo = self.last_frame.tempo;
+                },
+                SpriteBitmask::MIN_SPRITE..=SpriteBitmask::MAX_SPRITE => {
+                    let sprite_index = channel_index - SpriteBitmask::NUM_NON_SPRITE_CHANNELS;
+                    let sprite = &mut new_frame.sprites[sprite_index];
+                    let script_id = sprite.script;
+                    let flags = sprite.score_color_and_flags & !SpriteScoreColor::COLOR;
+                    *sprite = self.last_frame.sprites[sprite_index];
+                    sprite.script = script_id;
+                    // TODO: This flag normally comes from the Movie global,
+                    // by way of flag 0x100 in the corresponding VWFI
+                    // field 0xC.
+                    let todo_movie_legacy_flag = false;
+                    if todo_movie_legacy_flag {
+                        sprite.score_color_and_flags.remove(!SpriteScoreColor::COLOR);
+                        sprite.score_color_and_flags |= flags;
+                    }
+                },
+                _ => unreachable!("Invalid frame copy channel data")
+            }
+        }
+
+        self.raw_last_frame = new_data;
+
+        Ok(Some(new_frame))
+    }
+
+    fn reset(&mut self) -> AResult<()> {
+        self.raw_last_frame = [ 0; Frame::V5_SIZE as usize ];
+        self.input.seek(SeekFrom::Start(self.data_start_pos.into())).context("Can’t reset score stream")?;
+        Ok(())
     }
 }
 
@@ -428,8 +533,7 @@ pub struct Score {
     #[default(Self::V5_HEADER_SIZE.into())]
     current_frame_vwsc_position: u32,
     next_frame_vwsc_position: u32,
-    #[default(Input::new(<_>::default(), Endianness::Big))]
-    vwsc: Input<Cursor<Vec<u8>>>,
+    vwsc: ScoreStream,
     score_header: Vec<u8>,
     #[default(Self::V5_HEADER_SIZE.into())]
     vwsc_frame_data_maybe_start_pos: u32,
@@ -492,13 +596,6 @@ pub struct Score {
     should_loop: bool,
     maybe_rewind_to_first_frame: bool,
     maybe_has_moveable_sprites: bool,
-
-    // Not normally stored by Director, but needed for multi-version
-    // compatibility
-    version: Version,
-
-    // TODO: Used for debugging only
-    vwsc_own_size: u32,
 }
 
 // TODO: This is just for debugging
@@ -506,18 +603,14 @@ impl Iterator for Score {
     type Item = AResult<Frame>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.vwsc.pos().unwrap() == self.vwsc_own_size.into() {
-            None
-        } else {
-            // TODO: If this call fails, it will not be possible to correctly
-            // unpack future frames, since they will be decompressing deltas
-            // against the wrong frame data.
-            let next_frame = Self::unpack_frame(&mut self.vwsc, &self.current_frame.frame, self.puppet_sprites, self.version);
-            if let Ok(next_frame) = next_frame.as_ref() {
-                self.current_frame.frame = next_frame.clone();
+        match self.vwsc.next(self.puppet_sprites) {
+            Ok(Some(frame)) => {
+                self.current_frame.frame = frame.clone();
                 self.current_frame_num += FrameNum(1);
-            }
-            Some(next_frame)
+                Some(Ok(frame))
+            },
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
         }
     }
 }
@@ -525,73 +618,12 @@ impl Iterator for Score {
 impl Score {
     const V4_HEADER_SIZE: u8 = 20;
     const V5_HEADER_SIZE: u8 = 20;
-
-    fn unpack_frame(input: &mut Input<impl Reader>, last_frame: &Frame, channels_to_keep: SpriteBitmask, version: Version) -> AResult<Frame> {
-        let mut bytes_to_read = input.read_i16().context("Can’t read compressed score frame size")?;
-        // In Director this check was >= 1 but obviously it needs to be at least
-        // 2 bytes to read a chunk size
-        ensure_sample!(bytes_to_read > 1, "Invalid compressed score frame size {}", bytes_to_read);
-        bytes_to_read -= 2;
-
-        let mut new_data = if last_frame.raw_data.is_empty() {
-            vec![ 0; if version < Version::V5 { Frame::V0_SIZE } else { Frame::V5_SIZE } as usize ]
-        } else {
-            last_frame.raw_data.clone()
-        };
-        while bytes_to_read > 0 {
-            let chunk_size = input.read_i16().context("Can’t read compressed score frame chunk size")?;
-            if chunk_size < 0 {
-                break;
-            }
-            ensure_sample!(chunk_size & 1 == 0, "Chunk size {} is not a multiple of two", chunk_size);
-            let chunk_offset = usize::try_from(input.read_i16().context("Can’t read compressed score frame chunk offset")?).unwrap();
-            input.read_exact(&mut new_data[chunk_offset..chunk_offset + usize::try_from(chunk_size).unwrap()]).context("Can’t read frame chunk data")?;
-            bytes_to_read -= chunk_size + 4;
-        }
-
-        let mut new_frame = Frame::new(new_data, version)?;
-        for channel_index in channels_to_keep.iter() {
-            match channel_index {
-                SpriteBitmask::PALETTE => {
-                    new_frame.palette = last_frame.palette;
-                },
-                SpriteBitmask::SOUND_1 => {
-                    new_frame.sound_1 = last_frame.sound_1;
-                },
-                SpriteBitmask::SOUND_2 => {
-                    new_frame.sound_2 = last_frame.sound_2;
-                },
-                SpriteBitmask::TEMPO => {
-                    new_frame.tempo = last_frame.tempo;
-                },
-                SpriteBitmask::MIN_SPRITE..=SpriteBitmask::MAX_SPRITE => {
-                    let sprite_index = channel_index - SpriteBitmask::NUM_NON_SPRITE_CHANNELS;
-                    let sprite = &mut new_frame.sprites[sprite_index];
-                    let script_id = sprite.script;
-                    let flags = sprite.score_color_and_flags & !SpriteScoreColor::COLOR;
-                    *sprite = last_frame.sprites[sprite_index];
-                    sprite.script = script_id;
-                    // TODO: This flag normally comes from the Movie global,
-                    // by way of flag 0x100 in the corresponding VWFI
-                    // field 0xC.
-                    let todo_movie_legacy_flag = false;
-                    if todo_movie_legacy_flag {
-                        sprite.score_color_and_flags.remove(!SpriteScoreColor::COLOR);
-                        sprite.score_color_and_flags |= flags;
-                    }
-                },
-                _ => unreachable!("Invalid frame copy channel data")
-            }
-        }
-
-        Ok(new_frame)
-    }
 }
 
 impl Resource for Score {
     type Context = (crate::resources::config::Version, );
 
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         let mut data = Vec::with_capacity(size.try_into().unwrap());
         input.take(size.into())
             .read_to_end(&mut data)
@@ -602,53 +634,63 @@ impl Resource for Score {
         let own_size = input.read_u32().context("Can’t read score size")?;
         ensure_sample!(own_size <= size, "Score recorded size ({}) is larger than actual size ({})", own_size, size);
 
-        let header_size = input.read_u32().context("Can’t read score header size")?;
-        ensure_sample!(header_size == 20, "Invalid V0-V7 score header size {}", header_size);
+        let version = if context.0.d4() || context.0.d5() {
+            let header_size = input.read_u32().context("Can’t read score header size")?;
+            ensure_sample!(header_size == 20, "Invalid V0-V7 score header size {}", header_size);
 
-        let num_frames = input.read_i32().context("Can’t read score frame count")?;
+            let num_frames = input.read_i32().context("Can’t read score frame count")?;
 
-        let version = {
-            let value = input.read_i16().context("Can’t read score version")?;
-            Version::from_i16(value).with_context(|| format!("Unknown score version {}", value))?
-        };
-
-        dbg!(own_size, header_size, num_frames, version);
-
-        if version > Version::V7 {
-            todo!("Score version 8 parsing");
-        } else {
-            let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
-                (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
-            } else {
-                (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
+            let version = {
+                let value = input.read_i16().context("Can’t read score version")?;
+                Version::from_i16(value).with_context(|| format!("Unknown score version {}", value))?
             };
 
-            let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
-            ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
-            // Technically this is the number of `sizeof(Sprite)`s to make one
-            // `sizeof(Frame)`; the header of the frame is exactly two
-            // `sizeof(Sprite)`s, even though it does not actually contain sprite
-            // data
-            let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
-            ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
-            let field_12 = input.read_u8().context("Can’t read score field_12")?;
-            ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
-            let field_13 = input.read_u8().context("Can’t read score field_13")?;
-            ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
+            dbg!(own_size, header_size, num_frames, version);
 
-            dbg!(sprite_size, num_sprites, field_12, field_13);
+            if version > Version::V7 {
+                todo!("Score version 8 parsing");
+            } else if version >= Version::V4 {
+                let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
+                    (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
+                } else {
+                    (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
+                };
 
-            // Director normally reads through all of the frame deltas here in order
-            // to byte swap them into the platform’s native endianness, but since we
-            // are using an endianness-aware reader, we’ll just let that happen
-            // when the frames are read later
-        }
+                let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
+                ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
+                // Technically this is the number of `sizeof(Sprite)`s to make one
+                // `sizeof(Frame)`; the header of the frame is exactly two
+                // `sizeof(Sprite)`s, even though it does not actually contain sprite
+                // data
+                let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
+                ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
+                let field_12 = input.read_u8().context("Can’t read score field_12")?;
+                ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
+                let field_13 = input.read_u8().context("Can’t read score field_13")?;
+                ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
 
-        Ok(Score {
-            vwsc: input,
-            version,
-            vwsc_own_size: own_size,
-            ..Score::default()
+                dbg!(sprite_size, num_sprites, field_12, field_13);
+
+                // Director normally reads through all of the frame deltas here in order
+                // to byte swap them into the platform’s native endianness, but since we
+                // are using an endianness-aware reader, we’ll just let that happen
+                // when the frames are read later
+            }
+
+            version
+        } else if context.0.d3() {
+            Version::V3
+        } else {
+            todo!("Score config version {} parsing", context.0 as i32);
+        };
+
+        let pos = input.pos()?;
+
+        dbg!(own_size, pos);
+
+        Ok(Self {
+            vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
+            ..Self::default()
         })
     }
 }
@@ -676,9 +718,13 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+binread_flags!(PaletteFlags, u8);
+
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+#[br(big)]
 pub struct Palette {
     id: MemberId,
+    #[br(map = |num: i8| FPS(num.into()))]
     rate: FPS,
     flags: PaletteFlags,
     cycle_start_color: i8,
@@ -691,84 +737,53 @@ pub struct Palette {
     field_f: Unk8,
 }
 
-impl Palette {
-    const V0_SIZE: u32 = 20;
-    const SIZE: u32 = 24;
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+#[br(big, import(version: Version))]
+struct PaletteV4 {
+    id: i16,
+    cycle_start_color: i8,
+    cycle_end_color: i8,
+    flags: PaletteFlags,
+    #[br(map = |num: i8| FPS(num.into()))]
+    rate: FPS,
+    num_frames: i16,
+    num_cycles: i16,
+    field_c: Unk8,
+    field_d: Unk8,
+    field_e: Unk8,
+    #[br(pad_before(if version == Version::V4 { 5 } else { 2 }))]
+    field_f: Unk8,
+}
 
-    fn load_v0(input: &mut Input<impl Reader>, size: u32) -> AResult<Self> {
-        ensure_sample!(size == Self::V0_SIZE, "Unexpected V0 palette size {}", size);
-        let id = load_member_num!("palette transition cast member number", input.read_i16())?;
-        let cycle_start_color = load_value!("palette cycle start color", input.read_i8())?;
-        let cycle_end_color = load_value!("palette cycle end color", input.read_i8())?;
-        let flags = load_flags!("palette flags", PaletteFlags, input.read_u8())?;
-        let rate = FPS(load_value!("palette rate", input.read_i8())?.into());
-        let num_frames = load_value!("palette num frames", input.read_i16())?;
-        let num_cycles = load_value!("palette cycles", input.read_i16())?;
-        let field_c = Unk8(load_value!("palette field_c", input.read_u8())?);
-        let field_d = Unk8(load_value!("palette field_d", input.read_u8())?);
-        let field_e = Unk8(load_value!("palette field_e", input.read_u8())?);
-        input.skip(5).context("Can’t skip unused palette fields")?;
-        let field_f = Unk8(load_value!("palette field_f", input.read_u8())?);
-        if size > 19 {
-            input.skip((size - 19).into()).context("Can’t skip end of frame palette")?;
+impl From<PaletteV4> for Palette {
+    fn from(old: PaletteV4) -> Self {
+        Self {
+            id: old.id.into(),
+            cycle_start_color: old.cycle_start_color,
+            cycle_end_color: old.cycle_end_color,
+            flags: old.flags,
+            rate: old.rate,
+            num_frames: old.num_frames,
+            num_cycles: old.num_cycles,
+            field_c: old.field_c,
+            field_d: old.field_d,
+            field_e: old.field_e,
+            field_f: old.field_f,
         }
-        Ok(Self {
-            id,
-            rate,
-            flags,
-            cycle_start_color,
-            cycle_end_color,
-            num_frames,
-            num_cycles,
-            field_c,
-            field_d,
-            field_e,
-            field_f,
-        })
-    }
-
-    fn load_v5(input: &mut Input<impl Reader>, size: u32) -> AResult<Self> {
-        let id = load_resource!("palette transition ID", MemberId, input)?;
-        let rate = FPS(load_value!("palette rate", input.read_i8())?.into());
-        let flags = load_flags!("palette flags", PaletteFlags, input.read_u8())?;
-        let cycle_start_color = load_value!("palette cycle start color", input.read_i8())?;
-        let cycle_end_color = load_value!("palette cycle end color", input.read_i8())?;
-        let num_frames = load_value!("palette num frames", input.read_i16())?;
-        let num_cycles = load_value!("palette cycles", input.read_i16())?;
-        let field_c = Unk8(load_value!("palette field_c", input.read_u8())?);
-        let field_d = Unk8(load_value!("palette field_d", input.read_u8())?);
-        let field_e = Unk8(load_value!("palette field_e", input.read_u8())?);
-        let field_f = Unk8(load_value!("palette field_f", input.read_u8())?);
-        if size > 16 {
-            input.skip((size - 16).into()).context("Can’t skip end of frame palette")?;
-        }
-        Ok(Self {
-            id,
-            rate,
-            flags,
-            cycle_start_color,
-            cycle_end_color,
-            num_frames,
-            num_cycles,
-            field_c,
-            field_d,
-            field_e,
-            field_f,
-        })
     }
 }
 
 impl Resource for Palette {
     type Context = (Version, );
 
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
+    fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
         if context.0 > Version::V7 {
             todo!("Score palette version 8 parsing")
         } else if context.0 >= Version::V5 {
-            Self::load_v5(input, size)
+            Self::read(input)
         } else {
-            Self::load_v0(input, size)
-        }
+            PaletteV4::read_args(input, *context).map(Self::from)
+        }.context("Can’t read score palette")
     }
 }
 
@@ -798,29 +813,148 @@ struct SpriteFrame {
     rects: [ Rect; NUM_SPRITES ],
 }
 
-#[derive(Clone, Debug, SmartDefault)]
+#[derive(BinRead, Clone, Debug, SmartDefault)]
+#[br(big, import(version: Version))]
 pub struct Frame {
     pub script: MemberId,
     pub sound_1: MemberId,
     pub sound_2: MemberId,
+    #[br(args(version))]
     pub transition: Transition,
     pub tempo_related: Unk8,
     pub sound_1_related: Unk8,
     pub sound_2_related: Unk8,
     pub script_related: Unk8,
     pub transition_related: Unk8,
+    #[br(args(version, transition), parse_with = Self::parse_tempo)]
     pub tempo: Tempo,
+    #[br(align_before(24))]
     pub palette: Palette,
     #[default([ Sprite::default(); NUM_SPRITES ])]
+    #[br(args(version), parse_with = parse_sprites::<Sprite, _>)]
     pub sprites: [ Sprite; NUM_SPRITES ],
+}
 
-    // TODO: There is probably a better way to handle this. Director’s
-    // serialised data formats were just dumps of memory to disk. This is
-    // generally not a problem, but the frame data is delta-compressed in
-    // unaligned 16-bit chunks, so in order to reconstruct the next frame, it is
-    // necessary to have an original raw data representation of the previous
-    // frame that the binary diff can be applied to.
-    raw_data: Vec<u8>,
+impl Frame {
+    fn parse_tempo<R>(reader: &mut R, options: &ReadOptions, args: (Version, Transition)) -> binread::BinResult<Tempo>
+    where R: binread::io::Read + binread::io::Seek {
+        let (version, transition) = args;
+        if version < Version::V6 {
+            Ok(match transition {
+                Transition::Legacy { tempo, .. } | Transition::LegacyTempo(tempo) => tempo,
+                Transition::None | Transition::Cast(..) => Tempo::default()
+            })
+        } else {
+            let last_pos = reader.seek(SeekFrom::Current(0))?;
+            let value = i8::read_options(reader, options, ())?;
+            Tempo::new(value.into()).map_err(|e| binread::Error::AssertFail {
+                pos: last_pos.try_into().unwrap(),
+                message: format!("{}", e)
+            })
+        }
+    }
+}
+
+fn parse_sprites<T, R>(reader: &mut R, options: &ReadOptions, args: (Version, )) -> binread::BinResult<[T; NUM_SPRITES]>
+where
+    T: BinRead<Args = (Version, )> + Copy + Default,
+    R: binread::io::Read + binread::io::Seek
+{
+    let mut sprites = [ T::default(); NUM_SPRITES ];
+    for sprite in sprites.iter_mut().take(if args.0 >= Version::V5 { Frame::V5_CELL_COUNT } else { Frame::V4_CELL_COUNT }.into()) {
+        *sprite = T::read_options(reader, options, args)?;
+    }
+    Ok(sprites)
+}
+
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(big, import(version: Version))]
+struct FrameV3 {
+    // TODO: This is an index into VWAC resource. There is no way to convert
+    // this to D5, so either script field needs to be an enum (probably) or
+    // extra fields should be added to Frame to store it. Also, it turns out
+    // this is not the script-related field from D4.
+    script: u8,
+    sound_1_kind_maybe: Unk8,
+    #[br(args(version))]
+    transition: Transition,
+    sound_1: i16,
+    sound_2: i16,
+    sound_2_kind_maybe: Unk8,
+    #[br(args(version), align_after(16), align_before(16))]
+    palette: PaletteV4,
+    #[br(args(version), parse_with = parse_sprites::<SpriteV3, _>)]
+    sprites: [ SpriteV3; NUM_SPRITES ],
+}
+
+impl From<FrameV3> for Frame {
+    fn from(old: FrameV3) -> Self {
+        Self {
+            sound_1: old.sound_1.into(),
+            sound_2: old.sound_2.into(),
+            transition: old.transition,
+            tempo: old.transition.tempo(),
+            palette: old.palette.into(),
+            sprites: {
+                // TODO: (1) more efficient, (2) needs const generics.
+                let mut sprites = [ Sprite::default(); NUM_SPRITES ];
+                for (i, sprite) in old.sprites.iter().enumerate() {
+                    sprites[i] = Sprite::from(*sprite)
+                }
+                sprites
+            },
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(big, import(version: Version))]
+struct FrameV4 {
+    field_0: Unk16,
+    #[br(args(version))]
+    transition: Transition,
+    sound_1: i16,
+    sound_2: i16,
+    field_a: Unk8,
+    field_b: Unk8,
+    field_c: Unk8,
+    tempo_related: Unk8,
+    sound_1_related: Unk8,
+    sound_2_related: Unk8,
+    script: i16,
+    script_related: Unk8,
+    transition_related: Unk8,
+    #[br(args(version), align_after(20), align_before(20))]
+    palette: PaletteV4,
+    #[br(args(version), parse_with = parse_sprites::<SpriteV4, _>)]
+    sprites: [ SpriteV4; NUM_SPRITES ],
+}
+
+impl From<FrameV4> for Frame {
+    fn from(old: FrameV4) -> Self {
+        Self {
+            script: old.script.into(),
+            sound_1: old.sound_1.into(),
+            sound_2: old.sound_2.into(),
+            transition: old.transition,
+            tempo_related: old.tempo_related,
+            sound_1_related: old.sound_1_related,
+            sound_2_related: old.sound_2_related,
+            script_related: old.script_related,
+            transition_related: old.transition_related,
+            tempo: old.transition.tempo(),
+            palette: old.palette.into(),
+            sprites: {
+                // TODO: (1) more efficient, (2) needs const generics.
+                let mut sprites = [ Sprite::default(); NUM_SPRITES ];
+                for (i, sprite) in old.sprites.iter().enumerate() {
+                    sprites[i] = Sprite::from(*sprite)
+                }
+                sprites
+            },
+        }
+    }
 }
 
 impl Frame {
@@ -832,100 +966,16 @@ impl Frame {
     const V5_SIZE: u16 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
 
     fn new(data: Vec<u8>, version: Version) -> AResult<Self> {
-        let input = Input::new(Cursor::new(data), Endianness::Big);
-        if version > Version::V7 {
-            todo!("Score frame version 8 parsing")
-        } else if version >= Version::V5 {
-            Self::new_v5(input, version)
+        let mut input = Input::new(Cursor::new(data), Endianness::Big);
+        if version == Version::V3 {
+            FrameV3::read_args(&mut input, (version, )).map(Self::from)
+        } else if version == Version::V4 {
+            FrameV4::read_args(&mut input, (version, )).map(Self::from)
+        } else if version >= Version::V5 && version <= Version::V7 {
+            Self::read_args(&mut input, (version, ))
         } else {
-            Self::new_v0(input, version)
-        }
-    }
-
-    fn new_v0(mut input: Input<Cursor<Vec<u8>>>, version: Version) -> AResult<Self> {
-        let unknown = load_value!("frame v0 unknown", input.read_i16())?;
-        let (transition, tempo) = Self::load_transition(&mut input, version)?;
-        let sound_1 = load_member_num!("frame sound 1 cast member number", input.read_i16())?;
-        let sound_2 = load_member_num!("frame sound 2 cast member number", input.read_i16())?;
-        let field_a = load_value!("frame field_a", input.read_u8())?;
-        let field_b = load_value!("frame field_b", input.read_u8())?;
-        let field_c = load_value!("frame field_c", input.read_u8())?;
-        let tempo_related = Unk8(load_value!("frame tempo_related", input.read_u8())?);
-        let sound_1_related = Unk8(load_value!("frame sound_1_related", input.read_u8())?);
-        let sound_2_related = Unk8(load_value!("frame sound_2_related", input.read_u8())?);
-        let script = load_member_num!("frame script cast member number", input.read_i16())?;
-        let script_related = Unk8(load_value!("frame script_related", input.read_u8())?);
-        let transition_related = Unk8(load_value!("frame transition_related", input.read_u8())?);
-        let palette = load_resource!("frame palette", Palette, &mut input, Palette::V0_SIZE, (version, ))?;
-
-        let mut sprites = [ Sprite::default(); NUM_SPRITES ];
-        for (i, sprite) in sprites.iter_mut().enumerate().take(Self::V4_CELL_COUNT.into()) {
-            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V0_SIZE.into(), (version, ))?;
-        }
-
-        Ok(Frame {
-            script,
-            sound_1,
-            sound_2,
-            transition,
-            tempo_related,
-            sound_1_related,
-            sound_2_related,
-            script_related,
-            transition_related,
-            tempo,
-            palette,
-            sprites,
-            raw_data: input.into_inner().into_inner(),
-        })
-    }
-
-    fn new_v5(mut input: Input<Cursor<Vec<u8>>>, version: Version) -> AResult<Self> {
-        let script = load_resource!("frame script cast member ID", MemberId, &mut input)?;
-        let sound_1 = load_resource!("frame sound 1 cast member ID", MemberId, &mut input)?;
-        let sound_2 = load_resource!("frame sound 2 cast member ID", MemberId, &mut input)?;
-        let (transition, v0_tempo) = Self::load_transition(&mut input, version)?;
-        let tempo_related = Unk8(load_value!("frame tempo related", input.read_u8())?);
-        let sound_1_related = Unk8(load_value!("frame sound 1 related", input.read_u8())?);
-        let sound_2_related = Unk8(load_value!("frame sound 2 related", input.read_u8())?);
-        let script_related = Unk8(load_value!("frame script related", input.read_u8())?);
-        let transition_related = Unk8(load_value!("frame transition related", input.read_u8())?);
-        let tempo = if version < Version::V6 {
-            input.skip(1).context("Can’t skip frame tempo")?;
-            v0_tempo
-        } else {
-            Tempo::new(load_value!("frame tempo", input.read_i8())?.into())?
-        };
-        input.skip(2).context("Can’t skip after frame tempo")?;
-        let palette = load_resource!("frame palette", Palette, &mut input, (version, ))?;
-
-        let mut sprites = [ Sprite::default(); NUM_SPRITES ];
-        for (i, sprite) in sprites.iter_mut().enumerate().take(Self::V5_CELL_COUNT as usize) {
-            *sprite = load_resource!(format!("frame sprite {}", i + 1), Sprite, &mut input, Sprite::V5_SIZE.into(), (version, ))?;
-        }
-
-        Ok(Frame {
-            script,
-            sound_1,
-            sound_2,
-            transition,
-            tempo_related,
-            sound_1_related,
-            sound_2_related,
-            script_related,
-            transition_related,
-            tempo,
-            palette,
-            sprites,
-            raw_data: input.into_inner().into_inner(),
-        })
-    }
-
-    fn load_transition(input: &mut Input<impl Reader>, version: Version) -> AResult<(Transition, Tempo)> {
-        let mut data = [ 0; 4 ];
-        input.read_exact(&mut data).context("Can’t read frame transition data")?;
-        let transition = load_resource!("frame transition", Transition, &mut Input::new(Cursor::new(&data), Endianness::Big), (version, ))?;
-        Ok((transition, Tempo::new(if version < Version::V7 { data[3].into() } else { 0 })?))
+            todo!("Bad score frame version {}", version)
+        }.context("Can’t read frame")
     }
 }
 
@@ -964,6 +1014,8 @@ pub enum SpriteKind {
     Script,
 }
 
+binread_enum!(SpriteKind, u8);
+
 bitflags! {
     #[derive(Default)]
     pub struct SpriteLineSize: u8 {
@@ -976,6 +1028,8 @@ bitflags! {
     }
 }
 
+binread_flags!(SpriteLineSize, u8);
+
 bitflags! {
     #[derive(Default)]
     pub struct SpriteInk: u8 {
@@ -984,6 +1038,11 @@ bitflags! {
         const STRETCH  = 0x80;
     }
 }
+
+// TODO: Reintroduce validation:
+// let ink = (ink_and_flags & SpriteInk::INK_KIND).bits();
+// Pen::from_u8(ink).with_context(|| format!("Invalid sprite ink {}", ink))?;
+binread_flags!(SpriteInk, u8);
 
 bitflags! {
     #[derive(Default)]
@@ -996,8 +1055,26 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+binread_flags!(SpriteScoreColor, u8);
+
+fn fix_v0_v6_sprite_kind(kind: SpriteKind) -> SpriteKind {
+    match kind {
+        SpriteKind::Bitmap
+        | SpriteKind::Field
+        | SpriteKind::Button
+        | SpriteKind::CheckBox
+        | SpriteKind::RadioButton
+        | SpriteKind::Picture
+        | SpriteKind::Cast
+        | SpriteKind::Text => SpriteKind::Cast,
+        kind => kind
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Default)]
+#[br(big, import(version: Version))]
 pub struct Sprite {
+    #[br(map = |kind: SpriteKind| if version == Version::V7 { kind } else { fix_v0_v6_sprite_kind(kind) })]
     kind: SpriteKind,
     ink_and_flags: SpriteInk,
     id: MemberId,
@@ -1009,7 +1086,82 @@ pub struct Sprite {
     width: i16,
     score_color_and_flags: SpriteScoreColor,
     blend_amount: u8,
+    #[br(align_after(24))]
     line_size_and_flags: SpriteLineSize,
+}
+
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+#[br(big, import(version: Version))]
+struct SpriteV3 {
+    // TODO: This is an index into VWAC resource. There is no way to convert
+    // this to D5, so either script field needs to be an enum (probably) or
+    // extra fields should be added to Frame to store it. Also, it turns out
+    // this is not the script-related field from D4.
+    script: u8,
+    kind: SpriteKind,
+    fore_color_index: u8,
+    back_color_index: u8,
+    line_size_and_flags: SpriteLineSize,
+    ink_and_flags: SpriteInk,
+    id: i16,
+    origin: Point,
+    height: i16,
+    #[br(align_after(16))]
+    width: i16,
+}
+
+impl From<SpriteV3> for Sprite {
+    fn from(old: SpriteV3) -> Self {
+        Sprite {
+            kind: fix_v0_v6_sprite_kind(old.kind),
+            ink_and_flags: old.ink_and_flags,
+            id: old.id.into(),
+            fore_color_index: old.fore_color_index,
+            back_color_index: old.back_color_index,
+            origin: old.origin,
+            height: old.height,
+            width: old.width,
+            ..Sprite::default()
+        }
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+#[br(big, import(version: Version))]
+struct SpriteV4 {
+    field_0: Unk8,
+    kind: SpriteKind,
+    fore_color_index: u8,
+    back_color_index: u8,
+    line_size_and_flags: SpriteLineSize,
+    ink_and_flags: SpriteInk,
+    id: i16,
+    origin: Point,
+    height: i16,
+    width: i16,
+    script: i16,
+    score_color_and_flags: SpriteScoreColor,
+    #[br(align_after(20))]
+    blend_amount: u8,
+}
+
+impl From<SpriteV4> for Sprite {
+    fn from(old: SpriteV4) -> Self {
+        Sprite {
+            kind: fix_v0_v6_sprite_kind(old.kind),
+            ink_and_flags: old.ink_and_flags,
+            id: old.id.into(),
+            script: old.script.into(),
+            fore_color_index: old.fore_color_index,
+            back_color_index: old.back_color_index,
+            origin: old.origin,
+            height: old.height,
+            width: old.width,
+            score_color_and_flags: old.score_color_and_flags,
+            blend_amount: old.blend_amount,
+            line_size_and_flags: old.line_size_and_flags,
+        }
+    }
 }
 
 impl Sprite {
@@ -1100,111 +1252,21 @@ impl Sprite {
     pub fn width(&self) -> i16 {
         self.width
     }
-
-    fn load_ink_and_flags(input: &mut Input<impl Reader>) -> AResult<SpriteInk> {
-        load_flags!("sprite ink & flags", SpriteInk, input.read_u8()).and_then(|ink_and_flags| {
-            let ink = (ink_and_flags & SpriteInk::INK_KIND).bits();
-            Pen::from_u8(ink).with_context(|| format!("Invalid sprite ink {}", ink))?;
-            Ok(ink_and_flags)
-        })
-    }
-
-    fn load_kind(input: &mut Input<impl Reader>, version: Version) -> AResult<SpriteKind> {
-        load_enum!("sprite kind", SpriteKind::from_u8, input.read_u8()).map(|kind| {
-            if version == Version::V7 {
-                kind
-            } else {
-                match kind {
-                    SpriteKind::Bitmap
-                    | SpriteKind::Field
-                    | SpriteKind::Button
-                    | SpriteKind::CheckBox
-                    | SpriteKind::RadioButton
-                    | SpriteKind::Picture
-                    | SpriteKind::Cast
-                    | SpriteKind::Text => SpriteKind::Cast,
-                    kind => kind
-                }
-            }
-        })
-    }
-
-    fn load_v0(input: &mut Input<impl Reader>, version: Version) -> AResult<Self> {
-        let unknown = load_value!("sprite field 0", input.read_u8())?;
-        let kind = Self::load_kind(input, version)?;
-        let fore_color_index = load_value!("sprite fore color", input.read_u8())?;
-        let back_color_index = load_value!("sprite back color", input.read_u8())?;
-        let line_size_and_flags = load_flags!("sprite line size & flags", SpriteLineSize, input.read_u8())?;
-        let ink_and_flags = Self::load_ink_and_flags(input)?;
-        let id = load_member_num!("sprite cast member number", input.read_i16())?;
-        let origin = load_resource!("sprite registration point", Point, input)?;
-        let height = load_value!("sprite height", input.read_i16())?;
-        let width = load_value!("sprite width", input.read_i16())?;
-
-        // TODO: The rest of this may be wrong for D3.
-        let script = load_member_num!("sprite script cast member number", input.read_i16())?;
-        let score_color_and_flags = load_flags!("sprite score color & flags", SpriteScoreColor, input.read_u8())?;
-        let blend_amount = load_value!("sprite blend amount", input.read_u8())?;
-
-        Ok(Self {
-            kind,
-            ink_and_flags,
-            id,
-            script,
-            fore_color_index,
-            back_color_index,
-            origin,
-            height,
-            width,
-            score_color_and_flags,
-            blend_amount,
-            line_size_and_flags,
-        })
-    }
-
-    fn load_v5(input: &mut Input<impl Reader>, version: Version) -> AResult<Self> {
-        let kind = Self::load_kind(input, version)?;
-        let ink_and_flags = Self::load_ink_and_flags(input)?;
-        let id = load_resource!("sprite cast ID", MemberId, input)?;
-        let script = load_resource!("sprite script ID", MemberId, input)?;
-        let fore_color_index = load_value!("sprite fore color", input.read_u8())?;
-        let back_color_index = load_value!("sprite back color", input.read_u8())?;
-        let origin = load_resource!("sprite registration point", Point, input)?;
-        let height = load_value!("sprite height", input.read_i16())?;
-        let width = load_value!("sprite width", input.read_i16())?;
-        let score_color_and_flags = load_flags!("sprite score color & flags", SpriteScoreColor, input.read_u8())?;
-        let blend_amount = load_value!("sprite blend amount", input.read_u8())?;
-        let line_size_and_flags = load_flags!("sprite line size & flags", SpriteLineSize, input.read_u8())?;
-        input.skip(1).context("Can’t skip sprite frame padding")?;
-
-        Ok(Self {
-            kind,
-            ink_and_flags,
-            id,
-            script,
-            fore_color_index,
-            back_color_index,
-            origin,
-            height,
-            width,
-            score_color_and_flags,
-            blend_amount,
-            line_size_and_flags,
-        })
-    }
 }
 
 impl Resource for Sprite {
     type Context = (Version, );
 
     fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        if context.0 < Version::V5 {
-            Self::load_v0(input, context.0)
+        if context.0 == Version::V3 {
+            SpriteV3::read_args(input, *context).map(Self::from)
+        } else if context.0 < Version::V5 {
+            SpriteV4::read_args(input, *context).map(Self::from)
         } else if context.0 <= Version::V7 {
-            Self::load_v5(input, context.0)
+            Self::read_args(input, *context)
         } else {
             bail!("Invalid frame cell version {}", context.0)
-        }
+        }.context("Can’t read sprite")
     }
 }
 

@@ -28,7 +28,11 @@ impl Default for Platform {
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
 pub enum Version {
     Unknown,
-    // D2
+
+    // D1
+    V1023 = 1023,
+
+    // D1 and D2
     V1024 = 1024,
 
     // D3, but only in the extended version field
@@ -58,13 +62,18 @@ pub enum Version {
 
 impl Version {
     #[must_use]
+    pub fn d1(self) -> bool {
+        matches!(self, Self::V1023 | Self::V1024)
+    }
+
+    #[must_use]
     pub fn d2(self) -> bool {
         matches!(self, Self::V1024)
     }
 
     #[must_use]
     pub fn d3(self) -> bool {
-        matches!(self, Self::V1025 | Self::V1028 | Self::V1029)
+        matches!(self, Self::V1024 | Self::V1025 | Self::V1028 | Self::V1029)
     }
 
     #[must_use]

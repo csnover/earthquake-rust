@@ -5,7 +5,7 @@ use byteorder::{ByteOrder, BigEndian};
 use byteordered::{ByteOrdered, Endianness};
 use crate::{ApplicationVise, OSType, ResourceId};
 use derive_more::Display;
-use libcommon::{encodings::MAC_ROMAN, Reader, string::ReadExt};
+use libcommon::{Reader, encodings::MAC_ROMAN, string::ReadExt, binread_flags};
 use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, Seek, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
@@ -225,19 +225,7 @@ bitflags! {
     }
 }
 
-impl BinRead for ResourceFlags {
-    type Args = ();
-
-    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
-        use binread::BinReaderExt;
-        let pos = usize::try_from(reader.seek(SeekFrom::Current(0))?).unwrap();
-        let value = reader.read_ne::<u8>()?;
-        Self::from_bits(value).ok_or_else(|| binread::Error::Custom {
-            pos,
-            err: Box::new(anyhow!("Invalid resource flags 0x{:x}", value)),
-        })
-    }
-}
+binread_flags!(ResourceFlags, u8);
 
 #[derive(Debug)]
 enum DecompressorState {
@@ -279,7 +267,7 @@ struct ResourceKind {
 
 fn parse_u24<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &binread::ReadOptions, _: ()) -> binread::BinResult<u32> {
     let mut bytes = [ 0; 3 ];
-    reader.read_exact(&mut bytes).map_err(binread::Error::Io)?;
+    reader.read_exact(&mut bytes)?;
     Ok(BigEndian::read_u24(&bytes))
 }
 

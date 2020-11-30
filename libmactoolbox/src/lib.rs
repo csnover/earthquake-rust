@@ -41,10 +41,11 @@ pub use resource_id::*;
 pub use resource_manager::*;
 pub use system::System;
 use anyhow::Result as AResult;
+use binread::BinRead;
 use byteordered::{ByteOrdered, Endianness};
 use libcommon::{Reader, Resource, resource::Input};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Point {
     pub x: i16,
     pub y: i16,
@@ -65,7 +66,7 @@ impl Resource for Point {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(BinRead, Clone, Copy, Default)]
 pub struct Rect {
     pub top: i16,
     pub left: i16,

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result as AResult};
+use binread::BinRead;
 use bitflags::bitflags;
 use byteordered::Endianness;
 use crate::{collections::riff::ChunkIndex, pvec};
@@ -76,13 +77,13 @@ use super::{
 //     }
 // }
 
-#[derive(Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
 pub struct LibNum(pub i16);
 
-#[derive(Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
 pub struct MemberNum(pub i16);
 
-#[derive(Clone, Copy, Default, Display, Eq, PartialEq)]
+#[derive(BinRead, Clone, Copy, Default, Display, Eq, PartialEq)]
 #[display(fmt = "MemberId({}, {})", "_0.0", "_1.0")]
 pub struct MemberId(LibNum, MemberNum);
 
@@ -115,6 +116,12 @@ impl MemberId {
 
     pub fn num_mut(&mut self) -> &mut MemberNum {
         &mut self.1
+    }
+}
+
+impl From<i16> for MemberId {
+    fn from(num: i16) -> Self {
+        Self(if num == 0 { 0 } else { 1 }.into(), num.into())
     }
 }
 
