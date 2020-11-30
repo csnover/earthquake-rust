@@ -15,7 +15,7 @@ use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_
 use std::{convert::TryInto, io::{Read, SeekFrom}, path::PathBuf, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DetectionInfo {
     name: Option<String>,
     charset: Option<ScriptCode>,
@@ -23,6 +23,19 @@ pub struct DetectionInfo {
     movie: Movie,
     system_resources: Option<Vec<u8>>,
     config: ProjectorSettings,
+}
+
+impl std::fmt::Debug for DetectionInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("name", &self.name)
+            .field("charset", &self.charset)
+            .field("version", &self.version)
+            .field("movie", &self.movie)
+            .field("system_resources", &self.system_resources.as_ref().map(Vec::len))
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 impl DetectionInfo {
