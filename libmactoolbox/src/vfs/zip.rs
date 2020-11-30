@@ -104,7 +104,7 @@ impl <'a> ZipFile<'a> {
 
 impl <'a> fmt::Debug for ZipFile<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ZipFileFork")
+        f.debug_struct(std::any::type_name::<Self>())
             .field("owner", &self.owner)
             .field("path", &self.path)
             .field("reader", &"EntryReader")

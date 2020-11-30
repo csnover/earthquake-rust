@@ -92,7 +92,7 @@ impl Rect {
 
 impl std::fmt::Debug for Rect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Rect")
+        f.debug_struct(std::any::type_name::<Self>())
             .field("top", &self.top)
             .field("left", &self.left)
             .field("bottom", &self.bottom)

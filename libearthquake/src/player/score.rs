@@ -1272,7 +1272,7 @@ impl Resource for Sprite {
 
 impl std::fmt::Debug for Sprite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FrameCell")
+        f.debug_struct(std::any::type_name::<Self>())
             .field("back_color_index", &self.back_color_index())
             .field("blend", &self.blend())
             .field("blend_amount", &self.blend_amount())

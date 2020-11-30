@@ -71,7 +71,7 @@ pub struct Player<'vfs> {
 
 impl <'vfs> std::fmt::Debug for Player<'vfs> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Player")
+        f.debug_struct(std::any::type_name::<Self>())
             .field("movies", &self.movies)
             .field("current_index", &self.current_index)
             .field("paused", &self.paused)
