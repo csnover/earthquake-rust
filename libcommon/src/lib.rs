@@ -94,19 +94,21 @@ macro_rules! binread_flags {
     }
 }
 
+#[doc(hidden)]
+pub use paste::paste;
+
 #[macro_export]
 macro_rules! binread_enum {
     ($name: ident, $size: ty) => {
         impl BinRead for $name {
             type Args = ();
 
-            fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
-                use binread::BinReaderExt;
-                use paste::paste;
-                let last_pos = reader.seek(SeekFrom::Current(0))?;
+            fn read_options<R: ::binread::io::Read + ::binread::io::Seek>(reader: &mut R, options: &::binread::ReadOptions, _: Self::Args) -> ::binread::BinResult<Self> {
+                use ::binread::BinReaderExt;
+                let last_pos = reader.seek(::std::io::SeekFrom::Current(0))?;
                 let value = reader.read_type::<$size>(options.endian)?;
-                paste! {
-                    Self::[<from_ $size>](value).ok_or_else(|| binread::Error::AssertFail {
+                $crate::paste! {
+                    Self::[<from_ $size>](value).ok_or_else(|| ::binread::Error::AssertFail {
                         pos: last_pos.try_into().unwrap(),
                         message: format!(concat!("Invalid ", stringify!($name), " value 0x{:x}"), value),
                     })
