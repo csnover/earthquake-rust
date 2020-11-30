@@ -455,6 +455,7 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
             (rsrc_offset, size)
         },
         Version::D7 => {
+            #[allow(dead_code)]
             const DRIVERS_HEADER_SIZE: u32 = 8;
             // SETTINGS_SIZE here is actually only 8
 
@@ -464,6 +465,7 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
             // There is no PROJECTR.RSR in D7 -- resources are now native PE
             // resources inside the embedded DLLs. So figure out how to make
             // that work, ha ha ugh.
+            #[allow(dead_code)]
             const DRIVER_ENTRY_SIZE: u32 = 0x3c;
             todo!("D7 projector system resource loading")
         },

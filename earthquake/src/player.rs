@@ -1,3 +1,6 @@
+// TODO: You know, finish this file and then remove these overrides
+#![allow(dead_code)]
+
 use anyhow::{bail, Context, Result as AResult};
 use libcommon::vfs::{VirtualFile, VirtualFileSystem};
 use libearthquake::{
@@ -27,7 +30,7 @@ use libmactoolbox::{
     System,
 };
 use std::{io::SeekFrom, rc::Rc, time::Instant};
-use qt_core::{QBox, QEvent, QEventLoop, q_event::Type as QEventType};
+use qt_core::{QBox, q_event::Type as QEventType};
 use qt_widgets::QWidget;
 
 #[derive(Debug)]
@@ -157,9 +160,9 @@ impl <'vfs> Player<'vfs> {
             return Ok(false);
         }
 
-        todo!();
-
         self.current_index += 1;
+
+        todo!();
     }
 
     pub fn post_event(&mut self, kind: EventKind, data: EventData) -> AResult<()> {

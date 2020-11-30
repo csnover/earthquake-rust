@@ -1,3 +1,6 @@
+// TODO: You know, finish this file and then remove these overrides
+#![allow(dead_code)]
+
 pub mod movie;
 pub mod score;
 

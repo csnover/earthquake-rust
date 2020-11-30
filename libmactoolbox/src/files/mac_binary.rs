@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteorder::{ByteOrder, BigEndian};
-use crate::{OSType, script_manager::decode_text};
+use crate::{script_manager::decode_text};
 use crc::crc16::checksum_x25;
 use libcommon::{Reader, SharedStream};
 use std::io::{Cursor, SeekFrom};

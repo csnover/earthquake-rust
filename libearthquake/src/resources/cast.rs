@@ -3,7 +3,7 @@ use binread::BinRead;
 use bitflags::bitflags;
 use byteordered::Endianness;
 use crate::{collections::riff::ChunkIndex, pvec};
-use derive_more::{Constructor, Deref, DerefMut, Display, From, Index, IndexMut};
+use derive_more::{Deref, DerefMut, Display, From, Index, IndexMut};
 use libcommon::{
     encodings::DecoderRef,
     Reader,
@@ -136,6 +136,9 @@ impl Resource for MemberId {
     }
 }
 
+// TODO: Rewrite this to use binread and put it somewhere better with a
+// non-repetitive name
+#[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
 pub struct CastMap(Vec<ChunkIndex>);
 
@@ -179,9 +182,13 @@ impl Resource for MemberInfoFlags {
 
 type Struct14h = Vec<u8>;
 type STXTSub = Vec<u8>;
+#[allow(non_camel_case_types)]
 type Struct9_4A2DE0 = Vec<u8>;
+#[allow(non_camel_case_types)]
 type StructB_4A2E00 = Vec<u8>;
+#[allow(non_camel_case_types)]
 type StructC_4A2DC0 = Vec<u8>;
+#[allow(non_camel_case_types)]
 type StructD_439630 = Vec<u8>;
 
 pvec! {

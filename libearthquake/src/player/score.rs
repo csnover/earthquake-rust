@@ -2,7 +2,7 @@
 #![allow(clippy::struct_excessive_bools)]
 #![allow(dead_code)]
 
-use anyhow::{anyhow, bail, Context, Result as AResult};
+use anyhow::{bail, Context, Result as AResult};
 use binread::{BinRead, ReadOptions};
 use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
@@ -84,7 +84,7 @@ impl Tempo {
 }
 
 // TODO: Different sizes for different Director versions:
-// D3: 24
+// D1–D3: 24
 // D4: 48
 // D5: 48
 // D6: 120
@@ -147,48 +147,55 @@ impl SpriteBitmask {
     const SOUND_1: usize    = 4;
     const PALETTE: usize    = 5;
 
-    fn all() -> Self {
+    #[must_use]
+    pub fn all() -> Self {
         let mut bits = [ 0xFF; Self::SIZE ];
         bits[Self::SIZE - 1] &= u8::try_from((1_u16 << (Self::NUM_CHANNELS % 8)) - 1).unwrap();
         SpriteBitmask(bits)
     }
 
-    fn bits(&self) -> [ u8; Self::SIZE ] {
+    #[must_use]
+    pub fn bits(&self) -> [ u8; Self::SIZE ] {
         self.0
     }
 
-    fn contains(&self, bit: usize) -> bool {
+    #[must_use]
+    pub fn contains(&self, bit: usize) -> bool {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] & (1 << (bit % 8)) != 0
     }
 
-    fn empty() -> Self {
+    #[must_use]
+    pub fn empty() -> Self {
         SpriteBitmask::default()
     }
 
-    fn iter(&self) -> BitIter<'_> {
+    #[must_use]
+    pub fn iter(&self) -> BitIter<'_> {
         BitIter { owner: self, index: 0 }
     }
 
-    fn iter_back(&self) -> Rev<BitIter<'_>> {
+    pub fn iter_back(&self) -> Rev<BitIter<'_>> {
         BitIter { owner: self, index: Self::NUM_CHANNELS }.rev()
     }
 
-    fn iter_sprites(&self) -> BitIter<'_> {
+    #[must_use]
+    pub fn iter_sprites(&self) -> BitIter<'_> {
         BitIter { owner: self, index: Self::MIN_SPRITE }
     }
 
-    fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.0 == [ 0; Self::SIZE ]
     }
 
-    fn remove(&mut self, bit: usize) -> &mut Self {
+    pub fn remove(&mut self, bit: usize) -> &mut Self {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] &= !(1 << (bit % 8));
         self
     }
 
-    fn set(&mut self, bit: usize) -> &mut Self {
+    pub fn set(&mut self, bit: usize) -> &mut Self {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] |= 1 << (bit % 8);
         self
@@ -310,6 +317,7 @@ mod tests {
 
     #[test]
     #[should_panic]
+    #[allow(unused_must_use)]
     fn sprite_bitmask_contains_invalid() {
         let bitmask = SpriteBitmask::default();
         bitmask.contains(SpriteBitmask::NUM_CHANNELS);
@@ -616,7 +624,6 @@ impl Iterator for Score {
 }
 
 impl Score {
-    const V4_HEADER_SIZE: u8 = 20;
     const V5_HEADER_SIZE: u8 = 20;
 }
 
@@ -647,46 +654,45 @@ impl Resource for Score {
 
             dbg!(own_size, header_size, num_frames, version);
 
-            if version > Version::V7 {
-                todo!("Score version 8 parsing");
-            } else if version >= Version::V4 {
-                let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
-                    (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
-                } else {
-                    (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
-                };
+            match version {
+                Version::V4 | Version::V5 | Version::V6 | Version::V7 => {
+                    let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
+                        (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
+                    } else {
+                        (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
+                    };
 
-                let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
-                ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
-                // Technically this is the number of `sizeof(Sprite)`s to make one
-                // `sizeof(Frame)`; the header of the frame is exactly two
-                // `sizeof(Sprite)`s, even though it does not actually contain sprite
-                // data
-                let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
-                ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
-                let field_12 = input.read_u8().context("Can’t read score field_12")?;
-                ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
-                let field_13 = input.read_u8().context("Can’t read score field_13")?;
-                ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
+                    let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
+                    ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
+                    // Technically this is the number of `sizeof(Sprite)`s to make one
+                    // `sizeof(Frame)`; the header of the frame is exactly two
+                    // `sizeof(Sprite)`s, even though it does not actually contain sprite
+                    // data
+                    let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
+                    ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
+                    let field_12 = input.read_u8().context("Can’t read score field_12")?;
+                    ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
+                    let field_13 = input.read_u8().context("Can’t read score field_13")?;
+                    ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
 
-                dbg!(sprite_size, num_sprites, field_12, field_13);
+                    dbg!(sprite_size, num_sprites, field_12, field_13);
 
-                // Director normally reads through all of the frame deltas here in order
-                // to byte swap them into the platform’s native endianness, but since we
-                // are using an endianness-aware reader, we’ll just let that happen
-                // when the frames are read later
+                    // Director normally reads through all of the frame deltas here in order
+                    // to byte swap them into the platform’s native endianness, but since we
+                    // are using an endianness-aware reader, we’ll just let that happen
+                    // when the frames are read later
+                },
+                Version::V3 | Version::Unknown => bail!("Bad score version"),
             }
 
             version
-        } else if context.0.d3() {
+        } else if context.0.d3() || context.0.d2() || context.0.d1() {
             Version::V3
         } else {
             todo!("Score config version {} parsing", context.0 as i32);
         };
 
         let pos = input.pos()?;
-
-        dbg!(own_size, pos);
 
         Ok(Self {
             vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
@@ -840,10 +846,7 @@ impl Frame {
     where R: binread::io::Read + binread::io::Seek {
         let (version, transition) = args;
         if version < Version::V6 {
-            Ok(match transition {
-                Transition::Legacy { tempo, .. } | Transition::LegacyTempo(tempo) => tempo,
-                Transition::None | Transition::Cast(..) => Tempo::default()
-            })
+            Ok(transition.tempo())
         } else {
             let last_pos = reader.seek(SeekFrom::Current(0))?;
             let value = i8::read_options(reader, options, ())?;
@@ -960,23 +963,9 @@ impl From<FrameV4> for Frame {
 impl Frame {
     const V4_CELL_COUNT: u16 = 48;
     const V0_SIZE_IN_CELLS: u16 = 50;
-    const V0_SIZE: u16 = Sprite::V0_SIZE * Self::V0_SIZE_IN_CELLS;
     const V5_CELL_COUNT: u16 = 48;
     const V5_SIZE_IN_CELLS: u16 = 50;
     const V5_SIZE: u16 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
-
-    fn new(data: Vec<u8>, version: Version) -> AResult<Self> {
-        let mut input = Input::new(Cursor::new(data), Endianness::Big);
-        if version == Version::V3 {
-            FrameV3::read_args(&mut input, (version, )).map(Self::from)
-        } else if version == Version::V4 {
-            FrameV4::read_args(&mut input, (version, )).map(Self::from)
-        } else if version >= Version::V5 && version <= Version::V7 {
-            Self::read_args(&mut input, (version, ))
-        } else {
-            todo!("Bad score frame version {}", version)
-        }.context("Can’t read frame")
-    }
 }
 
 #[derive(Clone, Copy, Debug, Display, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
@@ -1258,14 +1247,11 @@ impl Resource for Sprite {
     type Context = (Version, );
 
     fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        if context.0 == Version::V3 {
-            SpriteV3::read_args(input, *context).map(Self::from)
-        } else if context.0 < Version::V5 {
-            SpriteV4::read_args(input, *context).map(Self::from)
-        } else if context.0 <= Version::V7 {
-            Self::read_args(input, *context)
-        } else {
-            bail!("Invalid frame cell version {}", context.0)
+        match context.0 {
+            Version::V3 => SpriteV3::read_args(input, *context).map(Self::from),
+            Version::V4 => SpriteV4::read_args(input, *context).map(Self::from),
+            Version::V5 | Version::V6 | Version::V7 => Self::read_args(input, *context),
+            Version::Unknown => bail!("Unknown score version"),
         }.context("Can’t read sprite")
     }
 }

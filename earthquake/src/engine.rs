@@ -36,6 +36,8 @@ pub(crate) struct Engine<'vfs> {
 
     charset: Option<ScriptCode>,
 
+    // TODO: You know, finish this file and then remove this dead_code override
+    #[allow(dead_code)]
     data_dir: Option<PathBuf>,
 
     files: <Vec<(String, Detection<'vfs>)> as IntoIterator>::IntoIter,
@@ -183,11 +185,6 @@ impl <'vfs> EventReceiver for Engine<'vfs> {
                         EventData::Null,
                     ).unwrap_or_else(|ref e| self.show_error(e));
                 }
-                true
-            },
-
-            QEventType::MouseMove => {
-                // TODO: As OS event
                 true
             },
 

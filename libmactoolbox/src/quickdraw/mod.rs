@@ -4,7 +4,6 @@
 use crate::{Point, Rect};
 use anyhow::{Context, Result as AResult};
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use libcommon::{
     Reader,
     Resource,

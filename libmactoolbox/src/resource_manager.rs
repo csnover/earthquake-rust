@@ -64,6 +64,7 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 
     /// `GetString`
+    #[allow(clippy::rc_buffer)]
     pub fn get_string(&self, id: i16) -> Option<Rc<String>> {
         match id {
             -16096 => std::env::var_os("USER").or_else(|| std::env::var_os("USERNAME")).map(|s| Rc::new(s.to_string_lossy().to_string())),

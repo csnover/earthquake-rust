@@ -1,9 +1,12 @@
+// TODO: You know, finish this file and then remove these overrides
+#![allow(dead_code)]
+#![allow(clippy::unused_self)]
+
 use anyhow::Result as AResult;
 use bitstream_io::{BigEndian, BitReader};
 use byteordered::{ByteOrdered, Endianness};
 use crate::Rect;
 use libcommon::{Reader, Resource};
-use qt_widgets::QApplication;
 
 #[derive(Clone, Copy, Debug)]
 struct Alert {
@@ -58,7 +61,7 @@ struct Dialogs {
 }
 
 impl Dialogs {
-    pub fn alert(&self, alert_id: i16) -> i16 {
+    pub fn alert(&self, _alert_id: i16) -> i16 {
         todo!("alert dialog")
     }
 
@@ -69,7 +72,7 @@ impl Dialogs {
         self.param_text[3] = param3.as_ref().to_owned();
     }
 
-    pub fn stop_alert(&self, alert_id: i16) -> i16 {
+    pub fn stop_alert(&self, _alert_id: i16) -> i16 {
         todo!("stop alert dialog")
     }
 }

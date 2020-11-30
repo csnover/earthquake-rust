@@ -39,7 +39,14 @@ impl<'a, T: Reader> Iter<'a, T> {
         self.id
     }
 
-    // TODO: For debugging only
+    #[deprecated(note = "TODO: For debugging only")]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.owner.memory_map.get(self.chunk_index).unwrap().size == 0
+    }
+
+    #[deprecated(note = "TODO: For debugging only")]
+    #[must_use]
     pub fn len(&self) -> u32 {
         self.owner.memory_map.get(self.chunk_index).unwrap().size
     }
@@ -48,7 +55,8 @@ impl<'a, T: Reader> Iter<'a, T> {
         self.owner.load_chunk(self.chunk_index, context)
     }
 
-    // TODO: For debugging only
+    #[deprecated(note = "TODO: For debugging only")]
+    #[must_use]
     pub fn offset(&self) -> u32 {
         self.owner.memory_map.get(self.chunk_index).unwrap().offset
     }

@@ -80,6 +80,8 @@ struct Dict {
     dict: HashMap<OsString, usize>,
 }
 impl Dict {
+    // TODO: You know, finish this file and then remove this dead_code override
+    #[allow(dead_code)]
     pub fn get_by_key(&self, key: &OsString) -> Option<usize> {
         self.dict.get(key).copied()
     }

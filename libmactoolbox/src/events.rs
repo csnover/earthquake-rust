@@ -1,3 +1,7 @@
+// TODO: You know, finish this file and then remove these overrides
+#![allow(dead_code)]
+#![allow(clippy::unused_self)]
+
 use anyhow::{bail, Result as AResult};
 use bitflags::bitflags;
 use crate::{OSType, Point};
@@ -170,11 +174,12 @@ impl EventManager {
     }
 
     /// `GetKeys`
-    pub fn keys(&self, map: &[u8]) {
+    pub fn keys(&self, _map: &[u8]) {
         todo!("keyboard state")
     }
 
     /// `GetMouse`
+    #[must_use]
     pub fn mouse(&self) -> Point {
         // TODO: Supposed to be mouse position within grafport.
         todo!("mouse position")
@@ -228,7 +233,7 @@ impl EventManager {
                 None
             },
             EventKind::OS => todo!("OS events"),
-            EventKind::HighLevel => if let EventData::HighLevel(data) = data {
+            EventKind::HighLevel => if let EventData::HighLevel(..) = data {
                 todo!("high level events")
             } else {
                 None
@@ -302,6 +307,7 @@ impl EventManager {
         }
     }
 
+    #[must_use]
     pub fn get_double_time(&self) -> Duration {
         Duration::from_millis(unsafe {
             QGuiApplication::style_hints().mouse_double_click_interval()
