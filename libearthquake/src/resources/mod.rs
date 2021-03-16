@@ -12,84 +12,110 @@ pub mod video;
 pub mod xtra;
 
 use anyhow::{Context, Result as AResult, ensure};
+use binread::{BinRead, io::{Read, Seek}};
+use bstr::BStr;
 use byteordered::{Endianness, ByteOrdered};
-use crate::ensure_sample;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{encodings::DecoderRef, Reader, Resource, resource::Input};
-use std::{cell::RefCell, convert::TryInto, io::{Cursor, Read, Seek, SeekFrom}};
+use libcommon::{encodings::DecoderRef, Reader, Resource, SeekExt, TakeSeekExt, resource::Input};
+use std::{cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, SeekFrom}};
 
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
-pub struct ByteVec(Vec<u8>);
-
-impl ByteVec {
-    pub const HEADER_SIZE: u32 = 0x12;
-}
-
-impl Resource for ByteVec {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        Rc::load(input, Rc::SIZE, &Default::default())?;
-        let used = input.read_u32()?;
-        let capacity = input.read_u32()?;
-        let header_size = input.read_u16()?;
-        let mut data = Vec::with_capacity(capacity.try_into().unwrap());
-        ensure_sample!(
-            used <= size,
-            "Bad ByteVec size at {} ({} > {})",
-            input.pos()? - u64::from(Self::HEADER_SIZE),
-            used,
-            size
-        );
-        ensure_sample!(
-            header_size == Self::HEADER_SIZE.try_into().unwrap(),
-            "Generic ByteVec loader called on specialised ByteVec with header size {} at {}",
-            header_size,
-            input.pos()? - u64::from(Self::HEADER_SIZE)
-        );
-        input.inner_mut().take((used - u32::from(header_size)).into()).read_to_end(&mut data)?;
-
-        Ok(Self(data))
-    }
-}
-
-#[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
-pub struct List<T: Resource>(Vec<T>);
-
-impl <T: Resource> Resource for List<T> {
-    type Context = T::Context;
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> {
-        Rc::load(input, Rc::SIZE, &Default::default())?;
-        let used = input.read_u32()?;
-        let capacity = input.read_u32()?;
-        let header_size = u32::from(input.read_u16()?);
-        let item_size = u32::from(input.read_u16()?);
-        ensure_sample!(header_size + item_size * used <= size, "Bad List size at {}", input.pos()? - 0x14);
-        input.skip((header_size - 0x14).into())?;
-        let mut data = Vec::with_capacity(capacity.try_into().unwrap());
-        for _ in 0..used {
-            data.push(T::load(input, item_size, context)?);
-        }
-
-        Ok(Self(data))
-    }
-}
-
+/// A reference counted object with a vtable.
+///
+/// This data is always invalid on disk, but Director did the cheap thing of
+/// serializing by dumping memory, so it exists nevertheless.
+///
+/// Since Rust has its own [`Rc`](alloc::rc::Rc) wrapper for reference counting
+/// and [`dyn`] keyword for dynamic dispatch, this structure exists only for
+/// serialization.
 #[derive(Copy, Clone, Debug)]
 pub struct Rc;
 
-impl Rc {
-    const SIZE: u32 = 8;
-}
+impl BinRead for Rc {
+    type Args = ();
 
-impl Resource for Rc {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        assert_eq!(size, Self::SIZE);
-        input.skip(Self::SIZE.into())?;
+    fn read_options<R: Read + Seek>(reader: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+        reader.skip(8)?;
         Ok(Self)
     }
 }
 
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(import(size: u64))]
+struct ByteVecHeaderV5 {
+    __: Rc,
+    #[br(assert(size >= used.into(), "Bad ByteVec size ({} > {})", used, size))]
+    used: u32,
+    capacity: u32,
+    #[br(assert(header_size == Self::SIZE, "Generic ByteVec loader \
+        called on specialised ByteVec with header size {}", header_size))]
+    header_size: u16,
+}
+
+impl ByteVecHeaderV5 {
+    const SIZE: u16 = 0x12;
+}
+
+/// A contiguous growable byte array.
+#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+pub struct ByteVec(Vec<u8>);
+
+impl BinRead for ByteVec {
+    type Args = ();
+
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+        let size = input.len()?;
+        let header = ByteVecHeaderV5::read_options(input, options, (size, ))?;
+        let data_size = u64::from(header.used) - u64::from(header.header_size);
+        let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
+        let bytes_read = input
+            .take(data_size)
+            .read_to_end(&mut data)?;
+        if u64::try_from(bytes_read).unwrap() != data_size {
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+        }
+        Ok(Self(data))
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(import(size: u64))]
+#[br(assert(
+    size >= u64::from(header_size) + u64::from(item_size) * u64::from(used),
+    "Bad List size ({} > {})", u64::from(header_size) + u64::from(item_size) * u64::from(used), size
+))]
+struct ListHeaderV5 {
+    __: Rc,
+    used: u32,
+    capacity: u32,
+    header_size: u16,
+    item_size: u16,
+}
+
+impl ListHeaderV5 {
+    const SIZE: u16 = 0x14;
+}
+
+/// A growable list of homogenous items.
+#[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
+pub struct List<T: BinRead>(Vec<T>);
+
+impl <T: BinRead> BinRead for List<T> {
+    type Args = T::Args;
+
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+        let size = input.len()?;
+        let header = ListHeaderV5::read_options(input, options, (size, ))?;
+        input.skip((header.header_size - ListHeaderV5::SIZE).into())?;
+        let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
+        let item_size = u64::from(header.item_size);
+        for _ in 0..header.used {
+            data.push(T::read_options(&mut input.take_seek(item_size), options, args)?);
+        }
+        Ok(Self(data))
+    }
+}
+
+/// A growable list of heterogenous items.
 #[derive(Debug)]
 pub struct PVec {
     header_size: u32,
@@ -177,8 +203,7 @@ impl Resource for PVec {
 macro_rules! pvec {
     (@field [offset($start_offset:literal..$end_offset:literal)], $vis:vis, $field_name:ident, $field_type:ty) => {
         $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            #![allow(clippy::default_trait_access)]
-            self.inner.load_header::<$field_type>($start_offset, $end_offset, &::std::default::Default::default())
+            self.inner.load_header::<$field_type>($start_offset, $end_offset, &<_>::default())
         }
     };
 
@@ -196,8 +221,7 @@ macro_rules! pvec {
 
     (@field [entry($field_index:literal)], $vis:vis, $field_name:ident, $field_type:ty) => {
         $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            #![allow(clippy::default_trait_access)]
-            self.inner.load_entry::<$field_type>($field_index, &::std::default::Default::default())
+            self.inner.load_entry::<$field_type>($field_index, &<_>::default())
         }
     };
 
@@ -240,3 +264,75 @@ macro_rules! pvec {
         }
     }
 }
+
+/// A tuple which ties a dictionary key offset to a 32-bit value.
+///
+/// The offset of the key is relative to the start of the parent [`Dict`]’s
+/// associated [`ByteVec`] object rather than the start of the data, so
+/// knowledge of the [`ByteVec`] object’s header size is needed to get the
+/// correct offset.
+#[derive(BinRead, Clone, Copy, Debug)]
+pub struct DictItem<T>
+where
+    T: TryFrom<i32>,
+    T::Error: Send + Sync + 'static
+{
+    #[br(try_map(|value: u32| value.try_into()))]
+    key_offset: usize,
+    #[br(try_map(|value: i32| T::try_from(value)))]
+    value: T,
+}
+
+/// An ordered dictionary with case-insensitive keys.
+///
+/// In Director, this keys are stored sorted case-insensitively (according
+/// to the system locale) in a [`ByteVec`] for O(log n) lookups by key. Index
+/// lookups are O(1), and value lookups are O(n).
+///
+/// The stored value is always 32-bits but can be any 32-bit value.
+///
+/// This is used by both `'Dict'` and `'Fmap'` resources.
+#[derive(BinRead, Clone, Debug, Index, IndexMut)]
+pub struct Dict<T>
+where
+    T: TryFrom<i32>,
+    T::Error: Send + Sync + 'static,
+{
+    #[index] #[index_mut]
+    list: List<DictItem<T>>,
+    #[br(default)]
+    keys: Option<ByteVec>,
+}
+
+impl <T> Dict<T>
+where
+    T: TryFrom<i32>,
+    T::Error: Send + Sync + 'static,
+{
+    #[must_use]
+    pub fn key_by_index(&self, index: usize) -> Option<&BStr> {
+        self.keys.as_ref().and_then(|keys| {
+            todo!()
+        })
+    }
+
+    pub fn keys_mut(&mut self) -> &mut Option<ByteVec> {
+        &mut self.keys
+    }
+}
+
+// TODO: You know, finish this
+// impl <Item: BinRead> Dict<Item> {
+//     pub fn get_by_key(&self, key: &OsString) -> Option<usize> {
+//         self.dict.get(key).copied()
+//     }
+
+//     pub fn index_of_key(&self, index: usize) -> Option<&OsString> {
+//         for (k, v) in &self.dict {
+//             if *v == index {
+//                 return Some(k)
+//             }
+//         }
+//         None
+//     }
+// }

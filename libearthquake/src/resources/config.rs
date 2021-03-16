@@ -1,32 +1,32 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use byteordered::{Endianness, ByteOrdered};
-use crate::{ensure_sample, player::score::Tempo};
-use libcommon::{Reader, Resource, resource::Input};
-use libmactoolbox::Rect;
+use binread::BinRead;
+use crate::player::score::Tempo;
+use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, binread_enum, bitflags, bitflags::BitFlags, newtype_num, resource::Input};
+use libmactoolbox::{quickdraw::PaletteIndex, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::convert::TryInto;
+use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
 
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LegacyTempo(pub u8);
+newtype_num! {
+    #[derive(BinRead, Debug)]
+    pub struct LegacyTempo(u8);
+}
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 pub enum Platform {
+    #[default]
     Unknown = 0,
     Mac,
     Win,
 }
 
-impl Default for Platform {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
+binread_enum!(Platform, i16);
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
 pub enum Version {
+    #[default]
     Unknown,
 
     // D1
@@ -59,6 +59,8 @@ pub enum Version {
     V1406 = 1406,
     V5692 = 5692, // protected
 }
+
+binread_enum!(Version, i16);
 
 impl Version {
     #[must_use]
@@ -97,12 +99,6 @@ impl Version {
     }
 }
 
-impl Default for Version {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
 bitflags! {
     #[derive(Default)]
     pub struct Flags: u32 {
@@ -115,19 +111,17 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
+#[br(big, import(version: Version))]
 pub enum PaletteId {
+    #[br(pre_assert(version >= Version::V1201))]
     Cast(MemberId),
+    #[default]
     Number(i32),
 }
 
-impl Default for PaletteId {
-    fn default() -> Self {
-        Self::Number(0)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+#[br(big)]
 pub struct Config {
     own_size: i16,
     version: Version,
@@ -135,32 +129,56 @@ pub struct Config {
     min_cast_num: MemberNum,
     max_cast_num: MemberNum,
     legacy_tempo: LegacyTempo,
+    // TODO: Fallibly assert 0 or 1
+    #[br(map = |b: u8| b != 0)]
     legacy_back_color_is_black: bool,
-    field_12: i16,
-    field_14: i16,
-    field_16: i16,
-    field_18: u8,
-    field_19: u8,
-    stage_color_index: i16,
+    field_12: Unk16,
+    field_14: Unk16,
+    field_16: Unk16,
+    field_18: Unk8,
+    field_19: Unk8,
+    #[br(map = |c: i16| c.try_into().unwrap())]
+    #[br(if(version >= Version::V1025))]
+    stage_color: PaletteIndex,
+    #[br(if(version >= Version::V1025))]
     default_color_depth: i16,
-    field_1e: u8,
-    field_1f: u8,
-    field_20: i32,
+    #[br(if(version >= Version::V1025))]
+    field_1e: Unk8,
+    #[br(if(version >= Version::V1025))]
+    field_1f: Unk8,
+    #[br(if(version >= Version::V1025))]
+    field_20: Unk32,
+    #[br(if(version >= Version::V1025))]
     original_version: Version,
+    #[br(if(version >= Version::V1025))]
     max_cast_color_depth: i16,
+    #[br(if(version >= Version::V1025))]
     flags: Flags,
-    field_2c: i32,
-    field_30: i32,
-    field_34: i8,
-    field_35: i8,
+    #[br(if(version >= Version::V1025))]
+    field_2c: Unk32,
+    #[br(if(version >= Version::V1025))]
+    field_30: Unk32,
+    #[br(if(version >= Version::V1025))]
+    field_34: Unk8,
+    #[br(if(version >= Version::V1025))]
+    field_35: Unk8,
+    #[br(if(version >= Version::V1025))]
     current_tempo: Tempo,
+    #[br(if(version >= Version::V1025))]
     platform: Platform,
-    field_3a: i16,
-    field_3c: u32,
+    #[br(if(version >= Version::V1113))]
+    field_3a: Unk16,
+    #[br(if(version >= Version::V1113))]
+    field_3c: Unk32,
+    #[br(if(version >= Version::V1113))]
     checksum: u32,
-    field_44: u16,
-    field_46: u16,
+    #[br(if(version >= Version::V1114))]
+    field_44: Unk16,
+    #[br(if(version >= Version::V1115))]
+    field_46: Unk16,
+    #[br(if(version >= Version::V1115))]
     max_cast_resource_num: u32,
+    #[br(if(version >= Version::V1115), args(version))]
     default_palette: PaletteId,
 }
 
@@ -181,16 +199,16 @@ impl Config {
         .wrapping_mul(i32::from(self.field_14) + 12)
         .wrapping_add(i32::from(self.field_16) + 13)
         .wrapping_mul(i32::from(self.field_18) + 14)
-        .wrapping_add(i32::from(self.stage_color_index) + 15)
+        .wrapping_add(i32::from(self.stage_color) + 15)
         .wrapping_add(i32::from(self.default_color_depth) + 16)
         .wrapping_add(i32::from(self.field_1e) + 17)
         .wrapping_mul(i32::from(self.field_1f) + 18)
-        .wrapping_add(self.field_20 + 19)
+        .wrapping_add(i32::from(self.field_20) + 19)
         .wrapping_mul(self.original_version as i32 + 20)
         .wrapping_add(i32::from(self.max_cast_color_depth) + 21)
-        .wrapping_add(self.flags.bits as i32 + 22)
-        .wrapping_add(self.field_2c + 23)
-        .wrapping_add(self.field_30 + 24)
+        .wrapping_add(self.flags.bits() as i32 + 22)
+        .wrapping_add(i32::from(self.field_2c) + 23)
+        .wrapping_add(i32::from(self.field_30) + 24)
         .wrapping_mul(i32::from(self.field_34) + 25)
         .wrapping_add(i32::from(self.current_tempo.to_primitive()) + 26)
         .wrapping_mul(self.platform as i32 + 27)
@@ -244,115 +262,12 @@ impl Config {
         }
         (state, ((state >> 14) as i16).abs())
     }
-
-    fn load_1025(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.stage_color_index = input.read_i16().context("Can’t read stage color")?;
-        this.default_color_depth = input.read_i16().context("Can’t read default color depth")?;
-        this.field_1e = input.read_u8().context("Can’t read field_1e")?;
-        this.field_1f = input.read_u8().context("Can’t read field_1f")?;
-        this.field_20 = input.read_i32().context("Can’t read field_20")?;
-        this.original_version = {
-            let value = input.read_u16().context("Can’t read original movie config version")?;
-            Version::from_u16(value).with_context(|| format!("Unknown original config version {}", value))?
-        };
-        this.max_cast_color_depth = input.read_i16().context("Can’t read cast maximum color depth")?;
-        this.flags = {
-            let value = input.read_u32().context("Can’t read flags")?;
-            Flags::from_bits(value).with_context(|| format!("Invalid config flags (0x{:x})", value))?
-        };
-        this.field_2c = input.read_i32().context("Can’t read field_2c")?;
-        this.field_30 = input.read_i32().context("Can’t read field_30")?;
-        this.field_34 = input.read_i8().context("Can’t read field_34")?;
-        this.field_35 = input.read_i8().context("Can’t read field_35")?;
-        this.current_tempo = Tempo::new(input.read_i16().context("Can’t read current tempo")?)?;
-        this.platform = {
-            let value = input.read_i16().context("Can’t read platform")?;
-            Platform::from_i16(value).with_context(|| format!("Unknown config platform {}", value))?
-        };
-        Ok(())
-    }
-
-    fn load_1113(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.field_3a = input.read_i16().context("Can’t read field_3a")?;
-        this.field_3c = input.read_u32().context("Can’t read field_3c")?;
-        this.checksum = input.read_u32().context("Can’t read checksum")?;
-        Ok(())
-    }
-
-    fn load_1114(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.field_44 = input.read_u16().context("Can’t read field_44")?;
-        Ok(())
-    }
-
-    fn load_1115(this: &mut Self, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        this.field_46 = input.read_u16().context("Can’t read field_46")?;
-        this.max_cast_resource_num = input.read_u32().context("Can’t read maximum cast resource number")?;
-        Ok(())
-    }
-
-    fn load_1201(this: &mut Self, version: Version, input: &mut ByteOrdered<impl Reader, Endianness>) -> AResult<()> {
-        if version >= Version::V1201 {
-            this.default_palette = PaletteId::Cast(MemberId::load(input, MemberId::SIZE, &()).context("Can’t read default palette")?);
-        } else if version >= Version::V1115 {
-            this.default_palette = PaletteId::Number(input.read_i32().context("Can’t read default palette")?);
-        }
-        Ok(())
-    }
 }
 
 impl Resource for Config {
     type Context = ();
 
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut input = input.as_mut().into_endianness(Endianness::Big);
-        let own_size = input.read_i16().context("Can’t read movie config size")?;
-        ensure_sample!(size == own_size.try_into().unwrap(), "Recorded size is not true size ({} != {})", own_size, size);
-        let version = {
-            let value = input.read_i16().context("Can’t read movie config version")?;
-            Version::from_i16(value).with_context(|| format!("Unknown config version {}", value))?
-        };
-        let rect = Rect::load(&mut input, Rect::SIZE, &()).context("Can’t read stage rect")?;
-        let min_cast_num = MemberNum(input.read_i16().context("Can’t read minimum cast number")?);
-        let max_cast_num = MemberNum(input.read_i16().context("Can’t read maximum cast number")?);
-        let legacy_tempo = LegacyTempo(input.read_u8().context("Can’t read legacy tempo")?);
-        let legacy_back_color_is_black = input.read_u8().context("Can’t read legacy background is black flag")?;
-        ensure_sample!(legacy_back_color_is_black < 2, "Unexpected legacy background is black flag {}", legacy_back_color_is_black);
-        let field_12 = input.read_i16().context("Can’t read field_12")?;
-        let field_14 = input.read_i16().context("Can’t read field_14")?;
-        let field_16 = input.read_i16().context("Can’t read field_16")?;
-        let field_18 = input.read_u8().context("Can’t read field_18")?;
-        let field_19 = input.read_u8().context("Can’t read field_19")?;
-
-        let mut this = Self {
-            own_size,
-            version,
-            rect,
-            min_cast_num,
-            max_cast_num,
-            legacy_tempo,
-            legacy_back_color_is_black: legacy_back_color_is_black != 0,
-            field_12,
-            field_14,
-            field_16,
-            field_18,
-            field_19,
-            ..Self::default()
-        };
-
-        if version >= Version::V1025 {
-            Self::load_1025(&mut this, &mut input)?;
-        }
-        if version >= Version::V1113 {
-            Self::load_1113(&mut this, &mut input)?;
-        }
-        if version >= Version::V1114 {
-            Self::load_1114(&mut this, &mut input)?;
-        }
-        if version >= Version::V1115 {
-            Self::load_1115(&mut this, &mut input)?;
-        }
-        Self::load_1201(&mut this, version, &mut input)?;
-
-        Ok(this)
+    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
+        Self::read(input).context("Can’t read config")
     }
 }

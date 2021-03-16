@@ -607,7 +607,9 @@ impl Loader {
                 Ok(d) => {
                     match &d.info {
                         FileType::Projector(info) => {
-                            self.tabs.info.file_name.set_text(&qs(info.name().unwrap_or(&tr!(self.l, "file-info_unknown-file-name"))));
+                            // TODO: Use unwrap_or_else like a proper code
+                            let name = info.name().map(|s| s.to_str_lossy());
+                            self.tabs.info.file_name.set_text(&qs(name.unwrap_or(std::borrow::Cow::Borrowed(&tr!(self.l, "file-info_unknown-file-name")))));
                             self.tabs.info.kind.set_text(qtr!(
                                 self.l,
                                 "file-info_projector-file-kind",

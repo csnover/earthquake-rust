@@ -15,6 +15,7 @@
 mod application_vise;
 #[cfg(feature = "dialogs")]
 mod dialogs;
+mod errors;
 #[cfg(feature = "events")]
 mod events;
 mod files;
@@ -27,6 +28,7 @@ mod resource_manager;
 pub mod quickdraw;
 pub mod script_manager;
 mod system;
+pub mod types;
 pub mod vfs;
 
 #[deprecated]
@@ -44,11 +46,12 @@ use anyhow::Result as AResult;
 use binread::BinRead;
 use byteordered::{ByteOrdered, Endianness};
 use libcommon::{Reader, Resource, resource::Input};
+use quickdraw::Pixels;
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Point {
-    pub x: i16,
-    pub y: i16,
+    pub x: Pixels,
+    pub y: Pixels,
 }
 
 impl Point {
@@ -60,18 +63,18 @@ impl Resource for Point {
     fn load(input: &mut ByteOrdered<impl Reader, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, Self::SIZE);
         Ok(Self {
-            x: input.read_i16()?,
-            y: input.read_i16()?,
+            x: input.read_i16()?.into(),
+            y: input.read_i16()?.into(),
         })
     }
 }
 
 #[derive(BinRead, Clone, Copy, Default)]
 pub struct Rect {
-    pub top: i16,
-    pub left: i16,
-    pub bottom: i16,
-    pub right: i16,
+    pub top: Pixels,
+    pub left: Pixels,
+    pub bottom: Pixels,
+    pub right: Pixels,
 }
 
 impl Rect {
@@ -79,13 +82,13 @@ impl Rect {
 
     #[inline]
     #[must_use]
-    pub fn height(self) -> i16 {
+    pub fn height(self) -> Pixels {
         self.bottom - self.top
     }
 
     #[inline]
     #[must_use]
-    pub fn width(self) -> i16 {
+    pub fn width(self) -> Pixels {
         self.right - self.left
     }
 }
@@ -108,10 +111,10 @@ impl Resource for Rect {
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
         assert_eq!(size, Self::SIZE);
         Ok(Self {
-            top: input.read_i16()?,
-            left: input.read_i16()?,
-            bottom: input.read_i16()?,
-            right: input.read_i16()?,
+            top: input.read_i16()?.into(),
+            left: input.read_i16()?.into(),
+            bottom: input.read_i16()?.into(),
+            right: input.read_i16()?.into(),
         })
     }
 }

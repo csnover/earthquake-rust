@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result as AResult};
 use byteordered::ByteOrdered;
 use crate::script_manager::decode_text;
-use libcommon::{Reader, SharedStream};
+use libcommon::{Reader, SeekExt, SharedStream};
 
 #[derive(Debug)]
 pub struct AppleDouble<T: Reader> {

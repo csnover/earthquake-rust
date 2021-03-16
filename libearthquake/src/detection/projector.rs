@@ -1,5 +1,7 @@
 use anyhow::{Context, Result as AResult, anyhow, bail, ensure};
+use binread::BinRead;
 use bitflags::bitflags;
+use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::{
     collections::riff::detect as detect_riff,
@@ -7,17 +9,16 @@ use crate::{
 };
 use derive_more::Display;
 use libcommon::{
-    encodings::{Decoder, MAC_ROMAN, WIN_ROMAN},
     Reader,
     string::ReadExt,
 };
-use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode};
-use std::{convert::TryInto, io::{Read, SeekFrom}, path::PathBuf, rc::Rc};
+use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode, types::{MacString, PString}};
+use std::{convert::TryInto, io::{Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone)]
 pub struct DetectionInfo {
-    name: Option<String>,
+    name: Option<MacString>,
     charset: Option<ScriptCode>,
     version: Version,
     movie: Movie,
@@ -60,7 +61,7 @@ impl DetectionInfo {
     }
 
     #[must_use]
-    pub fn name(&self) -> Option<&String> {
+    pub fn name(&self) -> Option<&MacString> {
         self.name.as_ref()
     }
 
@@ -77,7 +78,7 @@ impl DetectionInfo {
 
 #[derive(Clone, Debug)]
 pub struct D3WinMovie {
-    pub filename: String,
+    pub filename: MacString,
     pub offset: u32,
     pub size: u32,
 }
@@ -92,7 +93,7 @@ pub enum Movie {
     /// The offset of a RIFF container embedded in a Director 4+ projector.
     Internal(u32),
     /// External movies referenced by a Director 3 projector.
-    External(Vec<String>),
+    External(Vec<MacString>),
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq)]
@@ -149,7 +150,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
         let resource_id = ResourceId::new(os_type, 0);
-        rom.load::<Vec<u8>>(resource_id, &())?
+        rom.load::<Vec<u8>>(resource_id)?
     };
 
     let (config, movie) = match version {
@@ -158,14 +159,14 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
             let num_movies = BigEndian::read_u16(&config[6..]);
             let config = ProjectorSettings::parse_mac(version, &config)?;
             if has_external_data {
-                let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0), &(MAC_ROMAN as &dyn Decoder))
+                let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0))
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
                     .map_err(|_| anyhow!("Could not take ownership of movie list"))?;
                 for filename in &mut movies {
-                    *filename = filename.replace(':', "/");
+                    *filename = filename.replace(b":", b"/").into();
                 }
-                (config, Movie::External(movies.into_vec()))
+                (config, Movie::External(movies.into_iter().map(MacString::Raw).collect::<Vec::<_>>()))
             } else {
                 // Embedded movies start at Resource ID 1024
                 (config, Movie::Embedded(num_movies))
@@ -250,18 +251,19 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     })
 }
 
-fn d3_win_movie_info(input: &mut impl Reader, i: u16) -> AResult<(u32, String)> {
+fn d3_win_movie_info(input: &mut impl Reader, i: u16) -> AResult<(u32, MacString)> {
     let size = input.read_u32::<LittleEndian>()
         .with_context(|| format!("Can’t read movie {} size", i))?;
     let filename = {
-        let filename = input.read_pascal_str(WIN_ROMAN)
+        let filename = PString::read(input)
             .with_context(|| format!("Can’t read movie {} filename", i))?;
-        let path = input.read_pascal_str(WIN_ROMAN)
+        let path = PString::read(input)
             .with_context(|| format!("Can’t read movie {} path", i))?;
 
-        let mut pathbuf = PathBuf::from(path.replace('\\', "/"));
-        pathbuf.push(filename);
-        pathbuf.to_string_lossy().to_string()
+        let mut path = path.replace(b"\\", b"/");
+        path.push(b'/');
+        path.extend_from_slice(filename.as_bytes());
+        MacString::Raw(PString::from(path))
     };
     Ok((size, filename))
 }
@@ -388,7 +390,7 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
     }
 }
 
-fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> {
+fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<MacString>)> {
     input.seek(SeekFrom::Start(0x3c))?;
     let exe_header_offset = input.read_u16::<LittleEndian>()?;
     input.seek(SeekFrom::Start(exe_header_offset.into()))?;
@@ -400,7 +402,7 @@ fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> 
     };
 
     if signature == *b"PE\0\0" {
-        Ok((Platform::Win(WinVersion::Win95), pe::read_product_name(input)))
+        Ok((Platform::Win(WinVersion::Win95), pe::read_product_name(input).map(<_>::into)))
     } else if signature[0..2] == *b"NE" {
         // 32 bytes from start of NE header, -4 since we consumed 4 bytes of
         // the header already
@@ -414,7 +416,7 @@ fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<String>)> 
             Ok((Platform::Win(WinVersion::Win3), None))
         } else {
             input.seek(SeekFrom::Start(non_resident_table_offset.into()))?;
-            Ok((Platform::Win(WinVersion::Win3), Some(input.read_pascal_str(WIN_ROMAN)?)))
+            Ok((Platform::Win(WinVersion::Win3), Some(PString::read(input)?.into())))
         }
     } else {
         bail!("Not a Windows executable")

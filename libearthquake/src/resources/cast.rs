@@ -1,17 +1,20 @@
 use anyhow::{Context, Result as AResult};
 use binread::BinRead;
-use bitflags::bitflags;
 use byteordered::Endianness;
 use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Deref, DerefMut, Display, From, Index, IndexMut};
 use libcommon::{
+    bitflags,
+    bitflags::BitFlags,
     encodings::DecoderRef,
     Reader,
     Resource,
+    SeekExt,
     resource::{Input, StringKind},
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use smart_default::SmartDefault;
 use std::fmt;
 use super::{
     bitmap::Meta as BitmapMeta,
@@ -119,9 +122,9 @@ impl MemberId {
     }
 }
 
-impl From<i16> for MemberId {
-    fn from(num: i16) -> Self {
-        Self(if num == 0 { 0 } else { 1 }.into(), num.into())
+impl From<MemberNum> for MemberId {
+    fn from(num: MemberNum) -> Self {
+        Self(if num.0 == 0 { 0 } else { 1 }.into(), num)
     }
 }
 
@@ -129,10 +132,7 @@ impl Resource for MemberId {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Ok(Self(
-            input.read_i16().context("Can’t read cast library number")?.into(),
-            input.read_i16().context("Can’t read cast member number")?.into()
-        ))
+        Self::read(input).context("Can’t read member ID")
     }
 }
 
@@ -317,8 +317,9 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Display, FromPrimitive)]
+#[derive(Clone, Copy, Debug, Display, FromPrimitive, SmartDefault)]
 pub enum MemberKind {
+    #[default]
     None = 0,
     Bitmap,
     FilmLoop,
@@ -337,12 +338,6 @@ pub enum MemberKind {
     Xtra,
 }
 
-impl Default for MemberKind {
-    fn default() -> Self {
-        MemberKind::None
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum MemberMetadata {
     None,
@@ -357,7 +352,7 @@ pub enum MemberMetadata {
     Movie(FilmLoopMeta),
     DigitalVideo(VideoMeta),
     Script(ScriptMeta),
-    // Rich text
+    // This uses Microsoft RTF, whereas the Field type uses Mac Styled Text
     Text(TextMeta),
     OLE(BitmapMeta),
     Transition(TransitionMeta),

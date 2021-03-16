@@ -1,23 +1,18 @@
 use anyhow::{Context, Result as AResult};
-use byteorder::{ByteOrder, BigEndian};
-use byteordered::Endianness;
-use crate::{
-    ensure_sample,
-    resources::{ByteVec, List},
-};
-use libcommon::{
-    Reader,
-    Resource,
-    resource::Input,
-encodings::DecoderRef, encodings::MAC_ROMAN, encodings::Decoder};
-use derive_more::{Deref, Index};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
-use std::{collections::HashMap, convert::TryFrom, ffi::OsString, rc::Rc, convert::TryInto};
-use super::riff::{ChunkIndex, Riff};
+use binread::BinRead;
+use bstr::BStr;
+use crate::resources::{ByteVec, List};
+use libcommon::{Reader, SeekExt};
+use derive_more::{Deref, DerefMut, Index, IndexMut};
+use smart_default::SmartDefault;
+use std::{io::{Read, Seek}, rc::Rc};
+use super::riff::{ChunkIndex, Riff, RiffResult};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, FromPrimitive)]
+/// An index entry for a file embedded within a [`RiffContainer`].
+#[derive(BinRead, Copy, Clone, Debug, Eq, PartialEq, SmartDefault)]
+#[br(repr(u32))]
 pub enum ChunkFileKind {
+    #[default]
     Movie,
     Cast,
     Xtra,
@@ -25,9 +20,12 @@ pub enum ChunkFileKind {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ChunkFile {
+    /// The index of the chunk containing the file.
     chunk_index: ChunkIndex,
+    /// The kind of the file.
     kind: ChunkFileKind,
 }
+
 impl ChunkFile {
     pub fn chunk_index(&mut self) -> ChunkIndex {
         self.chunk_index
@@ -37,93 +35,83 @@ impl ChunkFile {
         self.kind
     }
 }
-impl Resource for ChunkFile {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        let pos = input.pos()?;
-        ensure_sample!(size >= 4 && size <= 8, "Bad ChunkFile size at {} ({})", pos, size);
-        let chunk_index = ChunkIndex::new(input.read_i32()?);
+
+impl BinRead for ChunkFile {
+    type Args = ();
+
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
+        let size = input.len()?;
+        if !(4..=8).contains(&size) {
+            return Err(binread::Error::AssertFail {
+                pos: input.pos()?,
+                message: format!("Bad ChunkFile size {}", size)
+            });
+        }
+        let chunk_index = ChunkIndex::read_options(input, options, ())?;
         let kind = if size == 4 {
             ChunkFileKind::Movie
         } else {
-            let bits = input.read_u32()?;
-            ChunkFileKind::from_u32(bits)
-                .with_context(|| format!("Bad ChunkFile kind at {} ({})", pos, bits))?
+            ChunkFileKind::read_options(input, options, ())?
         };
+
         Ok(Self { chunk_index, kind })
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+/// A node which ties raw dictionary data to its associated list entry in the
+/// dictionary.
+#[derive(BinRead, Clone, Copy, Debug)]
 struct DictItem {
     /// The offset of the key is relative to the start of the ByteVec object
     /// rather than the start of the data, so knowledge of ByteVec object header
     /// size is needed to get the correct offset.
     key_offset: u32,
-    value: i32,
-}
-impl Resource for DictItem {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        ensure_sample!(size == 8, "Bad DictItem size at {} ({} != 8)", size, input.pos()?);
-        let key_offset = input.read_u32()?;
-        let value = input.read_i32()?;
-        Ok(Self { key_offset, value })
-    }
+    list_index: i32,
 }
 
-#[derive(Clone, Debug, Index)]
-struct Dict {
-    #[index]
-    list: List<DictItem>,
-    // TODO: Lookups should be case-insensitive
-    dict: HashMap<OsString, usize>,
-}
-impl Dict {
-    // TODO: You know, finish this file and then remove this dead_code override
-    #[allow(dead_code)]
-    pub fn get_by_key(&self, key: &OsString) -> Option<usize> {
-        self.dict.get(key).copied()
-    }
+type InnerDict = crate::resources::Dict<usize>;
 
-    pub fn index_of_key(&self, index: usize) -> Option<&OsString> {
-        for (k, v) in &self.dict {
-            if *v == index {
-                return Some(k)
-            }
-        }
-        None
-    }
-}
-impl Resource for Dict {
-    type Context = DecoderRef;
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> {
-        let mut input = input.as_mut().into_endianness(Endianness::Big);
-        let list_size = input.read_u32()?;
-        let keys_size = input.read_u32()?;
-        ensure_sample!(list_size + keys_size <= size, "Bad Dict size at {} ({} > {})", input.pos()? - 8, list_size + keys_size, size);
+/// A serialized [`Dict`].
+#[derive(Clone, Debug, Deref, DerefMut)]
+struct Dict(InnerDict);
 
-        let list = List::<DictItem>::load(&mut input, list_size, &<List::<DictItem> as Resource>::Context::default())?;
-        let keys = ByteVec::load(&mut input, keys_size, &<ByteVec as Resource>::Context::default())?;
-        let mut dict = HashMap::new();
+impl BinRead for Dict {
+    type Args = ();
 
-        for item in list.iter() {
-            let start = usize::try_from(item.key_offset - ByteVec::HEADER_SIZE).unwrap();
-            let end = start + 4;
-            let size = BigEndian::read_u32(&keys[start..end]);
-            let key = OsString::from(context.decode(&keys[end..end + usize::try_from(size).unwrap()]));
-            dict.insert(key, item.value.try_into().unwrap());
+    fn read_options<R: binread::io::Read + binread::io::Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+        let pos = input.pos()?;
+        let size = input.len()?;
+        let (dict_size, keys_size) = <(u32, u32)>::read_options(input, options, args)?;
+        let actual_size = u64::from(dict_size + keys_size);
+        if actual_size > size {
+            return Err(binread::Error::AssertFail {
+                pos,
+                message: format!("Bad Dict size at {} ({} > {})", pos, actual_size, size)
+            });
         }
 
-        Ok(Self { list, dict })
+        let (mut dict, keys) = <(InnerDict, ByteVec)>::read_options(input, options, args)?;
+        dict.keys_mut().replace(keys);
+
+        Ok(Self(dict))
     }
 }
 
-#[derive(Clone, Debug, Deref, Index)]
+/// A RIFF file used as a container for other files.
+///
+/// In Director 4+, one RIFF file is used per movie or cast library. When
+/// packaged for release in a projector, movies and cast added to the projector
+/// are embedded in a RIFF container, identified with the `APPL` subtype. This
+/// container embeds each file as a separate chunk and includes several index
+/// chunks which describe the original files’ names and the order in which they
+/// were added to the container so they can be played in sequence.
+///
+/// Starting in Director 6 (TODO: maybe 7? check this), the container was
+/// extended to also include binary Xtras.
+#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
 pub struct RiffContainer<T: Reader> {
     riff: Rc<Riff<T>>,
-    #[deref]
-    #[index]
+    #[deref] #[deref_mut] #[index] #[index_mut]
     file_list: List<ChunkFile>,
     file_dict: Dict,
 }
@@ -131,8 +119,8 @@ pub struct RiffContainer<T: Reader> {
 impl <T: Reader> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
-        let file_list = riff.load_chunk::<List<ChunkFile>>(riff.first_of_kind(b"List"), &Default::default()).context("Bad List chunk")?;
-        let file_dict = riff.load_chunk::<Dict>(riff.first_of_kind(b"Dict"), &(MAC_ROMAN as &dyn Decoder)).context("Bad Dict chunk")?;
+        let file_list = riff.load_chunk::<List<ChunkFile>>(riff.first_of_kind(b"List")).context("Bad List chunk")?;
+        let file_dict = riff.load_chunk::<Dict>(riff.first_of_kind(b"Dict")).context("Bad Dict chunk")?;
 
         Ok(Self {
             riff: Rc::new(riff),
@@ -142,8 +130,8 @@ impl <T: Reader> RiffContainer<T> {
     }
 
     #[must_use]
-    pub fn filename(&self, index: usize) -> Option<&OsString> {
-        self.file_dict.index_of_key(index)
+    pub fn filename(&self, index: usize) -> Option<&BStr> {
+        self.file_dict.0.key_by_index(index)
     }
 
     #[must_use]
@@ -151,7 +139,7 @@ impl <T: Reader> RiffContainer<T> {
         self.file_list.get(index).map(|i| i.kind)
     }
 
-    pub fn load_file(&self, index: usize) -> AResult<Riff<T>> {
+    pub fn load_file(&self, index: usize) -> RiffResult<Riff<T>> {
         self.riff.load_riff(self.file_list[index].chunk_index)
     }
 }

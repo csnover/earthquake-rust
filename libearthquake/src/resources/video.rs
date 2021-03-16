@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use crate::ensure_sample;
-use libcommon::{Reader, Resource, resource::Input};
+use binread::BinRead;
+use libcommon::{bitflags, bitflags::BitFlags, Reader, Resource, resource::Input};
 use libmactoolbox::Rect;
 
 bitflags! {
@@ -39,33 +38,39 @@ bitflags! {
         const VIDEO_KIND_AVI      = 0x4000;
         /// The video is in an invalid video format.
         const VIDEO_KIND_NULL     = 0x8000;
+        /// The frame rate to use when the `PLAY_EVERY_FRAME` flag is set.
+        const FRAME_RATE          = 0xFF00_0000;
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(BinRead, Clone, Copy)]
+#[br(big, import(size: u32), pre_assert(size == 12))]
 pub struct Meta {
     bounds: Rect,
     flags: Flags,
-    frame_rate: u8,
+}
+
+impl Meta {
+    #[must_use]
+    pub fn frame_rate(&self) -> u8 {
+        ((self.flags.bits() & Flags::FRAME_RATE.bits()) >> 24) as u8
+    }
+}
+
+impl std::fmt::Debug for Meta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("bounds", &self.bounds)
+            .field("flags", &self.flags)
+            .field("(frame_rate)", &self.frame_rate())
+            .finish()
+    }
 }
 
 impl Resource for Meta {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        ensure_sample!(size == 12, "Unexpected video meta resource size {} (should be 12)", size);
-        let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read video bounds")?;
-        let (flags, frame_rate) = {
-            let value = input.read_u32().context("Can’t read video flags")?;
-            let flags_value = value & 0xFF_FFFF;
-            let flags = Flags::from_bits(flags_value).with_context(|| format!("Invalid video flags (0x{:x})", flags_value))?;
-            (flags, (value >> 24) as u8)
-        };
-
-        Ok(Self {
-            bounds,
-            flags,
-            frame_rate,
-        })
+        Self::read_args(input, (size, )).context("Can’t read video meta")
     }
 }

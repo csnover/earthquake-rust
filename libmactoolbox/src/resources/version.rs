@@ -1,23 +1,19 @@
-use anyhow::{Context, Result as AResult};
-use crate::script_manager::CountryCode;
-use libcommon::{
-    Reader,
-    Resource,
-    resource::Input,
-    string::ReadExt,
-};
+use binread::BinRead;
+use crate::{errors::ScriptError, script_manager::CountryCode, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-#[derive(Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd)]
+#[br(big, repr(u8))]
 pub enum Stage {
     Dev   = 0x20,
     Alpha = 0x40,
     Beta  = 0x60,
-    Final = 0x80
+    Final = 0x80,
 }
 
-#[derive(Debug)]
+#[derive(BinRead, Debug)]
+#[br(big)]
 pub struct Number {
     major: u8,
     minor: u8,
@@ -25,40 +21,22 @@ pub struct Number {
     revision: u8,
 }
 
-#[derive(Debug)]
+#[derive(BinRead, Debug)]
+#[br(big)]
 pub struct Version {
     version: Number,
+    #[br(try_map = |input: u16|
+        CountryCode::from_u16(input)
+            .ok_or(ScriptError::BadCountryCode(input))
+    )]
     country_code: CountryCode,
-    short_version: String,
-    long_version: String,
+    short_version: PString,
+    long_version: PString,
 }
 
 impl Version {
     #[must_use]
     pub fn country_code(&self) -> CountryCode {
         self.country_code
-    }
-}
-
-impl Resource for Version {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let version = Number {
-            major: input.read_u8()?,
-            minor: input.read_u8()?,
-            stage: Stage::from_u8(input.read_u8()?).unwrap(),
-            revision: input.read_u8()?,
-        };
-
-        let country_code = input.read_u16()?;
-        let country_code = CountryCode::from_u16(country_code)
-            .with_context(|| format!("Invalid country code {}", country_code))?;
-
-        Ok(Self {
-            version,
-            country_code,
-            short_version: input.read_pascal_str(country_code.encoding())?,
-            long_version: input.read_pascal_str(country_code.encoding())?,
-        })
     }
 }

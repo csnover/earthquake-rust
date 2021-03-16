@@ -1,10 +1,10 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use crate::ensure_sample;
-use libcommon::{Reader, Resource, resource::Input};
-use libmactoolbox::{quickdraw::RGBColor, Rect};
+use binread::BinRead;
+use libcommon::{binread_enum, bitflags, Reader, Resource, resource::Input};
+use libmactoolbox::{quickdraw::{Pixels, RGBColor}, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use smart_default::SmartDefault;
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Alignment {
@@ -13,13 +13,17 @@ pub enum Alignment {
     Center,
 }
 
+binread_enum!(Alignment, i16);
+
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Frame {
-    Fit,
+    Fit = 0,
     Scroll,
     Fixed,
     LimitToFieldSize,
 }
+
+binread_enum!(Frame, u8);
 
 bitflags! {
     pub struct Flags: u8 {
@@ -29,33 +33,43 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 pub enum ButtonKind {
-    None,
+    #[default]
+    None = 0,
     Button,
-    Radio,
     CheckBox,
+    Radio,
 }
 
-#[derive(Clone, Copy, Debug)]
+binread_enum!(ButtonKind, u16);
+
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(big, import(size: u32))]
 pub struct Meta {
-    border_size: u8,
+    #[br(map = |p: u8| Pixels::from(p))]
+    border_size: Pixels,
     /// Space between the field viewport and the border.
-    margin_size: u8,
-    box_shadow_size: u8,
+    #[br(map = |p: u8| Pixels::from(p))]
+    margin_size: Pixels,
+    #[br(map = |p: u8| Pixels::from(p))]
+    box_shadow_size: Pixels,
     frame: Frame,
     alignment: Alignment,
     back_color: RGBColor,
-    scroll_top: i16,
+    scroll_top: Pixels,
     /// The viewport of the field, excluding decorations.
     bounds: Rect,
     /// The height of the field, excluding decorations.
-    height: i16,
-    text_shadow_size: u8,
+    #[br(assert(height == bounds.height()))]
+    height: Pixels,
+    #[br(map = |p: u8| Pixels::from(p))]
+    text_shadow_size: Pixels,
     flags: Flags,
     /// The total height of content, which may be larger than the viewport
     /// if the field is scrollable.
-    scroll_height: i16,
+    scroll_height: Pixels,
+    #[br(if(size == 0x1e))]
     button_kind: ButtonKind,
 }
 
@@ -63,49 +77,6 @@ impl Resource for Meta {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let border_size = input.read_u8().context("Can’t read border size")?;
-        let margin_size = input.read_u8().context("Can’t read margin size")?;
-        let box_shadow_size = input.read_u8().context("Can’t read box shadow size")?;
-        let frame = {
-            let value = input.read_u8().context("Can’t read field frame")?;
-            Frame::from_u8(value).with_context(|| format!("Invalid value {} for field frame", value))?
-        };
-        let alignment = {
-            let value = input.read_i16().context("Can’t read alignment")?;
-            Alignment::from_i16(value).with_context(|| format!("Invalid value {} for field alignment", value))?
-        };
-        let back_color = RGBColor::load(input, RGBColor::SIZE, &()).context("Can’t read background color")?;
-        let scroll_top = input.read_i16().context("Can’t read scroll top")?;
-        let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read bounds")?;
-        let height = input.read_i16().context("Can’t read height")?;
-        ensure_sample!(height == bounds.height(), "Height {} does not match bounds height {}", height, bounds.height());
-        let text_shadow_size = input.read_u8().context("Can’t read text shadow size")?;
-        let flags = {
-            let value = input.read_u8().context("Can’t read field flags")?;
-            Flags::from_bits(value).with_context(|| format!("Invalid field flags (0x{:x})", value))?
-        };
-        let scroll_height = input.read_i16().context("Can’t read scroll height")?;
-        let button_kind = if size == 0x1e {
-            let value = input.read_u16().context("Can’t read button kind")?;
-            ButtonKind::from_u16(value).with_context(|| format!("Invalid button kind {}", value))?
-        } else {
-            ButtonKind::None
-        };
-
-        Ok(Self {
-            border_size,
-            margin_size,
-            box_shadow_size,
-            frame,
-            alignment,
-            back_color,
-            scroll_top,
-            bounds,
-            height,
-            text_shadow_size,
-            flags,
-            scroll_height,
-            button_kind,
-        })
+        Self::read_args(input, (size, )).context("Can’t read field meta")
     }
 }

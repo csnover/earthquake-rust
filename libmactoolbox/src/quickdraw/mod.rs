@@ -1,13 +1,11 @@
 // TODO: You know, finish this file and then remove these overrides
 #![allow(dead_code)]
 
+use binread::BinRead;
 use crate::{Point, Rect};
-use anyhow::{Context, Result as AResult};
 use num_derive::FromPrimitive;
 use libcommon::{
-    Reader,
-    Resource,
-    resource::Input,
+    newtype_num,
     UnkHnd,
     UnkPtr,
 };
@@ -53,7 +51,29 @@ pub enum Pen {
     DitherCopy    = 64,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+newtype_num! {
+    #[derive(BinRead)]
+    pub struct Pixels(i16);
+}
+
+impl std::fmt::Debug for Pixels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}px", self.0)
+    }
+}
+
+newtype_num! {
+    #[derive(BinRead)]
+    pub struct PaletteIndex(u8);
+}
+
+impl std::fmt::Debug for PaletteIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Default, Eq, PartialEq)]
 pub struct RGBColor {
     pub r: u16,
     pub g: u16,
@@ -62,19 +82,6 @@ pub struct RGBColor {
 
 impl RGBColor {
     pub const SIZE: u32 = 6;
-}
-
-impl Resource for RGBColor {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert_eq!(size, Self::SIZE);
-        Ok(Self {
-            r: input.read_u16().context("Can’t read red channel")?,
-            g: input.read_u16().context("Can’t read green channel")?,
-            b: input.read_u16().context("Can’t read blue channel")?,
-        })
-    }
 }
 
 impl std::fmt::Debug for RGBColor {

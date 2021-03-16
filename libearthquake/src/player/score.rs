@@ -4,14 +4,13 @@
 
 use anyhow::{bail, Context, Result as AResult};
 use binread::{BinRead, ReadOptions};
-use bitflags::bitflags;
 use byteordered::{ByteOrdered, Endianness};
-use crate::{ensure_sample, resources::{transition::{Kind as TransitionKind, QuarterSeconds}, cast::{MemberId, MemberKind}}};
+use crate::{ensure_sample, resources::{cast::{MemberId, MemberKind, MemberNum}, transition::{Kind as TransitionKind, QuarterSeconds}}};
 use derive_more::{Add, AddAssign, Display};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, UnkPtr, binread_enum, binread_flags, resource::Input};
-use libmactoolbox::{quickdraw::Pen, Point, Rect, TEHandle};
+use libcommon::{Reader, Resource, SeekExt, Unk16, Unk32, Unk8, UnkPtr, binread_enum, bitflags, bitflags::BitFlags, resource::Input, newtype_num};
+use libmactoolbox::{quickdraw::PaletteIndex, Point, Rect, TEHandle, quickdraw::Pen};
 use smart_default::SmartDefault;
 use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
 
@@ -31,8 +30,6 @@ bitflags! {
         const WAIT_TICKS               = 0x40;
     }
 }
-
-binread_flags!(Flags, u16);
 
 #[derive(Add, AddAssign, Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FrameNum(pub i16);
@@ -55,6 +52,21 @@ pub enum Tempo {
     WaitForClick,
     WaitForSound1,
     WaitForSound2,
+}
+
+impl BinRead for Tempo {
+    type Args = ();
+
+    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
+        use binread::BinReaderExt;
+        let last_pos = reader.seek(SeekFrom::Current(0))?;
+        reader.read_type::<i16>(options.endian).and_then(|v|
+            Self::new(v).map_err(|e| binread::error::Error::AssertFail {
+                pos: last_pos,
+                message: format!("{}", e)
+            })
+        )
+    }
 }
 
 impl Tempo {
@@ -381,7 +393,7 @@ impl BinRead for Transition {
 
         let make_tempo = |tempo: u8| {
             Tempo::new((tempo as i8).into()).map_err(|e| binread::Error::AssertFail {
-                pos: last_pos.try_into().unwrap(),
+                pos: last_pos,
                 message: format!("{}", e),
             })
         };
@@ -400,7 +412,7 @@ impl BinRead for Transition {
                     chunk_size: data[1],
                     which_transition: TransitionKind::from_u8(data[3])
                         .ok_or_else(|| binread::Error::AssertFail {
-                            pos: last_pos.try_into().unwrap(),
+                            pos: last_pos,
                             message: format!("Invalid transition kind {}", data[3]),
                         })?,
                     time: QuarterSeconds(data[0] & !0x80),
@@ -560,7 +572,7 @@ pub struct Score {
     score_sprites: SpriteBitmask,
     sprites_to_paint0: SpriteBitmask,
     sprites_to_paint1: SpriteBitmask,
-    #[default([ Point { x: -0x8000, y: 0 }; NUM_SPRITES ])]
+    #[default([ Point { x: (-0x8000_i16).into(), y: 0_i16.into() }; NUM_SPRITES ])]
     sprite_origins: [ Point; NUM_SPRITES ],
     moveable_sprites: SpriteBitmask,
     immediate_sprites: SpriteBitmask,
@@ -579,11 +591,11 @@ pub struct Score {
     puppet_transition: Transition,
     #[default([ Score1494::default(); NUM_SPRITES ])]
     field_1494: [ Score1494; NUM_SPRITES ],
-    #[default(Unk16(0x8000))]
+    #[default(Unk16(-0x8000))]
     field_16d4: Unk16,
-    #[default(Unk16(0x8000))]
+    #[default(Unk16(-0x8000))]
     field_16d6: Unk16,
-    #[default(Unk16(0x8000))]
+    #[default(Unk16(-0x8000))]
     field_16d8: Unk16,
     editable_sprite: TextEditor,
     last_maybe_editable_sprite_num: i16,
@@ -724,7 +736,16 @@ bitflags! {
     }
 }
 
-binread_flags!(PaletteFlags, u8);
+newtype_num! {
+    #[derive(BinRead, Debug)]
+    pub struct SignedPaletteIndex(i8);
+}
+
+impl From<SignedPaletteIndex> for PaletteIndex {
+    fn from(value: SignedPaletteIndex) -> Self {
+        ((i16::from(value.0) + 128) as u8).into()
+    }
+}
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big)]
@@ -733,8 +754,8 @@ pub struct Palette {
     #[br(map = |num: i8| FPS(num.into()))]
     rate: FPS,
     flags: PaletteFlags,
-    cycle_start_color: i8,
-    cycle_end_color: i8,
+    cycle_start_color: SignedPaletteIndex,
+    cycle_end_color: SignedPaletteIndex,
     num_frames: i16,
     num_cycles: i16,
     field_c: Unk8,
@@ -746,9 +767,9 @@ pub struct Palette {
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big, import(version: Version))]
 struct PaletteV4 {
-    id: i16,
-    cycle_start_color: i8,
-    cycle_end_color: i8,
+    id: MemberNum,
+    cycle_start_color: SignedPaletteIndex,
+    cycle_end_color: SignedPaletteIndex,
     flags: PaletteFlags,
     #[br(map = |num: i8| FPS(num.into()))]
     rate: FPS,
@@ -851,7 +872,7 @@ impl Frame {
             let last_pos = reader.seek(SeekFrom::Current(0))?;
             let value = i8::read_options(reader, options, ())?;
             Tempo::new(value.into()).map_err(|e| binread::Error::AssertFail {
-                pos: last_pos.try_into().unwrap(),
+                pos: last_pos,
                 message: format!("{}", e)
             })
         }
@@ -881,8 +902,8 @@ struct FrameV3 {
     sound_1_kind_maybe: Unk8,
     #[br(args(version))]
     transition: Transition,
-    sound_1: i16,
-    sound_2: i16,
+    sound_1: MemberNum,
+    sound_2: MemberNum,
     sound_2_kind_maybe: Unk8,
     #[br(args(version), align_after(16), align_before(16))]
     palette: PaletteV4,
@@ -917,15 +938,15 @@ struct FrameV4 {
     field_0: Unk16,
     #[br(args(version))]
     transition: Transition,
-    sound_1: i16,
-    sound_2: i16,
+    sound_1: MemberNum,
+    sound_2: MemberNum,
     field_a: Unk8,
     field_b: Unk8,
     field_c: Unk8,
     tempo_related: Unk8,
     sound_1_related: Unk8,
     sound_2_related: Unk8,
-    script: i16,
+    script: MemberNum,
     script_related: Unk8,
     transition_related: Unk8,
     #[br(args(version), align_after(20), align_before(20))]
@@ -1017,8 +1038,9 @@ bitflags! {
     }
 }
 
-binread_flags!(SpriteLineSize, u8);
-
+// TODO: Reintroduce validation:
+// let ink = (ink_and_flags & SpriteInk::INK_KIND).bits();
+// Pen::from_u8(ink).with_context(|| format!("Invalid sprite ink {}", ink))?;
 bitflags! {
     #[derive(Default)]
     pub struct SpriteInk: u8 {
@@ -1027,11 +1049,6 @@ bitflags! {
         const STRETCH  = 0x80;
     }
 }
-
-// TODO: Reintroduce validation:
-// let ink = (ink_and_flags & SpriteInk::INK_KIND).bits();
-// Pen::from_u8(ink).with_context(|| format!("Invalid sprite ink {}", ink))?;
-binread_flags!(SpriteInk, u8);
 
 bitflags! {
     #[derive(Default)]
@@ -1043,8 +1060,6 @@ bitflags! {
         const MOVEABLE = 0x80;
     }
 }
-
-binread_flags!(SpriteScoreColor, u8);
 
 fn fix_v0_v6_sprite_kind(kind: SpriteKind) -> SpriteKind {
     match kind {
@@ -1092,7 +1107,7 @@ struct SpriteV3 {
     back_color_index: u8,
     line_size_and_flags: SpriteLineSize,
     ink_and_flags: SpriteInk,
-    id: i16,
+    id: MemberNum,
     origin: Point,
     height: i16,
     #[br(align_after(16))]
@@ -1124,11 +1139,11 @@ struct SpriteV4 {
     back_color_index: u8,
     line_size_and_flags: SpriteLineSize,
     ink_and_flags: SpriteInk,
-    id: i16,
+    id: MemberNum,
     origin: Point,
     height: i16,
     width: i16,
-    script: i16,
+    script: MemberNum,
     score_color_and_flags: SpriteScoreColor,
     #[br(align_after(20))]
     blend_amount: u8,

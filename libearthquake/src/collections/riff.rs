@@ -1,9 +1,15 @@
-use anyhow::{anyhow, bail, Context, Result as AResult};
+//! A Director RIFF file.
+//!
+//! Starting with Director 3 for Windows, movie and cast data are stored in
+//! [RIFF files] (earlier versions used [Mac Resource Files]). Special index
+//! chunks at the start of the file are used for O(1) lookup of data by chunk
+//! index or [`ResourceID`].
+
+use binread::BinRead;
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use byteordered::{ByteOrdered, Endianness};
+use byteordered::Endianness;
 use crate::{
-    bail_sample,
     detection::{
         movie::{
             DetectionInfo,
@@ -11,19 +17,76 @@ use crate::{
         },
         Version,
     },
-    ensure_sample,
 };
 use derive_more::{Constructor, Deref, DerefMut, Display};
-use libcommon::{
-    Reader,
-    Resource,
-    SharedStream,
-};
-use libmactoolbox::{OSType, OSTypeReadExt, ResourceId, ResourceSource};
+use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
+use libmactoolbox::{OSType, OSTypeReadExt, ResourceError, ResourceId, ResourceResult, ResourceSource};
 use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, io::{Seek, SeekFrom}, rc::{Rc, Weak}};
 
-#[derive(Clone, Copy, Constructor, Debug, Display, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ChunkIndex(i32);
+pub type RiffResult<T> = Result<T, RiffError>;
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum RiffError {
+    #[error("unknown i/o error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("not a RIFF file")]
+    NotRiff,
+    #[error("not a Director RIFF")]
+    NotDirectorRiff,
+    #[error("RIFF-LE. Please send this file for analysis")]
+    UnsupportedRiff,
+    #[error("missing resource map; found {0} instead")]
+    ResourceMapNotFound(OSType),
+    #[error("bad chunk index {0}")]
+    BadIndex(ChunkIndex),
+    #[error("bad data type for chunk index {0}; OSType is {1}")]
+    BadDataType(ChunkIndex, OSType),
+    #[error("i/o error seeking to index {0} (offset {1}): {2}")]
+    SeekFailure(ChunkIndex, u32, std::io::Error),
+    #[error("i/o error seeking to mmap: {0}")]
+    MmapSeekFailure(std::io::Error),
+    #[error("i/o error seeking to KEY*: {0}")]
+    KeysSeekFailure(std::io::Error),
+    #[error("bad KEY* offset")]
+    BadKeysOffset,
+    #[error("bad mmap header size ({0})")]
+    BadMmapHeaderSize(u16),
+    #[error("bad mmap entry size ({0})")]
+    BadMmapEntrySize(u16),
+    #[error("bad mmap entry count ({0})")]
+    BadMmapEntryCount(u32),
+    #[error("bad flags in mmap entry {0}: 0x{1:x}")]
+    BadMmapEntryFlags(ChunkIndex, u16),
+    #[error("multiple {0} in {1}. Please send this file for analysis")]
+    DuplicateResourceId(ResourceId, &'static str),
+    #[error("i/o error skipping resource ID of index {0}: {1}")]
+    D3ResourceIdSkipError(ChunkIndex, std::io::Error),
+    #[error("i/o error reading resource name of index {0}: {1}")]
+    D3ResourceNameSizeReadError(ChunkIndex, std::io::Error),
+    #[error("i/o error skipping resource name of index {0}: {1}")]
+    D3ResourceNameSkipError(ChunkIndex, std::io::Error),
+    #[error("can’t load {0} chunk {1} at {2}: {3}")]
+    ReadError(OSType, ChunkIndex, u32, binread::Error),
+}
+
+impl From<binread::Error> for RiffError {
+    fn from(error: binread::Error) -> Self {
+        match error {
+            binread::Error::Io(error) => Self::IoError(error),
+            binread::Error::Custom { err, .. } => {
+                *Box::<dyn Any + Send>::downcast::<Self>(err)
+                    .expect("unexpected error type")
+            },
+            _ => panic!("unexpected error type"),
+        }
+    }
+}
+
+newtype_num! {
+    #[derive(BinRead, Constructor, Debug)]
+    pub struct ChunkIndex(i32);
+}
 
 #[derive(Debug, Display)]
 #[display(fmt = "{} -> chunk {}", id, chunk_index)]
@@ -51,8 +114,8 @@ impl<'a, T: Reader> Iter<'a, T> {
         self.owner.memory_map.get(self.chunk_index).unwrap().size
     }
 
-    pub fn load<R: Resource + 'static>(&self, context: &R::Context) -> AResult<Rc<R>> {
-        self.owner.load_chunk(self.chunk_index, context)
+    pub fn load<R: BinRead + 'static>(&self, args: R::Args) -> RiffResult<Rc<R>> {
+        self.owner.load_chunk_args(self.chunk_index, args)
     }
 
     #[deprecated(note = "TODO: For debugging only")]
@@ -68,7 +131,9 @@ pub struct Riff<T: Reader> {
     // but not enough information is recorded currently to actually do this.
     id: Identity,
 
-    input: RefCell<ByteOrdered<SharedStream<T>, byteordered::Endianness>>,
+    input: RefCell<SharedStream<T>>,
+
+    endianness: Endianness,
 
     /// Index for O(1) access of RIFF chunks by index.
     memory_map: MemoryMap,
@@ -80,7 +145,7 @@ pub struct Riff<T: Reader> {
 }
 
 impl<T: Reader> Riff<T> {
-    pub fn new(input: T) -> AResult<Self> {
+    pub fn new(input: T) -> RiffResult<Self> {
         Self::with_identity(Identity::Parent, SharedStream::new(input))
     }
 
@@ -108,48 +173,65 @@ impl<T: Reader> Riff<T> {
         self.info.kind()
     }
 
-    pub fn load_chunk<R: 'static + Resource>(&self, index: ChunkIndex, context: &R::Context) -> AResult<Rc<R>> {
-        let entry = self.memory_map.get(index)
-            .with_context(|| format!("Invalid RIFF index {}", index))?;
+    pub fn load_chunk<R>(&self, index: ChunkIndex) -> RiffResult<Rc<R>>
+    where
+        R: BinRead + 'static,
+        R::Args: Default + Sized
+    {
+        self.load_chunk_args::<R>(index, R::Args::default())
+    }
+
+    pub fn load_chunk_args<R: BinRead + 'static>(&self, index: ChunkIndex, args: R::Args) -> RiffResult<Rc<R>> {
+        let entry = self.memory_map.get(index).ok_or(RiffError::BadIndex(index))?;
 
         if let Some(data) = entry.data.borrow().as_data().and_then(Weak::upgrade) {
             return data.downcast::<R>()
-                .map_err(|_| anyhow!("Invalid data type for index {}; OSType is {}", index, entry.os_type));
+                .map_err(|_| RiffError::BadDataType(index, entry.os_type));
         }
 
         let mut input = self.input.borrow_mut();
         input.seek(SeekFrom::Start((entry.offset + Self::CHUNK_HEADER_SIZE).into()))
-            .with_context(|| format!("Can’t seek to {} for RIFF index {}", entry.offset, index))?;
+            .map_err(|error| RiffError::SeekFailure(index, entry.offset, error))?;
 
         let mut entry_size = entry.size;
 
         if self.info.version() == Version::D3 {
-            input.skip(4).with_context(|| format!("Can’t skip resource ID in index {}", index))?;
-            let mut name_size = input.read_u8().with_context(|| format!("Can’t read resource name size in index {}", index))?;
+            input.skip(4).map_err(|error| RiffError::D3ResourceIdSkipError(index, error))?;
+            let mut name_size = input
+                .read_u8()
+                .map_err(|error| RiffError::D3ResourceNameSizeReadError(index, error))?;
+            // padding byte; check appears reversed, but is correct, because of
+            // the odd-sized fixed offset later
             if name_size & 1 == 0 {
                 // padding byte
                 name_size += 1;
             }
             entry_size -= u32::from(name_size) + 5;
-            input.skip(name_size.into()).with_context(|| format!("Can’t skip resource name in index {}", index))?;
+            input.skip(name_size.into()).map_err(|error|
+                RiffError::D3ResourceNameSkipError(index, error))?;
         }
 
-        R::load(&mut input, entry_size, context)
+        let mut options = binread::ReadOptions::default();
+        options.endian = match self.endianness {
+            Endianness::Little => binread::Endian::Little,
+            Endianness::Big => binread::Endian::Big,
+        };
+        // TODO: Figure out how to get entry size into it
+        R::read_options(&mut input.clone().take_seek(entry_size.into()), &options, args)
             .map(|resource| {
                 let resource = Rc::new(resource);
-                *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as Rc<dyn Any>)));
+                *entry.data.borrow_mut() = ChunkData::Loaded(Rc::downgrade(&(Rc::clone(&resource) as _)));
                 resource
             })
-            .with_context(|| format!("Can’t load {} chunk {} at {}", entry.os_type, index, entry.offset))
+            .map_err(|error| RiffError::ReadError(entry.os_type, index, entry.offset, error))
     }
 
-    pub fn load_riff(&self, index: ChunkIndex) -> AResult<Self> {
-        let entry = self.memory_map.get(index)
-            .with_context(|| format!("Invalid RIFF index {}", index))?;
+    pub fn load_riff(&self, index: ChunkIndex) -> RiffResult<Self> {
+        let entry = self.memory_map.get(index).ok_or(RiffError::BadIndex(index))?;
 
-        let mut input = self.input.borrow_mut().inner_mut().clone();
+        let mut input = self.input.borrow_mut().clone();
         input.seek(SeekFrom::Start(entry.offset.into()))
-            .with_context(|| format!("Invalid RIFF offset {} for index {}", entry.offset, index))?;
+            .map_err(|error| RiffError::SeekFailure(index, entry.offset, error))?;
         Self::with_identity(Identity::Child(index), input)
     }
 
@@ -198,7 +280,7 @@ impl<T: Reader> Riff<T> {
     // in a 64k page (`(0xffff - header_size) / entry_size`)
     const MMAP_MAX_ENTRIES: u32 = ((0xFFFF - Self::MMAP_HEADER_SIZE) / Self::MMAP_ENTRY_SIZE);
 
-    fn init<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<(MemoryMap, ResourceMap)> {
+    fn init<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         let os_type = input.read_os_type::<OE>()?;
         match os_type.as_bytes() {
             b"CFTC" => Self::read_cftc::<R, OE, DE>(input),
@@ -207,11 +289,11 @@ impl<T: Reader> Riff<T> {
             // well-authored file, so for implementation simplicity we do not do
             // that.
             b"imap" => Self::read_imap::<R, OE, DE>(input),
-            _ => bail!("Could not find a valid resource map; found {} instead", os_type),
+            _ => Err(RiffError::ResourceMapNotFound(os_type)),
         }
     }
 
-    fn read_cftc<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<(MemoryMap, ResourceMap)> {
+    fn read_cftc<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         const ENTRY_SIZE: u32 = 16;
 
         let mut bytes_to_read = input.read_u32::<DE>()?;
@@ -245,8 +327,9 @@ impl<T: Reader> Riff<T> {
                 data: RefCell::new(ChunkData::Free { next_free: ChunkIndex::new(-1) }),
             });
 
-            if resource_map.insert(ResourceId::new(os_type, id), mmap_index).is_some() {
-                bail_sample!("Multiple {} {} in CFTC", os_type, id);
+            let res_id = ResourceId::new(os_type, id);
+            if resource_map.insert(res_id, mmap_index).is_some() {
+                return Err(RiffError::DuplicateResourceId(res_id, "CFTC"));
             }
 
             bytes_to_read -= ENTRY_SIZE;
@@ -259,29 +342,35 @@ impl<T: Reader> Riff<T> {
         }, resource_map))
     }
 
-    fn read_imap<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<(MemoryMap, ResourceMap)> {
+    fn read_imap<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         let _imap_size = input.skip(4)?;
         let _num_maps = input.skip(4)?;
         let map_offset = input.read_u32::<DE>()?;
         // imap contains the reference to the active mmap chunk for the file
         // along with some other unknown data which we can ignore for now
         input.seek(SeekFrom::Start(map_offset.into()))
-            .context("Can’t seek to mmap")?;
+            .map_err(RiffError::MmapSeekFailure)?;
 
         let os_type = input.read_os_type::<OE>()?;
         if os_type.as_bytes() != b"mmap" {
-            bail!("Can’t find a valid resource map; found {} instead", os_type);
+            return Err(RiffError::ResourceMapNotFound(os_type));
         }
 
         let _chunk_size = input.skip(4)?;
 
         let header_size = input.read_u16::<DE>()?;
-        ensure_sample!(header_size == 0x18, "Unexpected mmap header size {}", header_size);
+        if header_size != 0x18 {
+            return Err(RiffError::BadMmapHeaderSize(header_size));
+        }
         let entry_size = input.read_u16::<DE>()?;
-        ensure_sample!(entry_size == 0x14, "Unexpected mmap entry size {}", entry_size);
+        if entry_size != 0x14 {
+            return Err(RiffError::BadMmapEntrySize(entry_size));
+        }
         let _table_capacity = input.skip(4)?;
         let num_entries = input.read_u32::<DE>()?;
-        ensure_sample!(num_entries <= Self::MMAP_MAX_ENTRIES, "Invalid number of mmap entries {}", num_entries);
+        if num_entries > Self::MMAP_MAX_ENTRIES {
+            return Err(RiffError::BadMmapEntryCount(num_entries));
+        }
         let next_junk_index = ChunkIndex::new(input.read_i32::<DE>()?);
         let _garbage = input.skip(4)?;
         let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
@@ -295,9 +384,8 @@ impl<T: Reader> Riff<T> {
             let size = input.read_u32::<DE>()?;
             let offset = input.read_u32::<DE>()?;
             let flags_bits = input.read_u16::<DE>()?;
-            let flags = MemoryMapFlags::from_bits(flags_bits).with_context(|| {
-                format!("Invalid flags in mmap entry {}: {:x}", index, flags_bits)
-            })?;
+            let flags = MemoryMapFlags::from_bits(flags_bits)
+                .ok_or_else(|| RiffError::BadMmapEntryFlags(ChunkIndex(i32::try_from(index).unwrap()), flags_bits))?;
             let field_e = input.read_u16::<DE>()?;
             let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
             input.skip((u32::from(entry_size) - Self::MMAP_ENTRY_SIZE).into())?;
@@ -327,7 +415,7 @@ impl<T: Reader> Riff<T> {
         // reason to have a separate code path for container RIFFs
         let resource_map = if let Some(offset) = resource_map_offset {
             input.seek(SeekFrom::Start(offset.into()))
-                .context("Can’t seek to KEY*")?;
+                .map_err(RiffError::KeysSeekFailure)?;
             Self::read_keys::<R, OE, DE>(input)?
         } else {
             ResourceMap::new()
@@ -340,9 +428,9 @@ impl<T: Reader> Riff<T> {
         }, resource_map))
     }
 
-    fn read_keys<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> AResult<ResourceMap> {
+    fn read_keys<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<ResourceMap> {
         if input.read_os_type::<OE>()?.as_bytes() != b"KEY*" {
-            bail!("Bad KEY* offset");
+            return Err(RiffError::BadKeysOffset);
         }
 
         let _chunk_size = input.skip(4)?;
@@ -359,16 +447,17 @@ impl<T: Reader> Riff<T> {
             let id = i16::try_from(input.read_i32::<DE>()?).unwrap();
             let os_type = input.read_os_type::<DE>()?;
 
-            if resource_map.insert(ResourceId::new(os_type, id), riff_index).is_some() {
-                bail_sample!("Multiple {} {} in KEY*", os_type, id);
+            let res_id = ResourceId::new(os_type, id);
+            if resource_map.insert(res_id, riff_index).is_some() {
+                return Err(RiffError::DuplicateResourceId(res_id, "KEY*"));
             }
         }
 
         Ok(resource_map)
     }
 
-    fn with_identity(id: Identity, mut input: SharedStream<T>) -> AResult<Self> {
-        let info = detect(&mut input)?;
+    fn with_identity(id: Identity, mut input: SharedStream<T>) -> RiffResult<Self> {
+        let info = detect(&mut input).map_err(|error| RiffError::NotRiff)?;
 
         let (memory_map, resource_map) = {
             if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {
@@ -384,7 +473,8 @@ impl<T: Reader> Riff<T> {
 
         Ok(Self {
             id,
-            input: RefCell::new(ByteOrdered::runtime(input, info.data_endianness())),
+            input: RefCell::new(input),
+            endianness: info.data_endianness(),
             memory_map,
             resource_map,
             info
@@ -397,21 +487,34 @@ impl <T: Reader> ResourceSource for Riff<T> {
         self.resource_map.get(&id.into()).is_some()
     }
 
-    fn load<R: 'static + Resource>(&self, id: ResourceId, context: &R::Context) -> AResult<Rc<R>> {
+    fn load_args<R: BinRead + 'static>(&self, id: ResourceId, args: R::Args) -> ResourceResult<Rc<R>> {
         if let Some(&chunk_index) = self.resource_map.get(&id) {
-            Self::load_chunk::<R>(self, chunk_index, context)
+            Self::load_chunk_args::<R>(self, chunk_index, args).map_err(|error| {
+                // TODO: Losing a lot of data here.
+                match error {
+                    RiffError::IoError(error) => ResourceError::IoError(error),
+                    RiffError::BadIndex(_) => ResourceError::NotFound(id),
+                    RiffError::BadDataType(_, _) => ResourceError::BadDataType(id),
+                    RiffError::SeekFailure(_, _, error)
+                    | RiffError::D3ResourceIdSkipError(_, error)
+                    | RiffError::D3ResourceNameSkipError(_, error) => ResourceError::SeekFailure(id, error),
+                    RiffError::D3ResourceNameSizeReadError(_, error) => ResourceError::ReadSizeFailure(id, error),
+                    RiffError::ReadError(_, _, _, error) => ResourceError::ReadError(id, error),
+                    _ => todo!("split RiffError to distinguish between resource loads and riff loads"),
+                }
+            })
         } else {
-            bail!("Invalid resource ID {}", id)
+            Err(ResourceError::NotFound(id))
         }
     }
 }
 
-pub fn detect(reader: &mut impl Reader) -> AResult<DetectionInfo> {
+pub fn detect(reader: &mut impl Reader) -> RiffResult<DetectionInfo> {
     let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
-        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).context("Not a Director RIFF"),
-        b"FFIR" => bail_sample!("RIFF-LE"),
-        _ => bail!("Not a RIFF file"),
+        b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).ok_or(RiffError::NotDirectorRiff),
+        b"FFIR" => Err(RiffError::UnsupportedRiff),
+        _ => Err(RiffError::NotRiff),
     }
 }
 

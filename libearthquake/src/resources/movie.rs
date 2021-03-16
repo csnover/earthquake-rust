@@ -1,13 +1,14 @@
 use anyhow::{Result as AResult, Context};
+use binread::BinRead;
 use byteorder::{BigEndian, ByteOrder};
-use byteordered::Endianness;
 use crate::pvec;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{Reader, Resource, resource::{Input, StringContext, StringKind}};
+use libcommon::{Reader, Resource, TakeSeekExt, resource::{Input, StringContext, StringKind}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::{convert::TryFrom, path::PathBuf};
 use super::{List, cast::{MemberId, MemberNum}};
+use smart_default::SmartDefault;
 
 pvec! {
     pub struct CastList {
@@ -22,18 +23,13 @@ pvec! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 pub enum Preload {
+    #[default]
     None = 0,
     AfterFirstFrame,
     BeforeFirstFrame,
     Unknown = 4,
-}
-
-impl Default for Preload {
-    fn default() -> Self {
-        Preload::None
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,8 +54,9 @@ impl Resource for CastScoreOrder {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut input = input.as_mut().into_endianness(Endianness::Big);
-        Ok(Self(List::<MemberId>::load(&mut input, size, context)?))
+        let mut options = binread::ReadOptions::default();
+        options.endian = binread::Endian::Big;
+        Ok(Self(List::<MemberId>::read_options(&mut input.take_seek(size.into()), &options, ())?))
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::Reader;
+use crate::SeekExt;
 use std::{
     cell::RefCell,
     convert::TryFrom,
@@ -8,8 +8,7 @@ use std::{
 
 type Inner<T> = Rc<RefCell<T>>;
 
-#[derive(Debug)]
-pub struct SharedStream<T: Reader + ?Sized> {
+pub struct SharedStream<T: Read + Seek + ?Sized> {
     inner: Inner<T>,
     start_pos: u64,
     current_pos: u64,
@@ -17,7 +16,7 @@ pub struct SharedStream<T: Reader + ?Sized> {
 }
 
 // TODO: This is hella questionable
-impl<T> From<Inner<T>> for SharedStream<T> where T: Reader {
+impl<T> From<Inner<T>> for SharedStream<T> where T: Read + Seek {
     fn from(input: Inner<T>) -> Self {
         let (start_pos, end_pos) = {
             let mut input = input.borrow_mut();
@@ -34,7 +33,7 @@ impl<T> From<Inner<T>> for SharedStream<T> where T: Reader {
 }
 
 // TODO: This is hella questionable
-impl<T> From<T> for SharedStream<T> where T: Reader {
+impl<T> From<T> for SharedStream<T> where T: Read + Seek {
     fn from(mut input: T) -> Self {
         let start_pos = input.pos().unwrap();
         let end_pos = input.len().unwrap();
@@ -48,7 +47,7 @@ impl<T> From<T> for SharedStream<T> where T: Reader {
     }
 }
 
-impl<T> SharedStream<T> where T: Reader {
+impl<T> SharedStream<T> where T: Read + Seek {
     pub fn new(mut input: T) -> Self {
         Self {
             start_pos: 0,
@@ -79,7 +78,7 @@ impl<T> SharedStream<T> where T: Reader {
     }
 }
 
-impl<T> Clone for SharedStream<T> where T: Reader {
+impl<T> Clone for SharedStream<T> where T: Read + Seek + ?Sized {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -90,7 +89,7 @@ impl<T> Clone for SharedStream<T> where T: Reader {
     }
 }
 
-impl<T> Read for SharedStream<T> where T: Reader {
+impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut inner = match self.inner.try_borrow_mut() {
             Ok(inner) => inner,
@@ -107,7 +106,7 @@ impl<T> Read for SharedStream<T> where T: Reader {
     }
 }
 
-impl<T> Seek for SharedStream<T> where T: Reader {
+impl<T> Seek for SharedStream<T> where T: Read + Seek + ?Sized {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         let (base_pos, offset) = match pos {
             SeekFrom::Start(n) => (self.start_pos, i64::try_from(n).unwrap()),
@@ -126,6 +125,17 @@ impl<T> Seek for SharedStream<T> where T: Reader {
             },
             _ => Err(Error::new(ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position"))
         }
+    }
+}
+
+impl<T> core::fmt::Debug for SharedStream<T> where T: Read + Seek + core::fmt::Debug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SharedStream")
+            .field("inner", &self.inner)
+            .field("start_pos", &self.start_pos)
+            .field("current_pos", &self.current_pos)
+            .field("end_pos", &self.end_pos)
+            .finish()
     }
 }
 

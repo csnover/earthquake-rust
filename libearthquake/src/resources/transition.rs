@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use crate::ensure_sample;
-use libcommon::{encodings::DecoderRef, Reader, Resource, resource::Input};
+use binread::BinRead;
+use libcommon::{binread_enum, bitflags, bitflags::BitFlags, encodings::DecoderRef, Reader, Resource, resource::Input};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use super::{
@@ -66,6 +65,8 @@ pub enum Kind {
     DissolveBits,
 }
 
+binread_enum!(Kind, u8);
+
 bitflags! {
     pub struct Flags: u8 {
         /// Transition over the entire stage instead of just the changing area.
@@ -75,65 +76,41 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct QuarterSeconds(pub u8);
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Milliseconds(pub i16);
 
-#[derive(Clone, Copy, Debug)]
-pub struct StandardMeta {
+#[derive(BinRead, Clone, Debug)]
+#[br(big, import(size: u32, version: ConfigVersion, decoder: DecoderRef))]
+// D5 checks for `size >= 4` and then later does a `version >= 1214` check to
+// decide whether to read bytes 4–5, but we don’t do that because that check
+// appears to be broken:
+// The code path for `version < 1214` converts `legacy_duration` to `duration`
+// by `* 15`, but this doesn’t make sense since that would be a conversion from
+// quarter seconds to ticks, not quarter-seconds to milliseconds. For this to be
+// correct, `legacy_duration` would need to be stored in units of 66.6̅ms, which
+// would be pretty weird since that’s a crazy time base, it was ¼s in D4, and
+// the conversion is perfect for converting ¼s… to ticks. I have no samples of
+// files which would follow this code path to see what data is actually stored
+// there.
+#[br(pre_assert(size >= 6, version >= ConfigVersion::V1214))]
+pub struct Meta {
     legacy_duration: QuarterSeconds,
+    #[br(assert(chunk_size > 0 && chunk_size <= 128))]
     chunk_size: u8,
     kind: Kind,
     flags: Flags,
     duration: Milliseconds,
-}
-
-#[derive(Clone, Debug)]
-pub enum Meta {
-    Standard(StandardMeta),
-    Xtra(StandardMeta, XtraMeta),
+    #[br(args(size - 6, decoder), if(!flags.contains(Flags::STANDARD)))]
+    xtra: Option<XtraMeta>,
 }
 
 impl Resource for Meta {
     type Context = (ConfigVersion, DecoderRef);
 
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        ensure_sample!(size >= 4, "Unexpected transition meta resource size {} (should be at least 4)", size);
-        let legacy_duration = QuarterSeconds(input.read_u8().context("Can’t read transition maybe legacy duration")?);
-        let chunk_size = input.read_u8().context("Can’t read transition chunk size")?;
-        ensure_sample!(chunk_size > 0 && chunk_size <= 128, "Unexpected transition chunk size {}", chunk_size);
-        let kind = {
-            let value = input.read_u8().context("Can’t read transition kind")?;
-            Kind::from_u8(value).with_context(|| format!("Invalid transition kind {}", value))?
-        };
-        let flags = {
-            let value = input.read_u8().context("Can’t read transition flags")?;
-            Flags::from_bits(value).with_context(|| format!("Invalid transition flags (0x{:x})", value))?
-        };
-        let duration = Milliseconds(if context.0 < ConfigVersion::V1214 {
-            i16::from(legacy_duration.0) * 15
-        } else {
-            input.read_i16().context("Can’t read transition duration")?
-        });
-
-        let standard_meta = StandardMeta {
-            legacy_duration,
-            chunk_size,
-            kind,
-            flags,
-            duration,
-        };
-
-        Ok(if flags.contains(Flags::STANDARD) {
-            Self::Standard(standard_meta)
-        } else {
-            Self::Xtra(
-                standard_meta,
-                XtraMeta::load(input, size - 6, context)
-                    .context("Can’t load transition Xtra metadata")?
-            )
-        })
+        Self::read_args(input, (size, context.0, context.1)).context("Can’t read transition meta")
     }
 }

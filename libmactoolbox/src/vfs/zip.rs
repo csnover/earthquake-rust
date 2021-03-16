@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result as AResult};
-use libcommon::{Reader, SharedStream, vfs::{VirtualFile, VirtualFileSystem}};
+use libcommon::{SeekExt, SharedStream, vfs::{VirtualFile, VirtualFileSystem}};
 use rc_zip::{Archive, EntryReader, ReadZip, EntryContents, StoredEntry};
 use std::{convert::TryFrom, fmt, fs::File, io::{Read, Seek, SeekFrom, self}, path::{Path, PathBuf}};
 use tempfile::SpooledTempFile;

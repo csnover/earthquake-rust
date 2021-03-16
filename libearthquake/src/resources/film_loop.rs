@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use crate::ensure_sample;
-use libcommon::{Reader, Resource, resource::Input};
+use binread::BinRead;
+use libcommon::{Reader, Resource, Unk16, bitflags, resource::Input};
 use libmactoolbox::Rect;
 
 bitflags! {
@@ -22,29 +21,18 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(BinRead, Clone, Copy, Debug)]
+#[br(big, import(size: u32), pre_assert(size == 14))]
 pub struct Meta {
     bounds: Rect,
     flags: Flags,
-    field_14: u16,
+    field_14: Unk16,
 }
 
 impl Resource for Meta {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        ensure_sample!(size == 14, "Unexpected film loop meta resource size {} (should be 14)", size);
-        let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read film loop bounds")?;
-        let flags = {
-            let value = input.read_u32().context("Can’t read film loop flags")?;
-            Flags::from_bits(value).with_context(|| format!("Invalid film loop flags (0x{:x})", value))?
-        };
-        let field_14 = input.read_u16().context("Can’t read film loop field_14")?;
-
-        Ok(Self {
-            bounds,
-            flags,
-            field_14,
-        })
+        Self::read_args(input, (size, )).context("Can’t read film loop meta")
     }
 }

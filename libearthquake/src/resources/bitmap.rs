@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use bitflags::bitflags;
-use crate::ensure_sample;
-use libcommon::{Reader, Resource, resource::Input};
+use binread::BinRead;
+use libcommon::{bitflags, Reader, Resource, resource::Input};
 use libmactoolbox::{Point, Rect};
 use super::cast::MemberId;
 
@@ -10,6 +9,7 @@ bitflags! {
     // seem to be a way to actually set them and they are currently 0 in all
     // available corpus data. They seem to be related to setting a global
     // palette and using a dithering pen to paint.
+    #[derive(Default)]
     struct Flags: u8 {
         const FLAG_1 = 1;
         const FLAG_2 = 2;
@@ -20,55 +20,52 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(BinRead, Clone, Copy)]
+#[br(big, import(size: u32), pre_assert(size == 22 || size == 28))]
 pub struct Meta {
-    is_pixmap: bool,
+    #[br(assert(row_bytes & 0x7fff < 0x4000))]
     row_bytes: i16,
     bounds: Rect,
+    #[br(pad_before(8))]
     origin: Point,
+    #[br(if(size == 28))]
     flags: Flags,
+    #[br(if(size == 28))]
     color_depth: u8,
+    #[br(if(size == 28))]
     palette_id: MemberId,
+}
+
+impl std::fmt::Debug for Meta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("row_bytes", &self.row_bytes())
+            .field("bounds", &self.bounds)
+            .field("origin", &self.origin)
+            .field("flags", &self.flags)
+            .field("color_depth", &self.color_depth)
+            .field("palette_id", &self.palette_id)
+            .field("(is_pixmap)", &self.is_pixmap())
+            .finish()
+    }
+}
+
+impl Meta {
+    #[must_use]
+    pub fn is_pixmap(&self) -> bool {
+        self.row_bytes < 0
+    }
+
+    #[must_use]
+    pub fn row_bytes(&self) -> i16 {
+        self.row_bytes & 0x7fff
+    }
 }
 
 impl Resource for Meta {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        ensure_sample!(size == 22 || size == 28, "Unexpected bitmap meta resource size {} (should be 22 or 28)", size);
-        let (is_pixmap, row_bytes) = {
-            let data = input.read_i16().context("Can’t read row bytes")?;
-            (data < 0, data & 0x7fff)
-        };
-        ensure_sample!(row_bytes <= 0x3fff, "Unexpected row bytes size {}", row_bytes);
-        let bounds = Rect::load(input, Rect::SIZE, &()).context("Can’t read bounds")?;
-        input.skip(8).context("Can’t skip unused data at 0x16")?;
-        let origin = Point::load(input, Point::SIZE, &()).context("Can’t read origin")?;
-        let (
-            flags,
-            color_depth,
-            palette_id
-        ) = if size > 22 {(
-            {
-                let value = input.read_u8().context("Can’t read bitmap flags")?;
-                Flags::from_bits(value).with_context(|| format!("Invalid bitmap flags (0x{:x})", value))?
-            },
-            input.read_u8().context("Can’t read color depth")?,
-            MemberId::load(input, MemberId::SIZE, &()).context("Can’t read palette ID")?,
-        )} else {(
-            Flags::empty(),
-            1,
-            MemberId::default()
-        )};
-
-        Ok(Self {
-            is_pixmap,
-            row_bytes,
-            bounds,
-            origin,
-            flags,
-            color_depth,
-            palette_id,
-        })
+        Self::read_args(input, (size, )).context("Can’t read bitmap meta")
     }
 }

@@ -1,0 +1,1 @@
+doc-valid-idents = [ "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "iOS", "macOS", "Mac2Win" ]

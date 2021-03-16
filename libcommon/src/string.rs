@@ -34,9 +34,9 @@ pub trait ReadExt: Read {
             let value = self.read_u16::<T>()?;
             if value == 0 {
                 break String::from_utf16(&result).map_err(|e| Error::new(ErrorKind::InvalidData, e));
-            } else {
-                result.push(value);
             }
+
+            result.push(value);
         }
     }
 

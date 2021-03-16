@@ -42,7 +42,7 @@ pub struct Detection<'vfs> {
     pub resource_fork: Option<Box<dyn VirtualFile + 'vfs>>,
 }
 
-pub fn detect<'vfs>(fs: &'vfs dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'vfs>> {
+pub fn detect(fs: &'_ dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'_>> {
     fs.open_resource_fork(&path).and_then(|mut res_file| {
         let mut data_file = fs.open(&path).ok();
         detect_mac(&mut res_file, data_file.as_mut()).map(|ft| {
@@ -83,5 +83,5 @@ fn detect_riff(data_fork: &mut impl Reader) -> AResult<FileType> {
     riff::detect(data_fork.by_ref()).and_then(|m| {
         data_fork.seek(SeekFrom::Start(start_pos))?;
         Ok(FileType::Movie(m))
-    })
+    }).context("RIFF detection failed")
 }

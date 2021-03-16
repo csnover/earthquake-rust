@@ -22,13 +22,7 @@ use libearthquake::{
         score::Score,
     },
 };
-use libmactoolbox::{
-    EventData,
-    EventKind,
-    ResourceFile,
-    script_manager::ScriptCode,
-    System,
-};
+use libmactoolbox::{EventData, EventKind, ResourceFile, System, script_manager::ScriptCode, types::MacString};
 use std::{io::SeekFrom, rc::Rc, time::Instant};
 use qt_core::{QBox, q_event::Type as QEventType};
 use qt_widgets::QWidget;
@@ -38,7 +32,7 @@ enum MovieList<'vfs> {
     RiffContainer(RiffContainer<Box<dyn VirtualFile + 'vfs>>),
     SingleRiff(Riff<Box<dyn VirtualFile + 'vfs>>),
     D3Win(Vec<D3WinMovie>),
-    D3Mac(Vec<String>),
+    D3Mac(Vec<MacString>),
     Embeds(ResourceFile<Box<dyn VirtualFile + 'vfs>>, u16),
 }
 
