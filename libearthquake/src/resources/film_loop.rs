@@ -1,6 +1,5 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use libcommon::{Reader, Resource, Unk16, bitflags, resource::Input};
+use libcommon::{Unk16, bitflags};
 use libmactoolbox::Rect;
 
 bitflags! {
@@ -27,12 +26,4 @@ pub struct Meta {
     bounds: Rect,
     flags: Flags,
     field_14: Unk16,
-}
-
-impl Resource for Meta {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read_args(input, (size, )).context("Can’t read film loop meta")
-    }
 }

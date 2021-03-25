@@ -16,19 +16,17 @@
 pub mod bitflags;
 pub mod encodings;
 pub mod error;
-pub mod resource;
 // TODO: use positioned_io crate?
 mod shared_stream;
 pub mod string;
 pub mod vfs;
 
-pub use resource::Resource;
 pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
 use binrw::BinRead;
 use core::{cmp, convert::{TryFrom, TryInto}};
-use std::{fmt, io};
+use std::io;
 
 pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
     for error in chained_error.chain() {
@@ -164,9 +162,6 @@ pub trait SeekExt: io::Seek {
     }
 }
 impl<T: io::Seek + ?Sized> SeekExt for T {}
-
-pub trait Reader: SeekExt + io::Read + fmt::Debug {}
-impl<T: io::Read + io::Seek + ?Sized + fmt::Debug> Reader for T {}
 
 // TODO:
 // All of this newtype stuff seems like it absolutely should be easier to do.

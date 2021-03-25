@@ -30,7 +30,7 @@ use libearthquake::{collections::{
         },
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
-use libcommon::{Reader, SharedStream};
+use libcommon::SharedStream;
 use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
 use pico_args::Arguments;
 use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::PathBuf, process::exit};
@@ -146,7 +146,7 @@ fn parse_frames(frames: &str) -> AResult<(i16, i16)> {
 
 fn parse_member_id(id: &str) -> AResult<MemberId> {
     if let Ok(member_num) = id.parse::<i16>() {
-        Ok(MemberId::new(0, member_num))
+        Ok(MemberId::new(0i16, member_num))
     } else {
         match id.split(',').take(3).collect::<Vec<_>>().as_slice() {
             [ lib_num, member_num ] => {
@@ -247,7 +247,7 @@ fn print_frame_sprites(frame: &Frame, fields: &[String]) {
     }
 }
 
-fn print_mac_resource(rom: &ResourceFile<impl Reader>, id: ResourceId) {
+fn print_mac_resource<R: binrw::io::Read + binrw::io::Seek>(rom: &ResourceFile<R>, id: ResourceId) {
     print_resource(id, rom.load::<Vec<u8>>(id).map_err(anyhow::Error::new));
 }
 
@@ -258,7 +258,7 @@ fn print_resource(id: ResourceId, result: AResult<impl std::fmt::Debug>) {
     }
 }
 
-fn print_riff_resource(riff: &Riff<impl Reader>, id: ResourceId) {
+fn print_riff_resource<R: binrw::io::Read + binrw::io::Seek>(riff: &Riff<R>, id: ResourceId) {
     print_resource(id, riff.load::<Vec<u8>>(id).map_err(anyhow::Error::new));
 }
 
@@ -302,13 +302,13 @@ fn main() -> AResult<()> {
     Ok(())
 }
 
-fn inspect_riff(stream: &mut impl Reader, options: &Options) -> AResult<()> {
+fn inspect_riff<R: binrw::io::Read + binrw::io::Seek>(stream: &mut R, options: &Options) -> AResult<()> {
     let riff = Riff::new(stream)?;
     inspect_riff_contents(&riff, options)?;
     Ok(())
 }
 
-fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult<()> {
+fn inspect_riff_contents<R: binrw::io::Read + binrw::io::Seek>(riff: &Riff<R>, options: &Options) -> AResult<()> {
     let config_id = if riff.contains((b"VWCF", 1024)) {
         Some(ResourceId::new(b"VWCF", 1024))
     } else if riff.contains((b"DRCF", 1024)) {
@@ -369,7 +369,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
             for (i, &chunk_index) in cast.iter().enumerate() {
                 if chunk_index > ChunkIndex::new(0) {
                     let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
-                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0, cast_member_num)) {
+                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0i16, cast_member_num)) {
                         match riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version)) {
                             Ok(member) => println!("{}: {:#?}", cast_member_num, member),
                             Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
@@ -387,7 +387,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
     Ok(())
 }
 
-fn inspect_riff_container(stream: impl Reader, options: &Options) -> AResult<()> {
+fn inspect_riff_container<R: binrw::io::Read + binrw::io::Seek>(stream: R, options: &Options) -> AResult<()> {
     let riff_container = RiffContainer::new(stream)?;
     for index in 0..riff_container.len() {
         println!("\nFile {}: {}", index + 1, riff_container.filename(index).unwrap());
@@ -441,7 +441,7 @@ fn print_score(options: &Options, source: &impl ResourceSource) {
     }
 }
 
-fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) -> AResult<()> {
+fn read_embedded_movie<R: binrw::io::Read + binrw::io::Seek>(num_movies: u16, stream: R, options: &Options) -> AResult<()> {
     let rom = ResourceFile::new(stream)?;
 
     if options.print_config() {
@@ -500,16 +500,16 @@ fn read_file(filename: &str, options: &Options) -> AResult<()> {
     }
 }
 
-fn read_movie(info: &MovieDetectionInfo, mut stream: impl Reader, options: &Options) -> AResult<()> {
+fn read_movie<R: binrw::io::Read + binrw::io::Seek>(info: &MovieDetectionInfo, mut stream: R, options: &Options) -> AResult<()> {
     match info.kind() {
         MovieKind::Movie | MovieKind::Cast => inspect_riff(&mut stream, options),
         MovieKind::Accelerator | MovieKind::Embedded => read_embedded_movie(1, stream, options),
     }
 }
 
-fn read_projector(
+fn read_projector<R: binrw::io::Read + binrw::io::Seek>(
     info: &ProjectorDetectionInfo,
-    mut stream: impl Reader,
+    mut stream: R,
     options: &Options
 ) -> AResult<()> {
     match info.movie() {

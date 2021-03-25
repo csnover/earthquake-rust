@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use bstr::BStr;
 use crate::resources::{ByteVec, List};
-use libcommon::{Reader, SeekExt};
+use libcommon::SeekExt;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use smart_default::SmartDefault;
 use std::{io::{Read, Seek}, rc::Rc};
@@ -109,14 +109,14 @@ impl BinRead for Dict {
 /// Starting in Director 6 (TODO: maybe 7? check this), the container was
 /// extended to also include binary Xtras.
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
-pub struct RiffContainer<T: Reader> {
+pub struct RiffContainer<T: binrw::io::Read + binrw::io::Seek> {
     riff: Rc<Riff<T>>,
     #[deref] #[deref_mut] #[index] #[index_mut]
     file_list: List<ChunkFile>,
     file_dict: Dict,
 }
 
-impl <T: Reader> RiffContainer<T> {
+impl <T: binrw::io::Read + binrw::io::Seek> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
         let file_list = riff.load_chunk::<List<ChunkFile>>(riff.first_of_kind(b"List")).context("Bad List chunk")?;

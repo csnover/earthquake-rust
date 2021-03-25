@@ -1,10 +1,7 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use crate::player::score::Tempo;
-use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, binrw_enum, bitflags, bitflags::BitFlags, newtype_num, resource::Input};
+use libcommon::{Unk16, Unk32, Unk8, bitflags, bitflags::BitFlags, newtype_num};
 use libmactoolbox::{quickdraw::PaletteIndex, Rect};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use std::convert::TryInto;
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
@@ -14,7 +11,8 @@ newtype_num! {
     pub struct LegacyTempo(u8);
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
+#[br(big, repr(i16))]
 pub enum Platform {
     #[default]
     Unknown = 0,
@@ -22,9 +20,8 @@ pub enum Platform {
     Win,
 }
 
-binrw_enum!(Platform, i16);
-
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[br(big, repr(i16))]
 pub enum Version {
     #[default]
     Unknown,
@@ -59,8 +56,6 @@ pub enum Version {
     V1406 = 1406,
     V5692 = 5692, // protected
 }
-
-binrw_enum!(Version, i16);
 
 impl Version {
     #[must_use]
@@ -265,13 +260,5 @@ impl Config {
             state += 0x7fff_ffff;
         }
         (state, ((state >> 14) as i16).abs())
-    }
-}
-
-impl Resource for Config {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read(input).context("Can’t read config")
     }
 }

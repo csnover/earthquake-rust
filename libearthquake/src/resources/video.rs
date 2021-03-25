@@ -1,6 +1,5 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use libcommon::{bitflags, bitflags::BitFlags, Reader, Resource, resource::Input};
+use libcommon::{bitflags, bitflags::BitFlags};
 use libmactoolbox::Rect;
 
 bitflags! {
@@ -64,13 +63,5 @@ impl std::fmt::Debug for Meta {
             .field("flags", &self.flags)
             .field("(frame_rate)", &self.frame_rate())
             .finish()
-    }
-}
-
-impl Resource for Meta {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read_args(input, (size, )).context("Can’t read video meta")
     }
 }

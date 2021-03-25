@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result as AResult};
 use binrw::BinRead;
 use crate::{OSType, ResourceError, ResourceFile, ResourceId, ResourceResult, resource_file::{RefNum, ResourceSource}, resources::string_list::StringList, types::{MacString, PString}};
-use libcommon::{encodings::DecoderRef, Reader, vfs::{VirtualFile, VirtualFileSystem}};
+use libcommon::{encodings::DecoderRef, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{convert::TryFrom, io::Cursor, path::Path, rc::Rc};
 
 pub struct ResourceManager<'vfs> {
@@ -229,7 +229,11 @@ impl <'vfs> ResourceManager<'vfs> {
     }
 }
 
-fn load_one<R: BinRead + 'static, T: Reader>(file: &ResourceFile<T>, get_id: impl Fn(&ResourceFile<T>) -> Option<ResourceId>, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
+fn load_one<R, T>(file: &ResourceFile<T>, get_id: impl Fn(&ResourceFile<T>) -> Option<ResourceId>, args: R::Args) -> ResourceResult<Option<Rc<R>>>
+where
+    R: BinRead + 'static,
+    T: binrw::io::Read + binrw::io::Seek
+{
     Ok(if let Some(id) = get_id(file) {
         Some(file.load_args::<R>(id, args)?)
     } else {

@@ -5,7 +5,7 @@ pub mod projector_settings;
 use anyhow::{anyhow, Context, Result as AResult};
 use crate::collections::riff;
 use derive_more::Display;
-use libcommon::{flatten_errors, Reader, vfs::{VirtualFile, VirtualFileSystem}};
+use libcommon::{SeekExt, flatten_errors, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{io::SeekFrom, path::Path};
 
 // 1. D4+Mac projector: resource fork w/ projector ostype + maybe riff in data fork
@@ -61,7 +61,11 @@ pub fn detect(fs: &'_ dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<
     }).context("Detection failed")
 }
 
-fn detect_mac(resource_fork: &mut impl Reader, data_fork: Option<&mut impl Reader>) -> AResult<FileType> {
+fn detect_mac<R1, R2>(resource_fork: &mut R1, data_fork: Option<&mut R2>) -> AResult<FileType>
+where
+    R1: binrw::io::Read + binrw::io::Seek,
+    R2: binrw::io::Read + binrw::io::Seek,
+{
     let start_pos = resource_fork.pos()?;
     projector::detect_mac(resource_fork.by_ref(), data_fork)
         .map(|p| {
@@ -78,7 +82,7 @@ fn detect_mac(resource_fork: &mut impl Reader, data_fork: Option<&mut impl Reade
         .map_err(|e| anyhow!("Not a Director for Mac file: {:?}", e))
 }
 
-fn detect_riff(data_fork: &mut impl Reader) -> AResult<FileType> {
+fn detect_riff<R: binrw::io::Read + binrw::io::Seek>(data_fork: &mut R) -> AResult<FileType> {
     let start_pos = data_fork.pos()?;
     riff::detect(data_fork.by_ref()).and_then(|m| {
         data_fork.seek(SeekFrom::Start(start_pos))?;

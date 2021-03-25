@@ -1,14 +1,13 @@
 use anyhow::{bail, Result as AResult};
-use byteordered::Endianness;
+use binrw::Endian;
 use derive_more::Display;
-use libcommon::Reader;
 use libmactoolbox::{ResourceFile, ResourceId, ResourceSource};
 use super::Version;
 
 #[derive(Clone, Debug)]
 pub struct DetectionInfo {
-    pub(crate) os_type_endianness: Endianness,
-    pub(crate) data_endianness: Endianness,
+    pub(crate) os_type_endianness: Endian,
+    pub(crate) data_endianness: Endian,
     pub(crate) version: Version,
     pub(crate) kind: Kind,
     pub(crate) size: u32,
@@ -16,12 +15,12 @@ pub struct DetectionInfo {
 
 impl DetectionInfo {
     #[must_use]
-    pub fn data_endianness(&self) -> Endianness {
+    pub fn data_endianness(&self) -> Endian {
         self.data_endianness
     }
 
     #[must_use]
-    pub fn os_type_endianness(&self) -> Endianness {
+    pub fn os_type_endianness(&self) -> Endian {
         self.os_type_endianness
     }
 
@@ -49,21 +48,21 @@ pub enum Kind {
     Cast,
 }
 
-pub fn detect_mac<T: Reader>(reader: &mut T) -> AResult<DetectionInfo> {
+pub fn detect_mac<T: binrw::io::Read + binrw::io::Seek>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = ResourceFile::new(reader)?;
 
     if rom.contains(ResourceId::new(b"EMPO", 256)) {
         Ok(DetectionInfo {
-            data_endianness: Endianness::Big,
-            os_type_endianness: Endianness::Big,
+            data_endianness: Endian::Big,
+            os_type_endianness: Endian::Big,
             version: Version::D3,
             kind: Kind::Accelerator,
             size: 0,
         })
     } else if rom.count(b"VWCF") > 1 || (rom.count(b"VWCF") == 1 && rom.id_of_name(b"VWCF", b"Tiles").is_none()) {
         Ok(DetectionInfo {
-            data_endianness: Endianness::Big,
-            os_type_endianness: Endianness::Big,
+            data_endianness: Endian::Big,
+            os_type_endianness: Endian::Big,
             version: Version::D3,
             kind: Kind::Embedded,
             size: 0,

@@ -5,15 +5,14 @@
 //! chunks at the start of the file are used for O(1) lookup of data by chunk
 //! index or [`ResourceID`].
 
-use binrw::BinRead;
+use binrw::{BinRead, Endian, io::{Read, Seek, SeekFrom}};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
-use byteordered::Endianness;
 use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
 use derive_more::{Constructor, Deref, DerefMut, Display};
-use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
+use libcommon::{SeekExt, SharedStream, TakeSeekExt, newtype_num};
 use libmactoolbox::{OSType, OSTypeReadExt, ResourceError, ResourceId, ResourceResult, ResourceSource};
-use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, io::{Seek, SeekFrom}, rc::{Rc, Weak}};
+use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, rc::{Rc, Weak}};
 
 pub type RiffResult<T> = Result<T, RiffError>;
 
@@ -81,13 +80,13 @@ newtype_num! {
 
 #[derive(Debug, Display)]
 #[display(fmt = "{} -> chunk {}", id, chunk_index)]
-pub struct Iter<'a, T: Reader> {
+pub struct Iter<'a, T: Read + Seek> {
     id: ResourceId,
     owner: &'a Riff<T>,
     chunk_index: ChunkIndex,
 }
 
-impl<'a, T: Reader> Iter<'a, T> {
+impl<'a, T: Read + Seek> Iter<'a, T> {
     #[must_use]
     pub fn id(&self) -> ResourceId {
         self.id
@@ -117,14 +116,14 @@ impl<'a, T: Reader> Iter<'a, T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Riff<T: Reader> {
+pub struct Riff<T: Read + Seek> {
     // TODO: This is needed to convert a Riff chunk back to its owner filename,
     // but not enough information is recorded currently to actually do this.
     id: Identity,
 
     input: RefCell<SharedStream<T>>,
 
-    endianness: Endianness,
+    endianness: binrw::Endian,
 
     /// Index for O(1) access of RIFF chunks by index.
     memory_map: MemoryMap,
@@ -135,7 +134,7 @@ pub struct Riff<T: Reader> {
     info: DetectionInfo,
 }
 
-impl<T: Reader> Riff<T> {
+impl<T: Read + Seek> Riff<T> {
     pub fn new(input: T) -> RiffResult<Self> {
         Self::with_identity(Identity::Parent, SharedStream::new(input))
     }
@@ -203,10 +202,7 @@ impl<T: Reader> Riff<T> {
         }
 
         let mut options = binrw::ReadOptions::default();
-        options.endian = match self.endianness {
-            Endianness::Little => binrw::Endian::Little,
-            Endianness::Big => binrw::Endian::Big,
-        };
+        options.endian = self.endianness;
         // TODO: Figure out how to get entry size into it
         R::read_options(&mut input.clone().take_seek(entry_size.into()), &options, args)
             .map(|resource| {
@@ -271,7 +267,7 @@ impl<T: Reader> Riff<T> {
     // in a 64k page (`(0xffff - header_size) / entry_size`)
     const MMAP_MAX_ENTRIES: u32 = ((0xFFFF - Self::MMAP_HEADER_SIZE) / Self::MMAP_ENTRY_SIZE);
 
-    fn init<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
+    fn init<R: Read + Seek, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         let os_type = input.read_os_type::<OE>()?;
         match os_type.as_bytes() {
             b"CFTC" => Self::read_cftc::<R, OE, DE>(input),
@@ -284,7 +280,7 @@ impl<T: Reader> Riff<T> {
         }
     }
 
-    fn read_cftc<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
+    fn read_cftc<R: Read + Seek, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         const ENTRY_SIZE: u32 = 16;
 
         let mut bytes_to_read = input.read_u32::<DE>()?;
@@ -333,7 +329,7 @@ impl<T: Reader> Riff<T> {
         }, resource_map))
     }
 
-    fn read_imap<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
+    fn read_imap<R: Read + Seek, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<(MemoryMap, ResourceMap)> {
         let _imap_size = input.skip(4)?;
         let _num_maps = input.skip(4)?;
         let map_offset = input.read_u32::<DE>()?;
@@ -419,7 +415,7 @@ impl<T: Reader> Riff<T> {
         }, resource_map))
     }
 
-    fn read_keys<R: Reader, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<ResourceMap> {
+    fn read_keys<R: Read + Seek, OE: ByteOrder, DE: ByteOrder>(input: &mut R) -> RiffResult<ResourceMap> {
         if input.read_os_type::<OE>()?.as_bytes() != b"KEY*" {
             return Err(RiffError::BadKeysOffset);
         }
@@ -451,11 +447,11 @@ impl<T: Reader> Riff<T> {
         let info = detect(&mut input)?;
 
         let (memory_map, resource_map) = {
-            if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {
+            if info.os_type_endianness() == Endian::Little && info.data_endianness() == Endian::Little {
                 Self::init::<_, LittleEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Little {
+            } else if info.os_type_endianness() == Endian::Big && info.data_endianness() == Endian::Little {
                 Self::init::<_, BigEndian, LittleEndian>(&mut input)?
-            } else if info.os_type_endianness() == Endianness::Big && info.data_endianness() == Endianness::Big {
+            } else if info.os_type_endianness() == Endian::Big && info.data_endianness() == Endian::Big {
                 Self::init::<_, BigEndian, BigEndian>(&mut input)?
             } else {
                 unreachable!("big endian data with little endian OSType does not exist");
@@ -473,7 +469,7 @@ impl<T: Reader> Riff<T> {
     }
 }
 
-impl <T: Reader> ResourceSource for Riff<T> {
+impl <T: Read + Seek> ResourceSource for Riff<T> {
     fn contains(&self, id: impl Into<ResourceId>) -> bool {
         self.resource_map.get(&id.into()).is_some()
     }
@@ -500,7 +496,7 @@ impl <T: Reader> ResourceSource for Riff<T> {
     }
 }
 
-pub fn detect(reader: &mut impl Reader) -> RiffResult<DetectionInfo> {
+pub fn detect<R: Read + Seek>(reader: &mut R) -> RiffResult<DetectionInfo> {
     let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).ok_or(RiffError::NotDirectorRiff),
@@ -586,7 +582,7 @@ pub struct MemoryMapItem {
 
 type ResourceMap = HashMap<ResourceId, ChunkIndex>;
 
-fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
+fn detect_subtype<T: Read + Seek>(reader: &mut T) -> Option<DetectionInfo> {
     let mut chunk_size_raw = [ 0; 4 ];
     reader.read_exact(&mut chunk_size_raw).ok()?;
 
@@ -594,8 +590,8 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
 
     match sub_type.as_bytes() {
         b"RMMP" => Some(DetectionInfo {
-            os_type_endianness: Endianness::Big,
-            data_endianness: Endianness::Little,
+            os_type_endianness: Endian::Big,
+            data_endianness: Endian::Little,
             version: Version::D3,
             kind: MovieKind::Movie,
             // This version of Director incorrectly includes the
@@ -636,16 +632,16 @@ fn detect_subtype<T: Reader>(reader: &mut T) -> Option<DetectionInfo> {
     }
 }
 
-fn get_riff_attributes(os_type: OSType, raw_size: &[u8]) -> (Endianness, u32) {
+fn get_riff_attributes(os_type: OSType, raw_size: &[u8]) -> (Endian, u32) {
     // Director checks endianness based on the main RIFX OSType, but this works
     // just as well and simplifies support for the special D3Win format
     let endianness = match os_type.as_bytes()[0] {
-        b'M' | b'A' => Endianness::Big,
-        _ => Endianness::Little
+        b'M' | b'A' => Endian::Big,
+        _ => Endian::Little
     };
 
     let size = {
-        if endianness == Endianness::Big {
+        if endianness == Endian::Big {
             BigEndian::read_u32(&raw_size)
         } else {
             LittleEndian::read_u32(&raw_size)

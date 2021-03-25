@@ -2,17 +2,17 @@ use anyhow::{bail, Context, Result as AResult};
 use byteorder::{ByteOrder, BigEndian};
 use crate::{script_manager::decode_text};
 use crc::crc16::checksum_x25;
-use libcommon::{Reader, SharedStream};
+use libcommon::{SeekExt, SharedStream};
 use std::io::{Cursor, SeekFrom};
 
 #[derive(Debug)]
-pub struct MacBinary<T: Reader> {
+pub struct MacBinary<T: binrw::io::Read + binrw::io::Seek> {
     name: String,
     data_fork: Option<SharedStream<T>>,
     resource_fork: Option<SharedStream<T>>,
 }
 
-impl<T: Reader> MacBinary<T> {
+impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
     pub fn new(mut data: T) -> AResult<Self> {
         let start_pos = data.pos()?;
         let header = {

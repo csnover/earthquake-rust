@@ -2,7 +2,7 @@ use binrw::BinRead;
 use byteorder::{ByteOrder, BigEndian};
 use crate::{ApplicationVise, OSType, ResourceId, types::{MacString, PString}};
 use derive_more::Display;
-use libcommon::{Reader, bitflags::BitFlags, bitflags};
+use libcommon::{bitflags::BitFlags, bitflags, SeekExt};
 use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
@@ -94,7 +94,7 @@ impl From<binrw::Error> for ResourceError {
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
-pub struct ResourceFile<T: Reader> {
+pub struct ResourceFile<T: binrw::io::Read + binrw::io::Seek> {
     input: RefCell<T>,
     decompressor: RefCell<DecompressorState>,
     resource_map: ResourceMap,
@@ -110,7 +110,7 @@ struct Header {
     map_size: u32,
 }
 
-impl<T: Reader> ResourceFile<T> {
+impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
     /// Makes a new `ResourceFile` from a readable stream.
     pub fn new(mut data: T) -> ResourceResult<Self> {
         let file_size = data.bytes_left()?;
@@ -234,7 +234,7 @@ impl<T: Reader> ResourceFile<T> {
     }
 }
 
-impl <T: Reader> ResourceSource for ResourceFile<T> {
+impl <T: binrw::io::Read + binrw::io::Seek> ResourceSource for ResourceFile<T> {
     fn contains(&self, id: impl Into<ResourceId>) -> bool {
         self.find_item(id.into()).is_some()
     }

@@ -16,6 +16,8 @@ path = "bin/inspect.rs"
 
 [dependencies]
 anyhow = "1.0"
+# TODO: This should be exported from libcommon
+binrw = "0.2"
 pico-args = "0.3"
 libcommon = { path = "../libcommon" }
 libearthquake = { path = "../libearthquake" }

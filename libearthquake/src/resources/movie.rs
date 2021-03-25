@@ -1,9 +1,8 @@
-use anyhow::{Result as AResult};
 use binrw::BinRead;
 use libmactoolbox::types::PString;
 use crate::pvec;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{Reader, Resource, TakeSeekExt, resource::Input, restore_on_error};
+use libcommon::restore_on_error;
 use super::{List, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
@@ -91,14 +90,6 @@ pub struct Cast {
 // The list of all cast members in the movie, sorted by the order in which they
 // first appear in the score. Internal cast members which are not in the score
 // are included at the end of the list.
-#[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
+#[derive(BinRead, Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
+#[br(big)]
 pub struct CastScoreOrder(List<MemberId>);
-impl Resource for CastScoreOrder {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut options = binrw::ReadOptions::default();
-        options.endian = binrw::Endian::Big;
-        Ok(Self(List::<MemberId>::read_options(&mut input.take_seek(size.into()), &options, ())?))
-    }
-}

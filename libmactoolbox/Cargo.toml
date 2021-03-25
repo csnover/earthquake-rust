@@ -16,7 +16,6 @@ bitflags = "1.2"
 bitstream-io = "0.8"
 bstr = "0.2"
 byteorder = "1.3"
-byteordered = "0.4"
 cpp_core = { version = "0.6", optional = true }
 crc = "1.8"
 derive_more = "0.99"

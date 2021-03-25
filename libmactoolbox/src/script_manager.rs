@@ -1,6 +1,5 @@
 use libcommon::{
     encodings::{Decoder, DecoderRef, MAC_CYRILLIC, MAC_JAPANESE, MAC_ROMAN},
-    Reader,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -192,7 +191,7 @@ pub enum ScriptCode {
 // TODO: This is not sufficient; region codes are needed in addition to the
 // script code for correct decoding of Turkish, Croatian, Icelandic, Romanian,
 // Celtic, Gaelic, Greek, and Farsi.
-pub fn decode_text<T: Reader>(input: &mut T, script_code: u8) -> String {
+pub fn decode_text<T: binrw::io::Read + binrw::io::Seek>(input: &mut T, script_code: u8) -> String {
     #![allow(clippy::match_same_arms)]
     match ScriptCode::from_u8(script_code) {
         Some(ScriptCode::Roman) | None       => MAC_ROMAN.decode_stream(input),

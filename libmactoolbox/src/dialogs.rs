@@ -2,11 +2,10 @@
 #![allow(dead_code)]
 #![allow(clippy::unused_self)]
 
-use anyhow::Result as AResult;
+use binrw::BinRead;
 use bitstream_io::{BigEndian, BitReader};
-use byteordered::{ByteOrdered, Endianness};
 use crate::Rect;
-use libcommon::{Reader, Resource};
+use libcommon::SeekExt;
 
 #[derive(Clone, Copy, Debug)]
 struct Alert {
@@ -23,12 +22,15 @@ struct AlertStage {
     beeps: u8,
 }
 
-impl Resource for Alert {
-    type Context = ();
-    fn load(mut input: &mut ByteOrdered<impl Reader, Endianness>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert!(size >= 12);
-        let bounds_rect = Rect::load(input, Rect::SIZE, context)?;
-        let ditl_id = input.read_i16()?;
+impl BinRead for Alert {
+    type Args = ();
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(mut input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+        let size = input.bytes_left()?;
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
+
+        let bounds_rect = Rect::read_options(input, &options, ())?;
+        let ditl_id = i16::read_options(input, &options, ())?;
         let mut stages = [AlertStage::default(); 4];
 
         {
@@ -42,7 +44,7 @@ impl Resource for Alert {
         }
 
         let auto_position = if size > 12 {
-            Some(input.read_u16()?)
+            Some(u16::read_options(input, &options, ())?)
         } else {
             None
         };

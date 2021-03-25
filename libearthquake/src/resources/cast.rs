@@ -1,9 +1,8 @@
-use anyhow::{Context, Result as AResult};
 use binrw::{BinRead, NullString};
 use libmactoolbox::types::PString;
 use crate::{collections::riff::ChunkIndex, pvec};
-use derive_more::{Deref, DerefMut, Display, From, Index, IndexMut};
-use libcommon::{Reader, Resource, SeekExt, TakeSeekExt, bitflags, bitflags::BitFlags, resource::Input, restore_on_error};
+use derive_more::{Deref, DerefMut, Display, Index, IndexMut};
+use libcommon::{SeekExt, TakeSeekExt, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
@@ -61,11 +60,15 @@ use super::{bitmap::Meta as BitmapMeta, config::Version as ConfigVersion, field:
 //     }
 // }
 
-#[derive(BinRead, Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
-pub struct LibNum(pub i16);
+newtype_num! {
+    #[derive(BinRead, Debug)]
+    pub struct LibNum(pub i16);
+}
 
-#[derive(BinRead, Clone, Copy, Debug, Default, Display, Eq, From, Ord, PartialEq, PartialOrd)]
-pub struct MemberNum(pub i16);
+newtype_num! {
+    #[derive(BinRead, Debug)]
+    pub struct MemberNum(pub i16);
+}
 
 #[derive(BinRead, Clone, Copy, Default, Display, Eq, PartialEq)]
 #[display(fmt = "MemberId({}, {})", "_0.0", "_1.0")]
@@ -105,15 +108,7 @@ impl MemberId {
 
 impl From<MemberNum> for MemberId {
     fn from(num: MemberNum) -> Self {
-        Self(if num.0 == 0 { 0 } else { 1 }.into(), num)
-    }
-}
-
-impl Resource for MemberId {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read(input).context("Can’t read member ID")
+        Self(if num.0 == 0 { 0i16 } else { 1i16 }.into(), num)
     }
 }
 

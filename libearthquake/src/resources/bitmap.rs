@@ -1,6 +1,5 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use libcommon::{bitflags, Reader, Resource, resource::Input};
+use libcommon::bitflags;
 use libmactoolbox::{Point, Rect};
 use super::cast::MemberId;
 
@@ -59,13 +58,5 @@ impl Meta {
     #[must_use]
     pub fn row_bytes(&self) -> i16 {
         self.row_bytes & 0x7fff
-    }
-}
-
-impl Resource for Meta {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read_args(input, (size, )).context("Can’t read bitmap meta")
     }
 }

@@ -1,11 +1,8 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use libcommon::{binrw_enum, Reader, Resource, resource::Input};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
+#[br(big, repr(u16))]
 enum Kind {
     Score = 1,
     #[default]
@@ -13,19 +10,9 @@ enum Kind {
     Parent = 7,
 }
 
-binrw_enum!(Kind, u16);
-
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 0 || size == 2))]
 pub struct Meta {
     #[br(if(size == 2))]
     kind: Kind,
-}
-
-impl Resource for Meta {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read_args(input, (size, )).context("Can’t read script meta")
-    }
 }

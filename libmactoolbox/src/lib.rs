@@ -42,31 +42,13 @@ pub use resource_file::*;
 pub use resource_id::*;
 pub use resource_manager::*;
 pub use system::System;
-use anyhow::Result as AResult;
 use binrw::BinRead;
-use byteordered::{ByteOrdered, Endianness};
-use libcommon::{Reader, Resource, resource::Input};
 use quickdraw::Pixels;
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 pub struct Point {
     pub x: Pixels,
     pub y: Pixels,
-}
-
-impl Point {
-    pub const SIZE: u32 = 4;
-}
-
-impl Resource for Point {
-    type Context = ();
-    fn load(input: &mut ByteOrdered<impl Reader, Endianness>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert_eq!(size, Self::SIZE);
-        Ok(Self {
-            x: input.read_i16()?.into(),
-            y: input.read_i16()?.into(),
-        })
-    }
 }
 
 #[derive(BinRead, Clone, Copy, Default)]
@@ -78,8 +60,6 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub const SIZE: u32 = 8;
-
     #[inline]
     #[must_use]
     pub fn height(self) -> Pixels {
@@ -103,19 +83,6 @@ impl std::fmt::Debug for Rect {
             .field("(width)", &self.width())
             .field("(height)", &self.height())
             .finish()
-    }
-}
-
-impl Resource for Rect {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        assert_eq!(size, Self::SIZE);
-        Ok(Self {
-            top: input.read_i16()?.into(),
-            left: input.read_i16()?.into(),
-            bottom: input.read_i16()?.into(),
-            right: input.read_i16()?.into(),
-        })
     }
 }
 

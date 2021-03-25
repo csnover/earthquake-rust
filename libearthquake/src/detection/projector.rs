@@ -8,10 +8,7 @@ use crate::{
     panic_sample,
 };
 use derive_more::Display;
-use libcommon::{
-    Reader,
-    string::ReadExt,
-};
+use libcommon::{SeekExt, string::ReadExt};
 use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode, types::{MacString, PString}};
 use std::{convert::TryInto, io::{Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
@@ -131,7 +128,11 @@ pub enum Platform {
     Win(WinVersion),
 }
 
-pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>) -> AResult<DetectionInfo> {
+pub fn detect_mac<R1, R2>(mut resource_fork: R1, data_fork: Option<R2>) -> AResult<DetectionInfo>
+where
+    R1: binrw::io::Read + binrw::io::Seek,
+    R2: binrw::io::Read + binrw::io::Seek,
+{
     let resource_fork_offset = resource_fork.pos().context("Can’t read resource fork position")?;
     let rom = ResourceFile::new(resource_fork)?;
 
@@ -251,7 +252,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     })
 }
 
-fn d3_win_movie_info(input: &mut impl Reader, i: u16) -> AResult<(u32, MacString)> {
+fn d3_win_movie_info<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, i: u16) -> AResult<(u32, MacString)> {
     let size = input.read_u32::<LittleEndian>()
         .with_context(|| format!("Can’t read movie {} size", i))?;
     let filename = {
@@ -271,7 +272,7 @@ fn d3_win_movie_info(input: &mut impl Reader, i: u16) -> AResult<(u32, MacString
 const HEADER_SIZE: u32 = 8;
 const SETTINGS_SIZE: u32 = 12;
 
-pub fn detect_win(input: &mut impl Reader) -> AResult<DetectionInfo> {
+pub fn detect_win<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResult<DetectionInfo> {
     const MZ: u16 = 0x4d5a;
 
     if input.read_u16::<BigEndian>().context("Can’t read magic")? != MZ {
@@ -390,7 +391,7 @@ fn data_version(raw_version: &[u8]) -> Option<Version> {
     }
 }
 
-fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<MacString>)> {
+fn get_exe_info<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResult<(Platform, Option<MacString>)> {
     input.seek(SeekFrom::Start(0x3c))?;
     let exe_header_offset = input.read_u16::<LittleEndian>()?;
     input.seek(SeekFrom::Start(exe_header_offset.into()))?;
@@ -423,7 +424,7 @@ fn get_exe_info(input: &mut impl Reader) -> AResult<(Platform, Option<MacString>
     }
 }
 
-fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
+fn get_projector_rsrc<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, offset: u32, version: Version) -> AResult<Option<Vec<u8>>> {
     let (rsrc_offset, rsrc_size) = match version {
         Version::D3 => unreachable!("D3 does not include a system resource file"),
         Version::D4 => {
@@ -483,7 +484,7 @@ fn get_projector_rsrc(input: &mut impl Reader, offset: u32, version: Version) ->
     Ok(Some(system_resources))
 }
 
-fn internal_movie(reader: &mut impl Reader, offset: u32) -> AResult<Movie> {
+fn internal_movie<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, offset: u32) -> AResult<Movie> {
     reader.seek(SeekFrom::Start(offset.into()))
         .with_context(|| format!("Bad RIFF offset {}", offset))?;
 
@@ -500,12 +501,12 @@ mod pe {
         ByteOrder,
         LittleEndian,
         ReadBytesExt,
-        Reader,
         ReadExt,
+        SeekExt,
         SeekFrom,
     };
 
-    fn find_resource_segment_offset(input: &mut impl Reader, num_sections: u16) -> Option<(u32, u32)> {
+    fn find_resource_segment_offset<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, num_sections: u16) -> Option<(u32, u32)> {
         for _ in 0..num_sections {
             let mut section = [ 0; 40 ];
             input.read_exact(&mut section).ok()?;
@@ -517,7 +518,7 @@ mod pe {
         None
     }
 
-    pub(super) fn read_product_name(input: &mut impl Reader) -> Option<String> {
+    pub(super) fn read_product_name<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> Option<String> {
         const VERSION_INFO_TYPE: u32 = 0x10;
         const VERSION_INFO_ID: u32 = 1;
         const VERSION_INFO_LANG: u32 = 1033;
@@ -530,7 +531,7 @@ mod pe {
         read_version_struct(input).ok()?
     }
 
-    fn read_version_struct(input: &mut impl Reader) -> AResult<Option<String>> {
+    fn read_version_struct<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResult<Option<String>> {
         const FIXED_HEADER_WORD_SIZE: usize = 3;
         let start = input.pos()?;
         let size = input.read_u16::<LittleEndian>()?;
@@ -571,7 +572,7 @@ mod pe {
         }
     }
 
-    fn seek_to_directory_entry(input: &mut impl Reader, from_offset: u32, id: u32) -> io::Result<()> {
+    fn seek_to_directory_entry<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, from_offset: u32, id: u32) -> io::Result<()> {
         const ENTRY_SIZE: usize = 8;
         input.skip(12)?;
         let skip_entries = input.read_u16::<LittleEndian>()?;
@@ -592,13 +593,13 @@ mod pe {
         Err(io::ErrorKind::InvalidData.into())
     }
 
-    fn seek_to_resource_data(input: &mut impl Reader, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
+    fn seek_to_resource_data<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, virtual_address: u32, raw_offset: u32) -> io::Result<()> {
         let offset = input.read_u32::<LittleEndian>()?;
         input.seek(SeekFrom::Start(u64::from(offset - virtual_address + raw_offset)))?;
         Ok(())
     }
 
-    fn seek_to_resource_segment(input: &mut impl Reader) -> io::Result<(u32, u32)> {
+    fn seek_to_resource_segment<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> io::Result<(u32, u32)> {
         input.skip(2)?;
         let num_sections = input.read_u16::<LittleEndian>()?;
         input.skip(12)?;

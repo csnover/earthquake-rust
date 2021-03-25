@@ -1,11 +1,8 @@
-use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use libcommon::{binrw_enum, Reader, Resource, resource::Input};
 use libmactoolbox::{Rect, quickdraw::{PaletteIndex, Pixels}};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
+#[br(big, repr(u16))]
 pub enum Kind {
     Rect = 1,
     RoundRect,
@@ -13,15 +10,12 @@ pub enum Kind {
     Line,
 }
 
-binrw_enum!(Kind, u16);
-
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
+#[br(repr(u8))]
 pub enum LineDirection {
     TopToBottom = 5,
     BottomToTop,
 }
-
-binrw_enum!(LineDirection, u8);
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big)]
@@ -40,12 +34,4 @@ pub struct Meta {
     #[br(map = |p: u8| Pixels::from(p))]
     line_size: Pixels,
     line_direction: LineDirection,
-}
-
-impl Resource for Meta {
-    type Context = ();
-
-    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read(input).context("Can’t read shape meta")
-    }
 }
