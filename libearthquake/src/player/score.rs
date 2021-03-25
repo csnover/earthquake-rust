@@ -3,13 +3,13 @@
 #![allow(dead_code)]
 
 use anyhow::{bail, Context, Result as AResult};
-use binread::{BinRead, ReadOptions};
-use byteordered::{ByteOrdered, Endianness};
+use binrw::{BinRead, ReadOptions};
+use byteordered::Endianness;
 use crate::{ensure_sample, resources::{cast::{MemberId, MemberKind, MemberNum}, transition::{Kind as TransitionKind, QuarterSeconds}}};
 use derive_more::{Add, AddAssign, Display};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use libcommon::{Reader, Resource, SeekExt, Unk16, Unk32, Unk8, UnkPtr, binread_enum, bitflags, bitflags::BitFlags, resource::Input, newtype_num};
+use libcommon::{Reader, Resource, SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, binrw_enum, bitflags, bitflags::BitFlags, newtype_num, resource::Input};
 use libmactoolbox::{quickdraw::PaletteIndex, Point, Rect, TEHandle, quickdraw::Pen};
 use smart_default::SmartDefault;
 use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
@@ -43,9 +43,11 @@ pub struct Seconds(pub i16);
 #[derive(Add, AddAssign, Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FPS(pub i16);
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[br(try_map = Self::new)]
 pub enum Tempo {
     #[default]
+    Inherit,
     FPS(FPS),
     WaitForVideo(ChannelNum),
     WaitForSeconds(Seconds),
@@ -54,25 +56,11 @@ pub enum Tempo {
     WaitForSound2,
 }
 
-impl BinRead for Tempo {
-    type Args = ();
-
-    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
-        use binread::BinReaderExt;
-        let last_pos = reader.seek(SeekFrom::Current(0))?;
-        reader.read_type::<i16>(options.endian).and_then(|v|
-            Self::new(v).map_err(|e| binread::error::Error::AssertFail {
-                pos: last_pos,
-                message: format!("{}", e)
-            })
-        )
-    }
-}
-
 impl Tempo {
     pub fn new(tempo: i16) -> AResult<Self> {
         Ok(match tempo {
-            0..=120 => Self::FPS(FPS(tempo)),
+            0 => Self::Inherit,
+            1..=120 => Self::FPS(FPS(tempo)),
             -0x78..=-0x48 => Self::WaitForVideo(ChannelNum(tempo + 0x7e)),
             -60..=-1 => Self::WaitForSeconds(Seconds(-tempo)),
             -0x80 => Self::WaitForClick,
@@ -85,6 +73,7 @@ impl Tempo {
     #[must_use]
     pub fn to_primitive(self) -> i16 {
         match self {
+            Tempo::Inherit => 0,
             Tempo::FPS(fps) => fps.0,
             Tempo::WaitForVideo(channel) => channel.0 - 0x7e,
             Tempo::WaitForSeconds(seconds) => -seconds.0,
@@ -388,11 +377,11 @@ impl Transition {
 impl BinRead for Transition {
     type Args = (Version, );
 
-    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
-        let last_pos = reader.seek(SeekFrom::Current(0))?;
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, _: &ReadOptions, (version, ): Self::Args) -> binrw::BinResult<Self> {
+        let last_pos = reader.pos()?;
 
         let make_tempo = |tempo: u8| {
-            Tempo::new((tempo as i8).into()).map_err(|e| binread::Error::AssertFail {
+            Tempo::new((tempo as i8).into()).map_err(|e| binrw::Error::AssertFail {
                 pos: last_pos,
                 message: format!("{}", e),
             })
@@ -400,7 +389,7 @@ impl BinRead for Transition {
 
         let mut data = [ 0; 4 ];
         reader.read_exact(&mut data)?;
-        Ok(if args.0 < Version::V6 {
+        Ok(if version < Version::V6 {
             if data[3] == 0 {
                 if data[2] == 0 {
                     Self::None
@@ -411,7 +400,7 @@ impl BinRead for Transition {
                 Self::Legacy {
                     chunk_size: data[1],
                     which_transition: TransitionKind::from_u8(data[3])
-                        .ok_or_else(|| binread::Error::AssertFail {
+                        .ok_or_else(|| binrw::Error::AssertFail {
                             pos: last_pos,
                             message: format!("Invalid transition kind {}", data[3]),
                         })?,
@@ -423,7 +412,7 @@ impl BinRead for Transition {
         } else if data == [ 0; 4 ] {
             Self::None
         } else {
-            use binread::BinReaderExt;
+            use binrw::BinReaderExt;
             let reader = &mut Cursor::new(data);
             Self::Cast(reader.read_be::<MemberId>()?)
         })
@@ -550,14 +539,14 @@ impl ScoreStream {
 
 #[derive(Clone, Debug, SmartDefault)]
 pub struct Score {
-    #[default(Self::V5_HEADER_SIZE.into())]
+    #[default(ScoreHeaderV5::SIZE)]
     current_frame_vwsc_position: u32,
     next_frame_vwsc_position: u32,
     vwsc: ScoreStream,
     score_header: Vec<u8>,
-    #[default(Self::V5_HEADER_SIZE.into())]
+    #[default(ScoreHeaderV5::SIZE)]
     vwsc_frame_data_maybe_start_pos: u32,
-    #[default(Self::V5_HEADER_SIZE.into())]
+    #[default(ScoreHeaderV5::SIZE)]
     vwsc_frame_data_maybe_end_pos: u32,
     next_frame: SpriteFrame,
     current_frame: SpriteFrame,
@@ -635,79 +624,128 @@ impl Iterator for Score {
     }
 }
 
-impl Score {
-    const V5_HEADER_SIZE: u8 = 20;
+fn frame_size_in_cells(version: Version) -> u16 {
+    if version < Version::V5 {
+        Frame::V0_SIZE_IN_CELLS
+    } else {
+        Frame::V5_SIZE_IN_CELLS
+    }
 }
 
-impl Resource for Score {
-    type Context = (crate::resources::config::Version, );
+fn sprite_size(version: Version) -> u16 {
+    if version < Version::V5 {
+        Sprite::V0_SIZE
+    } else {
+        Sprite::V5_SIZE
+    }
+}
 
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut data = Vec::with_capacity(size.try_into().unwrap());
-        input.take(size.into())
-            .read_to_end(&mut data)
-            .context("Can’t read score data into memory")?;
+#[derive(BinRead, Debug)]
+#[br(big, import(size: u32))]
+struct ScoreHeaderV3 {
+    #[br(assert(
+        own_size <= size,
+        "Score recorded size ({}) is larger than actual size ({})",
+        own_size,
+        size
+    ))]
+    own_size: u32,
+}
 
-        let mut input = ByteOrdered::new(Cursor::new(data), Endianness::Big);
+#[derive(BinRead, Debug)]
+#[br(big, import(size: u32))]
+struct ScoreHeaderV5 {
+    #[br(assert(
+        own_size <= size,
+        "Score recorded size ({}) is larger than actual size ({})",
+        own_size,
+        size
+    ))]
+    own_size: u32,
 
-        let own_size = input.read_u32().context("Can’t read score size")?;
-        ensure_sample!(own_size <= size, "Score recorded size ({}) is larger than actual size ({})", own_size, size);
+    #[br(assert(
+        header_size == Self::SIZE,
+        "Invalid V0-V7 score header size {}",
+        header_size
+    ))]
+    header_size: u32,
 
-        let version = if context.0.d4() || context.0.d5() {
-            let header_size = input.read_u32().context("Can’t read score header size")?;
-            ensure_sample!(header_size == 20, "Invalid V0-V7 score header size {}", header_size);
+    // This field is not always filled out
+    frame_count: u32,
 
-            let num_frames = input.read_i32().context("Can’t read score frame count")?;
+    #[br(assert(
+        matches!(score_version, Version::V4 | Version::V5 | Version::V6 | Version::V7),
+        "Bad score version"
+    ))]
+    score_version: Version,
 
-            let version = {
-                let value = input.read_i16().context("Can’t read score version")?;
-                Version::from_i16(value).with_context(|| format!("Unknown score version {}", value))?
-            };
+    #[br(assert(
+        frame_cell_size == sprite_size(score_version),
+        "Invalid frame cell size {} for V5 score version {}",
+        frame_cell_size,
+        score_version,
+    ))]
+    frame_cell_size: u16,
 
-            dbg!(own_size, header_size, num_frames, version);
+    // Technically this is the number of `sizeof(Sprite)`s to make one
+    // `sizeof(Frame)`; the header of the frame is exactly two
+    // `sizeof(Sprite)`s, even though it does not actually contain sprite
+    // data
+    #[br(assert(
+        frame_cell_count == frame_size_in_cells(score_version),
+        "Invalid frame cell count {} for V5 score version {}",
+        frame_cell_count,
+        score_version,
+    ))]
+    frame_cell_count: u16,
 
-            match version {
-                Version::V4 | Version::V5 | Version::V6 | Version::V7 => {
-                    let (expect_sprite_size, expect_num_sprites) = if version < Version::V5 {
-                        (Sprite::V0_SIZE, Frame::V0_SIZE_IN_CELLS)
-                    } else {
-                        (Sprite::V5_SIZE, Frame::V5_SIZE_IN_CELLS)
-                    };
+    #[br(assert(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12))]
+    field_12: u8,
 
-                    let sprite_size = input.read_i16().context("Can’t read score sprite size")?;
-                    ensure_sample!(expect_sprite_size == sprite_size.try_into().unwrap(), "Invalid sprite size {} for V5 score", sprite_size);
-                    // Technically this is the number of `sizeof(Sprite)`s to make one
-                    // `sizeof(Frame)`; the header of the frame is exactly two
-                    // `sizeof(Sprite)`s, even though it does not actually contain sprite
-                    // data
-                    let num_sprites = input.read_i16().context("Can’t read score sprite count")?;
-                    ensure_sample!(expect_num_sprites == num_sprites.try_into().unwrap(), "Invalid sprite count {} for V5 score", num_sprites);
-                    let field_12 = input.read_u8().context("Can’t read score field_12")?;
-                    ensure_sample!(field_12 == 0 || field_12 == 1, "Unexpected score field_12 {}", field_12);
-                    let field_13 = input.read_u8().context("Can’t read score field_13")?;
-                    ensure_sample!(field_13 == 0, "Unexpected score field_13 {}", field_13);
+    #[br(assert(field_13 == 0, "Unexpected score field_13 {}", field_13))]
+    field_13: u8,
+}
 
-                    dbg!(sprite_size, num_sprites, field_12, field_13);
+impl ScoreHeaderV5 {
+    const SIZE: u32 = 20;
+}
 
-                    // Director normally reads through all of the frame deltas here in order
-                    // to byte swap them into the platform’s native endianness, but since we
-                    // are using an endianness-aware reader, we’ll just let that happen
-                    // when the frames are read later
-                },
-                Version::V3 | Version::Unknown => bail!("Bad score version"),
-            }
+impl BinRead for Score {
+    type Args = (crate::resources::config::Version, );
 
-            version
-        } else if context.0.d3() || context.0.d2() || context.0.d1() {
-            Version::V3
+    // TODO: Should this receive a size option instead of relying on the input
+    // being truncated?
+    fn read_options<R: std::io::Read + std::io::Seek>(input: &mut R, options: &binrw::ReadOptions, (config_version, ): Self::Args) -> binrw::BinResult<Self> {
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
+
+        let size = input.bytes_left()?;
+        options.count = Some(size.try_into().unwrap());
+        let data = Vec::read_options(&mut input.take_seek(size), &options, ())?;
+        options.count = None;
+
+        let mut input = Cursor::new(data);
+
+        let (own_size, version) = if config_version.d4() || config_version.d5() {
+            let header = ScoreHeaderV5::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+
+            // Director normally reads through all of the frame deltas here in order
+            // to byte swap them into the platform’s native endianness, but since we
+            // are using an endianness-aware reader, we’ll just let that happen
+            // when the frames are read later
+
+            (header.own_size, header.score_version)
+        } else if config_version.d3() || config_version.d2() || config_version.d1() {
+            let header = ScoreHeaderV3::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+            (header.own_size, Version::V3)
         } else {
-            todo!("Score config version {} parsing", context.0 as i32);
+            todo!("Score config version {} parsing", config_version as i32);
         };
 
         let pos = input.pos()?;
 
         Ok(Self {
-            vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
+            vwsc: ScoreStream::new(Input::new(input, Endianness::Big), pos.try_into().unwrap(), own_size, version),
             ..Self::default()
         })
     }
@@ -863,15 +901,15 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn parse_tempo<R>(reader: &mut R, options: &ReadOptions, args: (Version, Transition)) -> binread::BinResult<Tempo>
-    where R: binread::io::Read + binread::io::Seek {
+    fn parse_tempo<R>(reader: &mut R, options: &ReadOptions, args: (Version, Transition)) -> binrw::BinResult<Tempo>
+    where R: binrw::io::Read + binrw::io::Seek {
         let (version, transition) = args;
         if version < Version::V6 {
             Ok(transition.tempo())
         } else {
             let last_pos = reader.seek(SeekFrom::Current(0))?;
             let value = i8::read_options(reader, options, ())?;
-            Tempo::new(value.into()).map_err(|e| binread::Error::AssertFail {
+            Tempo::new(value.into()).map_err(|e| binrw::Error::AssertFail {
                 pos: last_pos,
                 message: format!("{}", e)
             })
@@ -879,10 +917,10 @@ impl Frame {
     }
 }
 
-fn parse_sprites<T, R>(reader: &mut R, options: &ReadOptions, args: (Version, )) -> binread::BinResult<[T; NUM_SPRITES]>
+fn parse_sprites<T, R>(reader: &mut R, options: &ReadOptions, args: (Version, )) -> binrw::BinResult<[T; NUM_SPRITES]>
 where
     T: BinRead<Args = (Version, )> + Copy + Default,
-    R: binread::io::Read + binread::io::Seek
+    R: binrw::io::Read + binrw::io::Seek
 {
     let mut sprites = [ T::default(); NUM_SPRITES ];
     for sprite in sprites.iter_mut().take(if args.0 >= Version::V5 { Frame::V5_CELL_COUNT } else { Frame::V4_CELL_COUNT }.into()) {
@@ -989,7 +1027,8 @@ impl Frame {
     const V5_SIZE: u16 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
 }
 
-#[derive(Clone, Copy, Debug, Display, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Display, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
+#[br(repr(i16))]
 pub enum Version {
     #[default]
     Unknown,
@@ -1024,7 +1063,7 @@ pub enum SpriteKind {
     Script,
 }
 
-binread_enum!(SpriteKind, u8);
+binrw_enum!(SpriteKind, u8);
 
 bitflags! {
     #[derive(Default)]

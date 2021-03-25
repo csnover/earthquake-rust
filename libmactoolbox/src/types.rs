@@ -2,7 +2,7 @@
 //!
 //! MacTypes.h
 
-use binread::{BinRead, io};
+use binrw::{BinRead, io};
 use bstr::{ByteSlice, ByteVec};
 use derive_more::{Deref, DerefMut, Display, From};
 use std::{io::Read, rc::Rc};
@@ -31,6 +31,13 @@ pub enum MacString {
 }
 
 impl MacString {
+    /// Converts the string to a path, replacing invalid UTF-8 bytes with the
+    /// Unicode replacement character.
+    ///
+    /// For Rust strings and byte strings on \*nix, this is a no-op. For byte
+    /// strings on non-\*nix systems, this performs a full scan of the string
+    /// on each invocation, plus an allocation and copy if any non–UTF-8
+    /// characters are detected.
     #[must_use]
     pub fn to_path_lossy(&self) -> std::borrow::Cow<'_, std::path::Path> {
         match self {
@@ -40,6 +47,12 @@ impl MacString {
         }
     }
 
+    /// Converts the string to a valid UTF-8 string reference, replacing invalid
+    /// UTF-8 bytes with the Unicode replacement character.
+    ///
+    /// For Rust strings, this is a no-op. For byte strings, this performs a
+    /// full scan of the string on each invocation, plus an allocation and copy
+    /// if any non–UTF-8 characters are detected.
     #[must_use]
     pub fn to_str_lossy(&self) -> std::borrow::Cow<'_, str> {
         match self {
@@ -49,6 +62,11 @@ impl MacString {
         }
     }
 
+    /// Consumes the string by converting it to a valid UTF-8 string, replacing
+    /// invalid UTF-8 bytes with the Unicode replacement character.
+    ///
+    /// For Rust strings, this is a no-op. For byte strings, this performs a
+    /// full scan of the string.
     #[must_use]
     pub fn into_string_lossy(self) -> String {
         match self {
@@ -100,7 +118,7 @@ impl PString {
 impl BinRead for PString {
     type Args = ();
 
-    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         let size = u8::read_options(reader, options, args)?;
         let mut data = Vec::with_capacity(size.into());
         if reader.take(size.into()).read_to_end(&mut data)? == size.into() {

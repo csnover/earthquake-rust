@@ -26,8 +26,9 @@ pub use resource::Resource;
 pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
-use binread::BinRead;
-use std::{convert::TryInto, fmt, io};
+use binrw::BinRead;
+use core::{cmp, convert::{TryFrom, TryInto}};
+use std::{fmt, io};
 
 pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
     for error in chained_error.chain() {
@@ -36,37 +37,128 @@ pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> ARes
     result
 }
 
+// TODO: Should be generic for all manual read_options implementations
+pub fn restore_on_error<R: binrw::io::Read + binrw::io::Seek, F: Fn(&mut R, u64) -> binrw::BinResult<T>, T>(reader: &mut R, f: F) -> binrw::BinResult<T> {
+    let pos = reader.pos()?;
+    f(reader, pos).or_else(|err| {
+        reader.seek(binrw::io::SeekFrom::Start(pos))?;
+        Err(err)
+    })
+}
+
+// TODO: Lots of redundancy with SharedStream here, the only real difference is
+// that this one does has no `start_pos` and does not shove `inner` into a
+// RefCell
+pub struct TakeSeek<T: io::Read + io::Seek> {
+    inner: T,
+    pos: u64,
+    end: u64,
+}
+
+impl <T> io::Read for TakeSeek<T> where T: io::Read + io::Seek {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let limit = usize::try_from(self.end.saturating_sub(self.pos)).unwrap();
+
+        // Don't call into inner reader at all at EOF because it may still block
+        if limit == 0 {
+            return Ok(0);
+        }
+
+        let max = cmp::min(buf.len(), limit);
+        let n = self.inner.read(&mut buf[0..max])?;
+        self.pos += u64::try_from(n).unwrap();
+        Ok(n)
+    }
+}
+
+impl <T> io::Seek for TakeSeek<T> where T: io::Read + io::Seek {
+    fn seek(&mut self, style: io::SeekFrom) -> io::Result<u64> {
+        let (base_pos, offset) = match style {
+            io::SeekFrom::Start(n) => {
+                self.inner.seek(io::SeekFrom::Start(n))?;
+                self.pos = n;
+                return Ok(n);
+            }
+            io::SeekFrom::End(n) => (self.end, n),
+            io::SeekFrom::Current(n) => (self.pos, n),
+        };
+        let new_pos = if offset >= 0 {
+            base_pos.checked_add(<_>::try_from(offset).unwrap())
+        } else {
+            base_pos.checked_sub(<_>::try_from(offset.wrapping_neg()).unwrap())
+        };
+        match new_pos {
+            Some(n) => {
+                self.inner.seek(io::SeekFrom::Start(n))?;
+                self.pos = n;
+                Ok(n)
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            )),
+        }
+    }
+}
+
+impl <T> core::fmt::Debug for TakeSeek<T> where T: io::Read + io::Seek + core::fmt::Debug {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TakeSeek")
+            .field("inner", &self.inner)
+            .field("pos", &self.pos)
+            .field("end", &self.end)
+            .finish()
+    }
+}
+
 pub trait TakeSeekExt: io::Read + io::Seek {
-    fn take_seek(self, limit: u64) -> SharedStream<Self> where Self: Sized;
+    fn take_seek(self, limit: u64) -> TakeSeek<Self> where Self: Sized;
 }
 
 impl <T: io::Read + io::Seek> TakeSeekExt for T {
-    fn take_seek(mut self, limit: u64) -> SharedStream<Self> where Self: Sized {
+    fn take_seek(mut self, limit: u64) -> TakeSeek<Self> where Self: Sized {
         let pos = self.pos().expect("cannot get position for `take_seek`");
-        SharedStream::with_bounds(self, pos, pos + limit)
+        TakeSeek {
+            inner: self,
+            pos,
+            end: pos + limit,
+        }
     }
 }
 
+/// `SeekExt` provides convenience functions for working with seekable streams.
+#[allow(clippy::len_without_is_empty)]
 pub trait SeekExt: io::Seek {
-    fn is_empty(&mut self) -> io::Result<bool> {
-        Ok(self.len()? == 0)
+    /// The number of bytes remaining in the stream.
+    fn bytes_left(&mut self) -> io::Result<u64> {
+        let pos = self.pos()?;
+        let end = self.seek(io::SeekFrom::End(0))?;
+        self.seek(io::SeekFrom::Start(pos))?;
+        Ok(end - pos)
     }
 
+    /// The total length of the stream, including bytes already read.
+    ///
+    /// This is the same as the unstable
+    /// [`stream_len()`](std::io::Seek::stream_len).
     fn len(&mut self) -> io::Result<u64> {
         let pos = self.pos()?;
         let end = self.seek(io::SeekFrom::End(0))?;
         self.seek(io::SeekFrom::Start(pos))?;
-        Ok(end)
+        Ok(end - pos)
     }
 
+    /// The current position of the stream.
     fn pos(&mut self) -> io::Result<u64> {
         self.seek(io::SeekFrom::Current(0))
     }
 
+    /// Reset the stream position to the beginning.
     fn reset(&mut self) -> io::Result<u64> {
         self.seek(io::SeekFrom::Start(0))
     }
 
+    /// Skips ahead `pos` bytes.
     fn skip(&mut self, pos: u64) -> io::Result<u64> {
         self.seek(io::SeekFrom::Current(pos.try_into().unwrap()))
     }
@@ -301,23 +393,27 @@ newtype_num! {
 }
 
 #[doc(hidden)]
-pub use paste::paste;
+pub mod __private {
+    pub use paste::paste;
+}
+
 #[macro_export]
-macro_rules! binread_enum {
+macro_rules! binrw_enum {
     ($name: ident, $size: ty) => {
-        impl ::binread::BinRead for $name {
+        impl ::binrw::BinRead for $name {
             type Args = ();
 
-            fn read_options<R: ::binread::io::Read + ::binread::io::Seek>(reader: &mut R, options: &::binread::ReadOptions, args: Self::Args) -> ::binread::BinResult<Self> {
-                use ::binread::BinReaderExt;
-                let last_pos = reader.seek(::std::io::SeekFrom::Current(0))?;
-                let value = <$size>::read_options(reader, options, args)?;
-                $crate::paste! {
-                    Self::[<from_ $size>](value).ok_or_else(|| ::binread::Error::AssertFail {
-                        pos: last_pos,
-                        message: format!(concat!("Invalid ", stringify!($name), " value 0x{:x}"), value),
-                    })
-                }
+            fn read_options<R: ::binrw::io::Read + ::binrw::io::Seek>(reader: &mut R, options: &::binrw::ReadOptions, args: Self::Args) -> ::binrw::BinResult<Self> {
+                use $crate::SeekExt;
+                $crate::restore_on_error(reader, |reader, pos| {
+                    let value = <$size>::read_options(reader, options, args)?;
+                    $crate::__private::paste! {
+                        Self::[<from_ $size>](value).ok_or_else(|| ::binrw::Error::AssertFail {
+                            pos,
+                            message: format!(concat!("Invalid ", stringify!($name), " value 0x{:x}"), value),
+                        })
+                    }
+                })
             }
         }
     }

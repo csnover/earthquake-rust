@@ -43,7 +43,7 @@ pub use resource_id::*;
 pub use resource_manager::*;
 pub use system::System;
 use anyhow::Result as AResult;
-use binread::BinRead;
+use binrw::BinRead;
 use byteordered::{ByteOrdered, Endianness};
 use libcommon::{Reader, Resource, resource::Input};
 use quickdraw::Pixels;

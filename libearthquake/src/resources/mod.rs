@@ -11,13 +11,11 @@ pub mod transition;
 pub mod video;
 pub mod xtra;
 
-use anyhow::{Context, Result as AResult, ensure};
-use binread::{BinRead, io::{Read, Seek}};
+use binrw::{BinRead, derive_binread, io::{Read, Seek}};
 use bstr::BStr;
-use byteordered::{Endianness, ByteOrdered};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{encodings::DecoderRef, Reader, Resource, SeekExt, TakeSeekExt, resource::Input};
-use std::{cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, SeekFrom}};
+use libcommon::{SeekExt, TakeSeekExt};
+use std::{cmp, convert::{TryFrom, TryInto}};
 
 /// A reference counted object with a vtable.
 ///
@@ -33,7 +31,7 @@ pub struct Rc;
 impl BinRead for Rc {
     type Args = ();
 
-    fn read_options<R: Read + Seek>(reader: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+    fn read_options<R: Read + Seek>(reader: &mut R, _: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
         reader.skip(8)?;
         Ok(Self)
     }
@@ -41,13 +39,18 @@ impl BinRead for Rc {
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(import(size: u64))]
+#[br(assert(
+    size >= used.into(),
+    "Bad ByteVec size ({} > {})", used, size
+))]
+#[br(assert(
+    header_size == Self::SIZE,
+    "Generic ByteVec loader called on specialised ByteVec with header size {}", header_size
+))]
 struct ByteVecHeaderV5 {
     __: Rc,
-    #[br(assert(size >= used.into(), "Bad ByteVec size ({} > {})", used, size))]
     used: u32,
     capacity: u32,
-    #[br(assert(header_size == Self::SIZE, "Generic ByteVec loader \
-        called on specialised ByteVec with header size {}", header_size))]
     header_size: u16,
 }
 
@@ -62,8 +65,8 @@ pub struct ByteVec(Vec<u8>);
 impl BinRead for ByteVec {
     type Args = ();
 
-    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
-        let size = input.len()?;
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+        let size = input.bytes_left()?;
         let header = ByteVecHeaderV5::read_options(input, options, (size, ))?;
         let data_size = u64::from(header.used) - u64::from(header.header_size);
         let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
@@ -80,8 +83,12 @@ impl BinRead for ByteVec {
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(import(size: u64))]
 #[br(assert(
-    size >= u64::from(header_size) + u64::from(item_size) * u64::from(used),
-    "Bad List size ({} > {})", u64::from(header_size) + u64::from(item_size) * u64::from(used), size
+    size >= Self::calc_size(header_size, item_size, used),
+    "Bad List size ({} > {})", Self::calc_size(header_size, item_size, used), size)
+)]
+#[br(assert(
+    header_size == Self::SIZE,
+    "Generic List loader called on specialised List with header size {}", header_size
 ))]
 struct ListHeaderV5 {
     __: Rc,
@@ -93,176 +100,237 @@ struct ListHeaderV5 {
 
 impl ListHeaderV5 {
     const SIZE: u16 = 0x14;
+
+    fn calc_size(header_size: u16, item_size: u16, used: u32) -> u64 {
+        u64::from(header_size) + u64::from(item_size) * u64::from(used)
+    }
 }
 
-/// A growable list of homogenous items.
+/// A growable list of homogeneous items.
 #[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
 pub struct List<T: BinRead>(Vec<T>);
 
 impl <T: BinRead> BinRead for List<T> {
     type Args = T::Args;
 
-    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
-        let size = input.len()?;
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        let size = input.bytes_left()?;
         let header = ListHeaderV5::read_options(input, options, (size, ))?;
         input.skip((header.header_size - ListHeaderV5::SIZE).into())?;
         let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
         let item_size = u64::from(header.item_size);
         for _ in 0..header.used {
-            data.push(T::read_options(&mut input.take_seek(item_size), options, args)?);
+            data.push(T::read_options(&mut input.take_seek(item_size), options, args.clone())?);
         }
         Ok(Self(data))
     }
 }
 
-/// A growable list of heterogenous items.
-#[derive(Debug)]
-pub struct PVec {
-    header_size: u32,
-    offsets: Vec<u32>,
-    inner: RefCell<ByteOrdered<Cursor<Vec<u8>>, Endianness>>,
-    decoder: DecoderRef,
-}
+/// The offset list for a growable sparse list of heterogeneous items.
+///
+/// Normally this is part of an object that looks like this:
+///
+/// ```text
+/// {
+///     header_size: u32,
+///     < header_data >,
+///     offset_table: PVecOffsets,
+///     < entry_data >,
+/// }
+/// ```
+///
+/// Until Rust supports [generic associated types], it is not possible to
+/// represent an object like this using [`BinRead`] without extra clones, since
+/// reading the entry data requires access to all the header data and the offset
+/// table, all of which is owned by the parent object. So, as a workaround, only
+/// the offset table is abstracted for now, and objects of this type just use it
+/// directly.
+#[derive_binread]
+#[derive(Clone, Debug)]
+pub struct PVecOffsets(
+    #[br(temp)]
+    u16,
+    #[br(count = self_0 + 1)]
+    Vec<u32>
+);
 
-impl PVec {
-    pub fn header_size(&self) -> u32 {
-        self.header_size
+impl PVecOffsets {
+    /// Returns the offset of an entry from the beginning of the data area.
+    #[must_use]
+    pub fn entry_offset(&self, index: usize) -> Option<u32> {
+        self.0.get(index).copied()
     }
 
+    /// Returns the size of an entry, or None if no entry exists at the given
+    /// index.
+    #[must_use]
+    pub fn entry_size(&self, index: usize) -> Option<u32> {
+        if index >= self.0.len() {
+            None
+        } else if index == self.0.len() - 1 {
+            Some(0)
+        } else {
+            Some(self.0[index + 1] - self.0[index])
+        }
+    }
+
+    /// Returns the size of a range of entries.
+    ///
+    /// If the range is out of bounds, it is automatically restricted.
+    #[must_use]
+    pub fn entry_range_size<Range: std::ops::RangeBounds<usize>>(&self, range: Range) -> u32 {
+        let max = cmp::min(self.len(), match range.end_bound() {
+            std::ops::Bound::Included(value) => value + 1,
+            std::ops::Bound::Excluded(value) => *value,
+            std::ops::Bound::Unbounded => usize::MAX,
+        });
+        let min = cmp::max(0, match range.start_bound() {
+            std::ops::Bound::Included(value) => *value,
+            std::ops::Bound::Excluded(value) => value + 1,
+            std::ops::Bound::Unbounded => 0,
+        });
+        self.0[max] - self.0[min]
+    }
+
+    /// Returns whether or not an entry exists.
+    #[must_use]
+    pub fn has_entry(&self, index: usize) -> bool {
+        self.entry_size(index).unwrap_or(0) != 0
+    }
+
+    /// Returns `true` if there are no entries in `self`.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.offsets.len() == 0
+        self.0.len() == 1
     }
 
+    /// Returns the number of entries.
+    #[must_use]
     pub fn len(&self) -> usize {
-        self.offsets.len() - 1
-    }
-
-    fn load_entry<T: Resource>(&self, index: usize, context: &T::Context) -> Option<T> {
-        if index < self.offsets.len() - 1 {
-            let start = self.offset(index);
-            let end = self.offset(index + 1);
-            self.load_offset(start.into(), end.into(), context)
-        } else {
-            None
-        }
-    }
-
-    fn load_header<T: Resource>(&self, start: u64, end: u64, context: &T::Context) -> Option<T> {
-        if end <= self.header_size().into() {
-            self.load_offset(start, end, context)
-        } else {
-            None
-        }
-    }
-
-    fn load_offset<T: Resource>(&self, start: u64, end: u64, context: &T::Context) -> Option<T> {
-        if start < end {
-            let mut input = self.inner.borrow_mut();
-            input.seek(SeekFrom::Start(start)).unwrap();
-            T::load(&mut input.as_mut(), (end - start).try_into().unwrap(), context).ok()
-        } else {
-            None
-        }
-    }
-
-    fn offset(&self, index: usize) -> u32 {
-        self.offsets[index]
-    }
-}
-
-impl Resource for PVec {
-    type Context = (DecoderRef, );
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        const NUM_ENTRIES_SIZE: u32 = 2;
-        let mut data = Vec::with_capacity(size.try_into().unwrap());
-        let actual = input.take(size.into()).read_to_end(&mut data).context("Can’t read PVec into buffer")?;
-        ensure!(size == actual.try_into().unwrap(), "Expected {} bytes, read {} bytes", size, actual);
-        let mut inner = ByteOrdered::new(Cursor::new(data), Endianness::Big);
-        let header_size = inner.read_u32().context("Can’t read PVec header size")?;
-        inner.seek(SeekFrom::Start(header_size.into())).context("Can’t seek past PVec header")?;
-        let num_entries = inner.read_u16().context("Can’t read number of PVec entries")?;
-        let mut offsets = Vec::with_capacity(num_entries.try_into().unwrap());
-        for i in 0..=num_entries {
-            offsets.push(
-                header_size
-                + NUM_ENTRIES_SIZE
-                + u32::from(num_entries + 1) * 4
-                + inner.read_u32().with_context(|| format!("Can’t read PVec offset {}", i))?
-            );
-        }
-        Ok(Self {
-            inner: RefCell::new(inner),
-            header_size,
-            offsets,
-            decoder: context.0,
-        })
+        self.0.len() - 1
     }
 }
 
 #[macro_export]
 macro_rules! pvec {
-    (@field [offset($start_offset:literal..$end_offset:literal)], $vis:vis, $field_name:ident, $field_type:ty) => {
-        $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            self.inner.load_header::<$field_type>($start_offset, $end_offset, &<_>::default())
+    // Final entry rule.
+    (@entry $offsets:ident {
+        $(,)?
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @write -> { $($output)* } }
+    };
+
+    // Skips any remaining entries that were not included in the struct.
+    // `entry_num..`
+    (@entry $offsets:ident {
+        $entry_num:literal.. $($tail:tt)*
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @write -> {
+            $($output)*
+            #[br(pad_before = i64::from($offsets.entry_range_size($entry_num..)))]
+            #[br(ignore)]
+            _end: ();
+        } }
+    };
+
+    // Skips a single entry without assigning it to anything.
+    // `entry_num => _`
+    (@entry $offsets:ident {
+        $entry_num:literal => _ $($tail:tt)*
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @entry $offsets {
+            $entry_num..=$entry_num => _
+            $($tail)*
+        } -> { $($output)* } }
+    };
+
+    // Skips a range of entries without assigning them to anything.
+    // `entry_range => _`
+    (@entry $offsets:ident {
+        $entry_range:pat => _ $(, $($tail:tt)*)?
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @entry $offsets { $($($tail)*)? } -> {
+            $($output)*
+            #[br(pad_before = i64::from($offsets.entry_range_size($entry_range)))]
+        } }
+    };
+
+    // Delegates reading of entries to an inner type.
+    // `#[attr] _ => entry_name: entry_type`
+    (@entry $offsets:ident {
+        $(#[$entry_meta:meta])*
+        _ => $entry_ident:ident : $entry_ty:ty
+        $(,)?
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @write -> {
+            $($output)*
+            $(#[$entry_meta])*
+            $entry_ident: $entry_ty;
+        } }
+    };
+
+    // Assigns an entry with the given entry number to a struct field.
+    // `#[attr] entry_num => entry_name: entry_type`
+    (@entry $offsets:ident {
+        $(#[$entry_meta:meta])*
+        $entry_num:literal => $entry_ident:ident : $entry_ty:ty
+        $(, $($tail:tt)*)?
+    } -> { $($output:tt)* }
+    ) => {
+        $crate::pvec! { @entry $offsets { $($($tail)*)? } -> {
+            $($output)*
+            $(#[$entry_meta])*
+            #[br(
+                if($offsets.has_entry($entry_num)),
+                pad_size_to($offsets.entry_size($entry_num).unwrap_or(0))
+            )]
+            $entry_ident: Option<$entry_ty>;
+        } }
+    };
+
+    // Writes the final struct.
+    (@write -> {
+        $(#[$meta:meta])* $vis:vis struct $ident:ident;
+        $($(#[$field_meta:meta])* $field_ident:ident : $field_ty:ty;)*
+    }) => {
+        #[derive(binrw::BinRead)]
+        #[br(big)]
+        $(#[$meta])*
+        $vis struct $ident {
+            $($(#[$field_meta])* $field_ident: $field_ty),*
         }
     };
 
-    (@field [string_entry($field_index:literal, $context:expr)], $vis:vis, $field_name:ident, $field_type:ty) => {
-        $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            self.inner.load_entry::<$field_type>($field_index, &::libcommon::resource::StringContext($context, self.inner.decoder))
-        }
-    };
-
-    (@field [entry($field_index:literal, $context:expr)], $vis:vis, $field_name:ident, $field_type:ty) => {
-        $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            self.inner.load_entry::<$field_type>($field_index, &$context)
-        }
-    };
-
-    (@field [entry($field_index:literal)], $vis:vis, $field_name:ident, $field_type:ty) => {
-        $vis fn $field_name(&self) -> ::std::option::Option<$field_type> {
-            self.inner.load_entry::<$field_type>($field_index, &<_>::default())
-        }
-    };
-
+    // Entrypoint. Reads the non-entries portions of the struct.
     (
-        $(#[$outer:meta])*
-        $struct_vis:vis struct $name:ident {
-            $(#$attr:tt $vis:vis $n:ident: $t:ty),+$(,)?
+        $(#[$meta:meta])*
+        $vis:vis struct $ident:ident {
+            header {
+                $($(#[$field_meta:meta])* $field_ident:ident : $field_ty:ty),*
+                $(,)?
+            }
+
+            // Required, due to macro hygiene, for the caller to be able to
+            // access the `offsets` field, which is generated within the macro.
+            offsets = $offsets:ident;
+
+            entries {
+                $($tail:tt)*
+            }
         }
     ) => {
-        $(#[$outer])*
-        $struct_vis struct $name {
-            inner: $crate::resources::PVec,
-        }
-
-        impl $name {
-            $(
-                $crate::pvec!(@field $attr, $vis, $n, $t);
-            )+
-        }
-
-        impl ::std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                let mut s = f.debug_struct(stringify!($name));
-                let s = s.field("header_size", &self.inner.header_size());
-                let s = s.field("num_entries", &self.inner.len());
-                $(
-                    let s = s.field(stringify!($n), &self.$n());
-                )+
-                s.finish()
-            }
-        }
-
-        impl $crate::resources::Resource for $name {
-            type Context = <$crate::resources::PVec as ::libcommon::Resource>::Context;
-            fn load(input: &mut ::libcommon::resource::Input<impl ::libcommon::Reader>, size: u32, context: &Self::Context) -> ::anyhow::Result<Self> where Self: Sized {
-                Ok(Self {
-                    inner: $crate::resources::PVec::load(input, size, context)?
-                })
-            }
-        }
-    }
+        $crate::pvec! { @entry $offsets { $($tail)* } -> {
+            $(#[$meta])* $vis struct $ident;
+            header_size: u32;
+            $($(#[$field_meta])* $field_ident: $field_ty;)*
+            $offsets: $crate::resources::PVecOffsets;
+        } }
+    };
 }
 
 /// A tuple which ties a dictionary key offset to a 32-bit value.
@@ -274,8 +342,8 @@ macro_rules! pvec {
 #[derive(BinRead, Clone, Copy, Debug)]
 pub struct DictItem<T>
 where
-    T: TryFrom<i32>,
-    T::Error: Send + Sync + 'static
+    T: TryFrom<i32> + 'static,
+    T::Error: std::error::Error + Send + Sync + 'static
 {
     #[br(try_map(|value: u32| value.try_into()))]
     key_offset: usize,
@@ -295,8 +363,8 @@ where
 #[derive(BinRead, Clone, Debug, Index, IndexMut)]
 pub struct Dict<T>
 where
-    T: TryFrom<i32>,
-    T::Error: Send + Sync + 'static,
+    T: TryFrom<i32> + 'static,
+    T::Error: std::error::Error + Send + Sync + 'static,
 {
     #[index] #[index_mut]
     list: List<DictItem<T>>,
@@ -307,7 +375,7 @@ where
 impl <T> Dict<T>
 where
     T: TryFrom<i32>,
-    T::Error: Send + Sync + 'static,
+    T::Error: std::error::Error + Send + Sync + 'static,
 {
     #[must_use]
     pub fn key_by_index(&self, index: usize) -> Option<&BStr> {

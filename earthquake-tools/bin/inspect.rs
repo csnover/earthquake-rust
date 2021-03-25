@@ -30,10 +30,10 @@ use libearthquake::{collections::{
         },
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
-use libcommon::{Reader, SharedStream, encodings::MAC_ROMAN};
+use libcommon::{Reader, SharedStream};
 use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
 use pico_args::Arguments;
-use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::{Path, PathBuf}, process::exit};
+use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::PathBuf, process::exit};
 
 enum Command {
     Detect(bool),
@@ -335,11 +335,11 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         for resource in riff.iter() {
             let id = resource.id();
             if id.os_type().as_bytes() == b"MCsL" {
-                // let cast_list = riff.load_args::<CastList>(id, &(MAC_ROMAN, ))?;
-                // println!("{:?}", cast_list);
-                // for (i, cast) in cast_list.iter().enumerate() {
-                //     println!("{}: {:?}", i, cast);
-                // }
+                let cast_list = riff.load::<CastList>(id)?;
+                println!("{:?}", cast_list);
+                for (i, cast) in cast_list.iter().enumerate() {
+                    println!("{}: {:?}", i, cast);
+                }
             }
         }
     }
@@ -365,21 +365,21 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         }
 
         // TODO: Handle multiple internal casts
-        // if let Ok(cast) = riff.load::<CastMap>(ResourceId::new(b"CAS*", 1024)) {
-        //     for (i, &chunk_index) in cast.iter().enumerate() {
-        //         if chunk_index > ChunkIndex::new(0) {
-        //             let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
-        //             if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0, cast_member_num)) {
-        //                 match riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version, MAC_ROMAN)) {
-        //                     Ok(member) => println!("{}: {:#?}", cast_member_num, member),
-        //                     Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
-        //                 }
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     eprintln!("No cast library!");
-        // }
+        if let Ok(cast) = riff.load::<CastMap>(ResourceId::new(b"CAS*", 1024)) {
+            for (i, &chunk_index) in cast.iter().enumerate() {
+                if chunk_index > ChunkIndex::new(0) {
+                    let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
+                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0, cast_member_num)) {
+                        match riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version)) {
+                            Ok(member) => println!("{}: {:#?}", cast_member_num, member),
+                            Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
+                        }
+                    }
+                }
+            }
+        } else {
+            eprintln!("No cast library!");
+        }
     }
 
     print_score(options, riff);
@@ -413,31 +413,31 @@ fn print_score(options: &Options, source: &impl ResourceSource) {
             }
         };
 
-        // match source.load_args::<Score>(ResourceId::new(b"VWSC", score_num), &(config.version(), )) {
-        //     Ok(score) => {
-        //         let (start, end) = frames.unwrap_or((0, i16::MAX));
-        //         for (i, frame) in (*score).clone().skip(start.try_into().unwrap()).take((end - start).try_into().unwrap()).enumerate() {
-        //             let frame_num = i16::try_from(i).unwrap() + start + 1;
-        //             match frame {
-        //                 Ok(frame) => {
-        //                     println!("Frame {}:", frame_num);
-        //                     if let Some(ref fields) = fields {
-        //                         let print_sprites = print_frame(&frame, fields);
-        //                         if print_sprites {
-        //                             print_frame_sprites(&frame, fields);
-        //                         }
-        //                     } else {
-        //                         println!("{:#?}", frame);
-        //                     }
-        //                 },
-        //                 Err(e) => {
-        //                     eprintln!("Error reading frame {}: {:?}", frame_num, e);
-        //                 },
-        //             }
-        //         }
-        //     },
-        //     Err(e) => eprintln!("{}", e),
-        // }
+        match source.load_args::<Score>(ResourceId::new(b"VWSC", score_num), (config.version(), )) {
+            Ok(score) => {
+                let (start, end) = frames.unwrap_or((0, i16::MAX));
+                for (i, frame) in (*score).clone().skip(start.try_into().unwrap()).take((end - start).try_into().unwrap()).enumerate() {
+                    let frame_num = i16::try_from(i).unwrap() + start + 1;
+                    match frame {
+                        Ok(frame) => {
+                            println!("Frame {}:", frame_num);
+                            if let Some(ref fields) = fields {
+                                let print_sprites = print_frame(&frame, fields);
+                                if print_sprites {
+                                    print_frame_sprites(&frame, fields);
+                                }
+                            } else {
+                                println!("{:#?}", frame);
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Error reading frame {}: {:?}", frame_num, e);
+                        },
+                    }
+                }
+            },
+            Err(e) => eprintln!("{}", e),
+        }
     }
 }
 

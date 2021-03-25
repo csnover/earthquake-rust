@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
+use binrw::BinRead;
 use libcommon::{Reader, Resource, Unk16, bitflags, resource::Input};
 use libmactoolbox::Rect;
 

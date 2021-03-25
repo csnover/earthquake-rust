@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result as AResult};
-use binread::BinRead;
+use binrw::BinRead;
 use crate::{OSType, ResourceError, ResourceFile, ResourceId, ResourceResult, resource_file::{RefNum, ResourceSource}, resources::string_list::StringList, types::{MacString, PString}};
 use libcommon::{encodings::DecoderRef, Reader, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{convert::TryFrom, io::Cursor, path::Path, rc::Rc};

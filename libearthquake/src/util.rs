@@ -1,4 +1,4 @@
-use binread::{BinRead, io};
+use binrw::{BinRead, io};
 use bstr::BString;
 use std::io::Read;
 
@@ -34,7 +34,7 @@ impl WinPString {
 impl BinRead for WinPString {
     type Args = ();
 
-    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         let size = u8::read_options(reader, options, args)?;
         let mut data = Vec::with_capacity(Self::MAX.into());
 

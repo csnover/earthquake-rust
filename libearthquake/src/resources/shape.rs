@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use libcommon::{binread_enum, Reader, Resource, resource::Input};
+use binrw::BinRead;
+use libcommon::{binrw_enum, Reader, Resource, resource::Input};
 use libmactoolbox::{Rect, quickdraw::{PaletteIndex, Pixels}};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -13,7 +13,7 @@ pub enum Kind {
     Line,
 }
 
-binread_enum!(Kind, u16);
+binrw_enum!(Kind, u16);
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum LineDirection {
@@ -21,7 +21,7 @@ pub enum LineDirection {
     BottomToTop,
 }
 
-binread_enum!(LineDirection, u8);
+binrw_enum!(LineDirection, u8);
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big)]

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult, anyhow, bail, ensure};
-use binread::BinRead;
+use binrw::BinRead;
 use bitflags::bitflags;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
@@ -234,7 +234,7 @@ pub fn detect_mac(mut resource_fork: impl Reader, data_fork: Option<impl Reader>
     } else {
         let mut rom_data = rom.into_inner();
         rom_data.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
-        let mut data = Vec::with_capacity(rom_data.len()?.try_into().unwrap());
+        let mut data = Vec::with_capacity(rom_data.bytes_left()?.try_into().unwrap());
         rom_data.read_to_end(&mut data).context("Can’t read system resource fork data")?;
         Some(data)
     };

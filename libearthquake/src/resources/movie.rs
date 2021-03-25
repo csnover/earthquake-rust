@@ -1,29 +1,61 @@
-use anyhow::{Result as AResult, Context};
-use binread::BinRead;
-use byteorder::{BigEndian, ByteOrder};
+use anyhow::{Result as AResult};
+use binrw::BinRead;
+use libmactoolbox::types::PString;
 use crate::pvec;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{Reader, Resource, TakeSeekExt, resource::{Input, StringContext, StringKind}};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
-use std::{convert::TryFrom, path::PathBuf};
+use libcommon::{Reader, Resource, TakeSeekExt, resource::Input, restore_on_error};
 use super::{List, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
+// MCsL
 pvec! {
+    #[derive(Debug)]
     pub struct CastList {
-        #[offset(4..6)]
-        field_4: i16,
-        #[offset(6..8)]
-        count: i16,
-        #[offset(8..10)]
-        entries_per_cast: i16,
-        #[offset(10..12)]
-        field_a: i16,
+        header {
+            field_4: i16,
+            count: i16,
+            entries_per_cast: i16,
+            field_a: i16,
+        }
+
+        offsets = offsets;
+
+        entries {
+            #[br(args(entries_per_cast), count(count))]
+            _  => members: CastListMembers,
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
+impl CastList {
+    pub fn iter(&self) -> impl Iterator<Item = &Cast> {
+        self.members.0.iter()
+    }
+}
+
+#[derive(Debug)]
+pub struct CastListMembers(Vec<Cast>);
+
+impl BinRead for CastListMembers {
+    type Args = (i16, );
+
+    fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, ): Self::Args) -> binrw::BinResult<Self> {
+        if let Some(count) = options.count {
+            restore_on_error(reader, |reader, _| {
+                let mut data = Vec::with_capacity(count);
+                for index in 0..count {
+                    data.push(Cast::read_options(reader, options, (index, entries_per_cast))?);
+                }
+                Ok(Self(data))
+            })
+        } else {
+            Ok(Self(Vec::new()))
+        }
+    }
+}
+
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
+#[br(repr(i16))]
 pub enum Preload {
     #[default]
     None = 0,
@@ -32,16 +64,27 @@ pub enum Preload {
     Unknown = 4,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(BinRead, Clone, Debug, Default)]
+#[br(import(index: usize, entries_per_cast: i16))]
 pub struct Cast {
-    name: String,
-    path: PathBuf,
-    base_resource_num: i32,
-    global_cast_id: i16,
+    #[br(if(entries_per_cast > 0))]
+    name: PString,
+    #[br(if(entries_per_cast > 1 && index != 0))]
+    path: PString,
+    #[br(if(entries_per_cast > 2))]
     preload: Preload,
+    // the next two fields are part of the same entry
+    #[br(if(entries_per_cast > 3))]
     cast_range: (MemberNum, MemberNum),
+    #[br(if(entries_per_cast > 3))]
+    base_resource_num: i32,
+    #[br(default)]
+    global_cast_id: i16,
+    #[br(calc(index != 0))]
     is_external_cast: bool,
+    #[br(default)]
     is_global_cast_locked: bool,
+    #[br(default)]
     field_16: bool,
 }
 
@@ -54,84 +97,8 @@ impl Resource for CastScoreOrder {
     type Context = ();
 
     fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut options = binread::ReadOptions::default();
-        options.endian = binread::Endian::Big;
+        let mut options = binrw::ReadOptions::default();
+        options.endian = binrw::Endian::Big;
         Ok(Self(List::<MemberId>::read_options(&mut input.take_seek(size.into()), &options, ())?))
-    }
-}
-
-pub struct CastListIter<'owner> {
-    owner: &'owner CastList,
-    index: i16,
-    count: i16,
-    entries_per_cast: i16,
-}
-
-impl <'owner> Iterator for CastListIter<'owner> {
-    type Item = Cast;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.count {
-            None
-        } else {
-            let base_index = usize::try_from(self.index * self.entries_per_cast).unwrap();
-            self.index += 1;
-
-            let name = if self.entries_per_cast < 1 {
-                String::new()
-            } else {
-                let context = StringContext(StringKind::PascalStr, self.owner.inner.decoder);
-                self.owner.inner.load_entry::<String>(base_index + 1, &context).unwrap_or_default()
-            };
-
-            let path = if self.entries_per_cast < 2 || self.index == 1 {
-                PathBuf::new()
-            } else {
-                // TODO: This should be receiving the platform of the Movie
-                // that it came from so that it can be parsed into a path
-                // correctly.
-                let context = StringContext(StringKind::PascalStr, self.owner.inner.decoder);
-                PathBuf::from(self.owner.inner.load_entry::<String>(base_index + 2, &context).unwrap_or_default())
-            };
-
-            let preload = if self.entries_per_cast < 3 {
-                Preload::None
-            } else {
-                let value = self.owner.inner.load_entry::<i16>(base_index + 3, &()).unwrap_or_default();
-                Preload::from_i16(value).with_context(|| format!("Invalid cast preload mode {}", value)).unwrap()
-            };
-
-            let (base_resource_num, cast_range) = if self.entries_per_cast < 4 {
-                Default::default()
-            } else {
-                self.owner.inner.load_entry::<Vec<u8>>(base_index + 4, &()).map(|data| {(
-                    BigEndian::read_i32(&data[4..]),
-                    (BigEndian::read_i16(&data[0..]).into(), BigEndian::read_i16(&data[2..]).into())
-                )}).unwrap_or_default()
-            };
-
-            Some(Cast {
-                name,
-                path,
-                base_resource_num,
-                global_cast_id: 0,
-                preload,
-                cast_range,
-                is_external_cast: self.index != 1,
-                is_global_cast_locked: false,
-                field_16: false,
-            })
-        }
-    }
-}
-
-impl CastList {
-    pub fn iter(&self) -> CastListIter<'_> {
-        CastListIter {
-            owner: self,
-            index: 0,
-            count: self.count().expect("Bad MCsL: missing count"),
-            entries_per_cast: self.entries_per_cast().expect("Bad MCsL: missing entries per cast"),
-        }
     }
 }

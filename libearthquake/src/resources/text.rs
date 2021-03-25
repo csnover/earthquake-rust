@@ -1,9 +1,6 @@
-use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use libcommon::{Reader, Resource, Unk16, binread_enum, resource::Input};
+use binrw::BinRead;
+use libcommon::Unk16;
 use libmactoolbox::{Rect, quickdraw::{Pixels, RGBColor}};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use super::config::Version as ConfigVersion;
 
 #[derive(BinRead, Clone, Copy, Eq, PartialEq)]
@@ -19,17 +16,17 @@ impl std::fmt::Debug for RGB24 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
+#[br(repr(u8))]
 pub enum Frame {
-    Fit,
+    Fit = 0,
     Scroll,
     Crop,
 }
 
-binread_enum!(Frame, u8);
-
 #[derive(BinRead, Clone, Copy, Debug)]
-#[br(big)]
+#[br(big, import(version: ConfigVersion))]
+#[br(pre_assert(version >= ConfigVersion::V1217, "TODO: text member kind for < V1217"))]
 pub struct Meta {
     bounds: Rect,
     rect_2: Rect,
@@ -42,16 +39,4 @@ pub struct Meta {
     height: Pixels,
     fore_color: RGB24,
     back_color: RGBColor,
-}
-
-impl Resource for Meta {
-    type Context = (ConfigVersion, );
-
-    fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        if context.0 < ConfigVersion::V1217 {
-            todo!("text member kind for < V1217");
-        }
-
-        Self::read(input).context("Can’t read text meta")
-    }
 }

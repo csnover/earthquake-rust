@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
+use binrw::BinRead;
 use libcommon::{bitflags, Reader, Resource, resource::Input};
 use libmactoolbox::{Point, Rect};
 use super::cast::MemberId;

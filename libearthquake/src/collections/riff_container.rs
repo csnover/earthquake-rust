@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
+use binrw::BinRead;
 use bstr::BStr;
 use crate::resources::{ByteVec, List};
 use libcommon::{Reader, SeekExt};
@@ -39,10 +39,10 @@ impl ChunkFile {
 impl BinRead for ChunkFile {
     type Args = ();
 
-    fn read_options<R: Read + Seek>(input: &mut R, options: &binread::ReadOptions, _: Self::Args) -> binread::BinResult<Self> {
-        let size = input.len()?;
+    fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+        let size = input.bytes_left()?;
         if !(4..=8).contains(&size) {
-            return Err(binread::Error::AssertFail {
+            return Err(binrw::Error::AssertFail {
                 pos: input.pos()?,
                 message: format!("Bad ChunkFile size {}", size)
             });
@@ -78,13 +78,13 @@ struct Dict(InnerDict);
 impl BinRead for Dict {
     type Args = ();
 
-    fn read_options<R: binread::io::Read + binread::io::Seek>(input: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         let pos = input.pos()?;
-        let size = input.len()?;
+        let size = input.bytes_left()?;
         let (dict_size, keys_size) = <(u32, u32)>::read_options(input, options, args)?;
         let actual_size = u64::from(dict_size + keys_size);
         if actual_size > size {
-            return Err(binread::Error::AssertFail {
+            return Err(binrw::Error::AssertFail {
                 pos,
                 message: format!("Bad Dict size at {} ({} > {})", pos, actual_size, size)
             });

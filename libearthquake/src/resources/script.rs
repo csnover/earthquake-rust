@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use libcommon::{binread_enum, Reader, Resource, resource::Input};
+use binrw::BinRead;
+use libcommon::{binrw_enum, Reader, Resource, resource::Input};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
@@ -13,7 +13,7 @@ enum Kind {
     Parent = 7,
 }
 
-binread_enum!(Kind, u16);
+binrw_enum!(Kind, u16);
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 0 || size == 2))]

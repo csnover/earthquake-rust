@@ -1,6 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use libcommon::{binread_enum, bitflags, Reader, Resource, resource::Input};
+use binrw::BinRead;
+use libcommon::{binrw_enum, bitflags, Reader, Resource, resource::Input};
 use libmactoolbox::{quickdraw::{Pixels, RGBColor}, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -13,7 +13,7 @@ pub enum Alignment {
     Center,
 }
 
-binread_enum!(Alignment, i16);
+binrw_enum!(Alignment, i16);
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum Frame {
@@ -23,7 +23,7 @@ pub enum Frame {
     LimitToFieldSize,
 }
 
-binread_enum!(Frame, u8);
+binrw_enum!(Frame, u8);
 
 bitflags! {
     pub struct Flags: u8 {
@@ -42,7 +42,7 @@ pub enum ButtonKind {
     Radio,
 }
 
-binread_enum!(ButtonKind, u16);
+binrw_enum!(ButtonKind, u16);
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32))]

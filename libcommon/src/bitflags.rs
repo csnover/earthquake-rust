@@ -1,10 +1,10 @@
-use binread::BinRead;
+use binrw::BinRead;
 use derive_more::{Deref, DerefMut};
 use std::{convert::TryInto, io::SeekFrom, marker::PhantomData};
 
 #[doc(hidden)]
 pub mod __private {
-    pub use {binread, bitflags::bitflags, derive_more::*, paste::paste};
+    pub use {binrw, bitflags::bitflags, derive_more::*, paste::paste};
 }
 
 /// A wrapper type for reading a `BitFlags` object from data with a different
@@ -40,24 +40,25 @@ impl <Flags: BitFlags, FromType> core::fmt::Debug for FlagsFrom<Flags, FromType>
 
 impl <Flags, FromType> BinRead for FlagsFrom<Flags, FromType>
 where
-    Flags: BitFlags,
+    Flags: BitFlags + 'static,
     FromType: TryInto<Flags::Bits> + BinRead + std::fmt::LowerHex + Copy,
 {
     type Args = FromType::Args;
 
-    fn read_options<R: binread::io::Read + binread::io::Seek>(reader: &mut R, options: &binread::ReadOptions, args: Self::Args) -> binread::BinResult<Self> {
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         macro_rules! make_err {
-            ($msg: literal, $flags: ty, $reader: ident, $value: ident) => {
-                binread::Error::AssertFail {
-                    pos: $reader.seek(SeekFrom::Current(0)).unwrap(),
-                    message: format!(stringify!($msg, "{} flags 0x{:x}"), core::any::type_name::<$flags>(), $value),
+            ($msg: literal, $flags: ty, $pos: expr, $value: ident) => {
+                binrw::Error::AssertFail {
+                    pos: $pos,
+                    message: format!(concat!($msg, " {} flags 0x{:x}"), core::any::type_name::<$flags>(), $value),
                 }
             }
         }
 
+        let pos = reader.seek(SeekFrom::Current(0))?;
         let raw_value = FromType::read_options(reader, options, args)?;
-        let bits = raw_value.try_into().map_err(|_| make_err!("Out of range value for", Flags, reader, raw_value))?;
-        let flags = Flags::from_bits(bits).ok_or_else(|| make_err!("Invalid", Flags, reader, raw_value))?;
+        let bits = raw_value.try_into().map_err(|_| make_err!("Out of range value for", Flags, pos, raw_value))?;
+        let flags = Flags::from_bits(bits).ok_or_else(|| make_err!("Invalid", Flags, pos, raw_value))?;
         Ok(Self { inner: flags, _phantom: PhantomData })
     }
 }
@@ -113,7 +114,7 @@ macro_rules! bitflags {
     (
         $(#[$outer:meta])*
         $vis:vis struct $BitFlags:ident: $T:ty {
-            $($(#[$inner:meta])* const $field:ident = $value:literal;)*
+            $($(#[$inner:meta])* const $field:ident = $value:expr;)*
         }
     ) => {
         $crate::bitflags::__private::paste! {
@@ -198,12 +199,12 @@ macro_rules! bitflags {
             }
         }
 
-        impl $crate::bitflags::__private::binread::BinRead for $BitFlags {
-            type Args = <$T as $crate::bitflags::__private::binread::BinRead>::Args;
+        impl $crate::bitflags::__private::binrw::BinRead for $BitFlags {
+            type Args = <$T as $crate::bitflags::__private::binrw::BinRead>::Args;
 
-            fn read_options<R>(reader: &mut R, options: &$crate::bitflags::__private::binread::ReadOptions, args: Self::Args) -> $crate::bitflags::__private::binread::BinResult<Self>
+            fn read_options<R>(reader: &mut R, options: &$crate::bitflags::__private::binrw::ReadOptions, args: Self::Args) -> $crate::bitflags::__private::binrw::BinResult<Self>
             where
-                R: $crate::bitflags::__private::binread::io::Read + $crate::bitflags::__private::binread::io::Seek,
+                R: $crate::bitflags::__private::binrw::io::Read + $crate::bitflags::__private::binrw::io::Seek,
             {
                 $crate::bitflags::FlagsFrom::<$BitFlags, $T>::read_options(reader, options, args).map(|flags| *flags)
             }

@@ -1,7 +1,7 @@
 // TODO: You know, finish this file and then remove these overrides
 #![allow(dead_code)]
 
-use binread::BinRead;
+use binrw::BinRead;
 use crate::{Point, Rect};
 use num_derive::FromPrimitive;
 use libcommon::{

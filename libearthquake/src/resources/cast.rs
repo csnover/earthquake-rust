@@ -1,33 +1,14 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use byteordered::Endianness;
+use binrw::{BinRead, NullString};
+use libmactoolbox::types::PString;
 use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Deref, DerefMut, Display, From, Index, IndexMut};
-use libcommon::{
-    bitflags,
-    bitflags::BitFlags,
-    encodings::DecoderRef,
-    Reader,
-    Resource,
-    SeekExt,
-    resource::{Input, StringKind},
-};
+use libcommon::{Reader, Resource, SeekExt, TakeSeekExt, bitflags, bitflags::BitFlags, resource::Input, restore_on_error};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
-use std::fmt;
-use super::{
-    bitmap::Meta as BitmapMeta,
-    config::Version as ConfigVersion,
-    field::Meta as FieldMeta,
-    film_loop::Meta as FilmLoopMeta,
-    script::Meta as ScriptMeta,
-    shape::Meta as ShapeMeta,
-    text::Meta as TextMeta,
-    transition::Meta as TransitionMeta,
-    video::Meta as VideoMeta,
-    xtra::Meta as XtraMeta,
-};
+use std::{convert::TryFrom, fmt};
+use super::{bitmap::Meta as BitmapMeta, config::Version as ConfigVersion, field::Meta as FieldMeta, film_loop::Meta as FilmLoopMeta, script::Meta as ScriptMeta, shape::Meta as ShapeMeta, text::Meta as TextMeta, transition::Meta as TransitionMeta, video::Meta as VideoMeta, xtra::Meta as XtraMeta};
 
 // CAS* - list of ChunkIndex to CASt resources
 // CASt - (flags, VWCI size, VWCR size) + VWCI resource + VWCR data
@@ -136,22 +117,28 @@ impl Resource for MemberId {
     }
 }
 
-// TODO: Rewrite this to use binread and put it somewhere better with a
+// TODO: Rewrite this to use binrw and put it somewhere better with a
 // non-repetitive name
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
 pub struct CastMap(Vec<ChunkIndex>);
 
-impl Resource for CastMap {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, size: u32, _: &Self::Context) -> AResult<Self> {
-        let mut input = input.as_mut().into_endianness(Endianness::Big);
-        let capacity = size / 4;
-        let mut chunk_indexes = Vec::with_capacity(capacity as usize);
-        for _ in 0..capacity {
-            chunk_indexes.push(ChunkIndex::new(input.read_i32()?));
-        }
-        Ok(Self(chunk_indexes))
+impl BinRead for CastMap {
+    type Args = ();
+
+    fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
+
+        restore_on_error(reader, |reader, _| {
+            let count = reader.bytes_left()? / 4;
+            let mut data = Vec::with_capacity(usize::try_from(count).unwrap());
+            for _ in 0..count {
+                let value = ChunkIndex::read_options(reader, &options, ())?;
+                data.push(value);
+            }
+            Ok(Self(data))
+        })
     }
 }
 
@@ -168,15 +155,12 @@ bitflags! {
 
 bitflags! {
     struct MemberInfoFlags: u32 {
-        const NONE = 0;
-    }
-}
-
-impl Resource for MemberInfoFlags {
-    type Context = ();
-    fn load(input: &mut Input<impl Reader>, _: u32, _: &Self::Context) -> AResult<Self> where Self: Sized {
-        let flags = input.read_u32()?;
-        Self::from_bits(flags).with_context(|| format!("Invalid MemberInfoFlags (0x{:x})", flags))
+        const NONE          = 0;
+        const EXTERNAL_FILE = 1;
+        const NEVER_PURGE   = 4;
+        const PURGE_LAST    = 8;
+        const PURGE_NEXT    = Self::NEVER_PURGE.bits | Self::PURGE_LAST.bits;
+        const SOUND_ON      = 0x10;
     }
 }
 
@@ -192,44 +176,48 @@ type StructC_4A2DC0 = Vec<u8>;
 type StructD_439630 = Vec<u8>;
 
 pvec! {
+    #[derive(Debug)]
     pub struct MemberInfo {
-        #[offset(4..8)]
-        script_handle: u32,
-        #[offset(8..0xc)]
-        field_8: u32,
-        #[offset(0xc..0x10)]
-        flags: MemberInfoFlags,
-        #[offset(0x10..0x14)]
-        script_context_num: u32,
-        #[entry(0)]
-        script_text: String,
-        #[string_entry(1, StringKind::PascalStr)]
-        name: String,
-        #[string_entry(2, StringKind::PascalStr)]
-        file_path: String,
-        #[string_entry(3, StringKind::PascalStr)]
-        file_name: String,
-        #[entry(5)]
-        entry_5: Struct14h,
-        #[entry(6)]
-        entry_6: STXTSub,
-        #[entry(7)]
-        entry_7: Struct14h,
-        #[entry(8)]
-        entry_8: Struct14h,
-        // xtra-related
-        #[entry(9)]
-        entry_9: Struct9_4A2DE0,
-        #[string_entry(10, StringKind::CStr)]
-        xtra_name: String,
-        // script related
-        #[entry(11)]
-        entry_11: StructB_4A2E00,
-        // xtra-related
-        #[entry(12)]
-        entry_12: StructC_4A2DC0,
-        #[entry(13)]
-        entry_13: StructD_439630,
+        header {
+            script_handle: u32,
+            field_8: u32,
+            flags: MemberInfoFlags,
+            script_context_num: u32,
+        }
+
+        offsets = offsets;
+
+        entries {
+            #[br(count = offsets.entry_size(0).unwrap_or(0))]
+            0 => script_text: Vec<u8>,
+            1 => name: PString,
+            2 => file_path: PString,
+            3 => file_name: PString,
+            4 => _,
+            #[br(count = offsets.entry_size(5).unwrap_or(0))]
+            5 => entry_5: Struct14h,
+            #[br(count = offsets.entry_size(6).unwrap_or(0))]
+            6 => entry_6: STXTSub,
+            #[br(count = offsets.entry_size(7).unwrap_or(0))]
+            7 => entry_7: Struct14h,
+            #[br(count = offsets.entry_size(8).unwrap_or(0))]
+            8 => entry_8: Struct14h,
+            // xtra-related
+            #[br(count = offsets.entry_size(9).unwrap_or(0))]
+            9 => entry_9: Struct9_4A2DE0,
+            10 => xtra_name: NullString,
+            // script related
+            #[br(count = offsets.entry_size(11).unwrap_or(0))]
+            11 => entry_11: StructB_4A2E00,
+            // xtra-related
+            #[br(count = offsets.entry_size(12).unwrap_or(0))]
+            12 => entry_12: StructC_4A2DC0,
+            #[br(count = offsets.entry_size(13).unwrap_or(0))]
+            13 => entry_13: StructD_439630,
+            // for some reason there is a video-related entry in slot 14, but
+            // it seems to not ever be referenced in projector code.
+            14..
+        }
     }
 }
 
@@ -245,29 +233,33 @@ pub struct Member {
     metadata: MemberMetadata,
 }
 
-impl Resource for Member {
-    type Context = (ChunkIndex, ConfigVersion, DecoderRef);
-    fn load(input: &mut Input<impl Reader>, _: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        let mut input = input.as_mut().into_endianness(Endianness::Big);
+impl BinRead for Member {
+    type Args = (ChunkIndex, ConfigVersion);
 
-        let (kind, /* VWCI */ info_size, /* VWCR */ meta_size) = if context.1 < ConfigVersion::V1201 {
-            Self::read_meta_d4(&mut input)?
+    fn read_options<R: std::io::Read + std::io::Seek>(input: &mut R, options: &binrw::ReadOptions, (index, version): Self::Args) -> binrw::BinResult<Self> {
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
+
+        let meta = if version < ConfigVersion::V1201 {
+            MemberMetaV4::read_options(input, &options, ())?.into()
         } else {
-            Self::read_meta_d5(&mut input)?
+            MemberMetaV5::read_options(input, &options, ())?
         };
 
-        let info = if info_size == 0 {
+        let info = if meta.info_size == 0 {
             None
         } else {
-            Some(MemberInfo::load(&mut input, info_size, &(context.2, ))
-                .with_context(|| format!("Can’t load {} cast member info", kind))?)
+            Some(MemberInfo::read_options(&mut input.take_seek(meta.info_size.into()), &options, ())?)
+                // TODO: Figure out how to get this context back
+                // .with_context(|| format!("Can’t load {} cast member info", kind))?;
         };
 
-        let metadata = MemberMetadata::load(&mut input, meta_size, &(kind, context.1, context.2))
-            .with_context(|| format!("Can’t load {} cast member metadata", kind))?;
+        let metadata = MemberMetadata::read_options(&mut input.take_seek(meta.meta_size.into()), &options, (meta, version))?;
+            // TODO: Figure out how to get this context back
+            // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
 
         Ok(Self {
-            riff_index: context.0,
+            riff_index: index,
             next_free: 0,
             some_num_a: 0,
             flags: MemberFlags::empty(),
@@ -277,30 +269,50 @@ impl Resource for Member {
     }
 }
 
-impl Member {
-    fn read_meta_d4(input: &mut Input<impl Reader>) -> AResult<(MemberKind, u32, u32)> {
-        // TODO: This is incorrect guesswork.
-        let _unknown = input.read_u16().context("Can’t read mystery word")?;
-        let meta_size = input.read_u16().map(u32::from).context("Can’t read cast metadata size")?;
-        let info_size = input.read_u16().map(u32::from).context("Can’t read cast info size")?;
-        let kind = {
-            let value = input.read_u8().context("Can’t read cast member kind")?;
-            MemberKind::from_u8(value)
-                .with_context(|| format!("Invalid cast member kind {}", value))?
-        };
-        Ok((kind, info_size, meta_size))
-    }
+#[derive(thiserror::Error)]
+#[error("invalid {0} 0x{1:x}")]
+struct FromPrimitiveError<T: core::fmt::Display, U: core::fmt::LowerHex>(T, U);
 
-    fn read_meta_d5(input: &mut Input<impl Reader>) -> AResult<(MemberKind, u32, u32)> {
-        Ok((
-            {
-                let value = input.read_u32().context("Can’t read cast member kind")?;
-                MemberKind::from_u32(value)
-                    .with_context(|| format!("Invalid cast member kind {}", value))?
-            },
-            input.read_u32().context("Can’t read cast info size")?,
-            input.read_u32().context("Can’t read cast metadata size")?
-        ))
+impl <T: core::fmt::Display, U: core::fmt::LowerHex> core::fmt::Debug for FromPrimitiveError<T, U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("FromPrimitiveError")
+            .field(&format!("{}", self.0))
+            .field(&format!("{:x}", self.1))
+            .finish()
+    }
+}
+
+// TODO: This is incorrect guesswork.
+#[derive(BinRead, Copy, Clone, Debug)]
+#[br(big)]
+struct MemberMetaV4 {
+    _unknown: u16,
+    // VWCR
+    meta_size: u16,
+    // VWCI
+    info_size: u16,
+    #[br(try_map = |kind: u8| MemberKind::from_u8(kind).ok_or_else(|| anyhow::anyhow!("wow")))]
+    kind: MemberKind,
+}
+
+#[derive(BinRead, Copy, Clone, Debug)]
+#[br(big)]
+pub struct MemberMetaV5 {
+    #[br(try_map = |kind: u32| MemberKind::from_u32(kind).ok_or(FromPrimitiveError("cast member kind", kind)))]
+    kind: MemberKind,
+    // VWCI
+    info_size: u32,
+    // VWCR
+    meta_size: u32,
+}
+
+impl From<MemberMetaV4> for MemberMetaV5 {
+    fn from(other: MemberMetaV4) -> Self {
+        Self {
+            kind: other.kind,
+            meta_size: other.meta_size.into(),
+            info_size: other.info_size.into(),
+        }
     }
 }
 
@@ -359,29 +371,36 @@ pub enum MemberMetadata {
     Xtra(XtraMeta),
 }
 
-impl Resource for MemberMetadata {
-    type Context = (MemberKind, ConfigVersion, DecoderRef);
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        Ok(match context.0 {
+impl BinRead for MemberMetadata {
+    type Args = (MemberMetaV5, ConfigVersion);
+
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
+
+        let (meta, version) = args;
+        let size = meta.meta_size;
+
+        Ok(match meta.kind {
             MemberKind::None => {
                 input.skip(size.into())?;
                 MemberMetadata::None
             },
-            MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::load(input, size, &())?),
-            MemberKind::Button => MemberMetadata::Button(FieldMeta::load(input, size, &())?),
-            MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::load(input, size, &())?),
-            MemberKind::Field => MemberMetadata::Field(FieldMeta::load(input, size, &())?),
-            MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::load(input, size, &())?),
-            MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::load(input, size, &())?),
-            MemberKind::OLE => MemberMetadata::OLE(BitmapMeta::load(input, size, &())?),
+            MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::read_options(input, &options, (size, ))?),
+            MemberKind::Button => MemberMetadata::Button(FieldMeta::read_options(input, &options, (size, ))?),
+            MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::read_options(input, &options, (size, ))?),
+            MemberKind::Field => MemberMetadata::Field(FieldMeta::read_options(input, &options, (size, ))?),
+            MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::read_options(input, &options, (size, ))?),
+            MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::read_options(input, &options, (size, ))?),
+            MemberKind::OLE => MemberMetadata::OLE(BitmapMeta::read_options(input, &options, (size, ))?),
             MemberKind::Palette => MemberMetadata::Palette,
             MemberKind::Picture => MemberMetadata::Picture,
-            MemberKind::Script => MemberMetadata::Script(ScriptMeta::load(input, size, &())?),
-            MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::load(input, size, &())?),
+            MemberKind::Script => MemberMetadata::Script(ScriptMeta::read_options(input, &options, (size, ))?),
+            MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::read_options(input, &options, ())?),
             MemberKind::Sound => MemberMetadata::Sound,
-            MemberKind::Text => MemberMetadata::Text(TextMeta::load(input, size, &(context.1, ))?),
-            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::load(input, size, &(context.1, context.2))?),
-            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::load(input, size, &(context.1, context.2))?),
+            MemberKind::Text => MemberMetadata::Text(TextMeta::read_options(input, &options, (version, ))?),
+            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::read_options(input, &options, (size, version))?),
+            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::read_options(input, &options, (size, ))?),
         })
     }
 }

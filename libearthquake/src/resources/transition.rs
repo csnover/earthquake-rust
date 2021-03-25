@@ -1,14 +1,13 @@
-use anyhow::{Context, Result as AResult};
-use binread::BinRead;
-use libcommon::{binread_enum, bitflags, bitflags::BitFlags, encodings::DecoderRef, Reader, Resource, resource::Input};
+use binrw::BinRead;
+use libcommon::{bitflags, bitflags::BitFlags};
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use super::{
     config::Version as ConfigVersion,
     xtra::Meta as XtraMeta,
 };
 
-#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
+#[br(repr(u8))]
 pub enum Kind {
     Xtra = 0,
     WipeRight,
@@ -65,8 +64,6 @@ pub enum Kind {
     DissolveBits,
 }
 
-binread_enum!(Kind, u8);
-
 bitflags! {
     pub struct Flags: u8 {
         /// Transition over the entire stage instead of just the changing area.
@@ -83,7 +80,7 @@ pub struct QuarterSeconds(pub u8);
 pub struct Milliseconds(pub i16);
 
 #[derive(BinRead, Clone, Debug)]
-#[br(big, import(size: u32, version: ConfigVersion, decoder: DecoderRef))]
+#[br(big, import(size: u32, version: ConfigVersion))]
 // D5 checks for `size >= 4` and then later does a `version >= 1214` check to
 // decide whether to read bytes 4–5, but we don’t do that because that check
 // appears to be broken:
@@ -95,7 +92,7 @@ pub struct Milliseconds(pub i16);
 // the conversion is perfect for converting ¼s… to ticks. I have no samples of
 // files which would follow this code path to see what data is actually stored
 // there.
-#[br(pre_assert(size >= 6, version >= ConfigVersion::V1214))]
+#[br(pre_assert(size >= 6 && version >= ConfigVersion::V1214))]
 pub struct Meta {
     legacy_duration: QuarterSeconds,
     #[br(assert(chunk_size > 0 && chunk_size <= 128))]
@@ -103,14 +100,6 @@ pub struct Meta {
     kind: Kind,
     flags: Flags,
     duration: Milliseconds,
-    #[br(args(size - 6, decoder), if(!flags.contains(Flags::STANDARD)))]
+    #[br(args(size - 6), if(!flags.contains(Flags::STANDARD)))]
     xtra: Option<XtraMeta>,
-}
-
-impl Resource for Meta {
-    type Context = (ConfigVersion, DecoderRef);
-
-    fn load(input: &mut Input<impl Reader>, size: u32, context: &Self::Context) -> AResult<Self> where Self: Sized {
-        Self::read_args(input, (size, context.0, context.1)).context("Can’t read transition meta")
-    }
 }

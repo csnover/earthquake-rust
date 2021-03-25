@@ -15,6 +15,13 @@ pub struct SharedStream<T: Read + Seek + ?Sized> {
     end_pos: u64,
 }
 
+impl<T> SharedStream<T> where T: Read + Seek {
+    #[must_use]
+    pub fn into_inner(self) -> T {
+        Rc::try_unwrap(self.inner).map_err(|_| "could not unwrap SharedStream Rc").unwrap().into_inner()
+    }
+}
+
 // TODO: This is hella questionable
 impl<T> From<Inner<T>> for SharedStream<T> where T: Read + Seek {
     fn from(input: Inner<T>) -> Self {

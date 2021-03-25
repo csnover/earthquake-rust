@@ -5,19 +5,11 @@
 //! chunks at the start of the file are used for O(1) lookup of data by chunk
 //! index or [`ResourceID`].
 
-use binread::BinRead;
+use binrw::BinRead;
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use byteordered::Endianness;
-use crate::{
-    detection::{
-        movie::{
-            DetectionInfo,
-            Kind as MovieKind,
-        },
-        Version,
-    },
-};
+use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
 use derive_more::{Constructor, Deref, DerefMut, Display};
 use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
 use libmactoolbox::{OSType, OSTypeReadExt, ResourceError, ResourceId, ResourceResult, ResourceSource};
@@ -67,16 +59,15 @@ pub enum RiffError {
     #[error("i/o error skipping resource name of index {0}: {1}")]
     D3ResourceNameSkipError(ChunkIndex, std::io::Error),
     #[error("can’t load {0} chunk {1} at {2}: {3}")]
-    ReadError(OSType, ChunkIndex, u32, binread::Error),
+    ReadError(OSType, ChunkIndex, u32, binrw::Error),
 }
 
-impl From<binread::Error> for RiffError {
-    fn from(error: binread::Error) -> Self {
+impl From<binrw::Error> for RiffError {
+    fn from(error: binrw::Error) -> Self {
         match error {
-            binread::Error::Io(error) => Self::IoError(error),
-            binread::Error::Custom { err, .. } => {
-                *Box::<dyn Any + Send>::downcast::<Self>(err)
-                    .expect("unexpected error type")
+            binrw::Error::Io(error) => Self::IoError(error),
+            binrw::Error::Custom { err, .. } => {
+                *err.downcast().expect("unexpected error type")
             },
             _ => panic!("unexpected error type"),
         }
@@ -211,10 +202,10 @@ impl<T: Reader> Riff<T> {
                 RiffError::D3ResourceNameSkipError(index, error))?;
         }
 
-        let mut options = binread::ReadOptions::default();
+        let mut options = binrw::ReadOptions::default();
         options.endian = match self.endianness {
-            Endianness::Little => binread::Endian::Little,
-            Endianness::Big => binread::Endian::Big,
+            Endianness::Little => binrw::Endian::Little,
+            Endianness::Big => binrw::Endian::Big,
         };
         // TODO: Figure out how to get entry size into it
         R::read_options(&mut input.clone().take_seek(entry_size.into()), &options, args)
@@ -457,7 +448,7 @@ impl<T: Reader> Riff<T> {
     }
 
     fn with_identity(id: Identity, mut input: SharedStream<T>) -> RiffResult<Self> {
-        let info = detect(&mut input).map_err(|error| RiffError::NotRiff)?;
+        let info = detect(&mut input)?;
 
         let (memory_map, resource_map) = {
             if info.os_type_endianness() == Endianness::Little && info.data_endianness() == Endianness::Little {

@@ -1,4 +1,4 @@
-use binread::BinRead;
+use binrw::BinRead;
 use crate::{errors::ScriptError, script_manager::CountryCode, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;

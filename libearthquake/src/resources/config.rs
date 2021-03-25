@@ -1,7 +1,7 @@
 use anyhow::{Context, Result as AResult};
-use binread::BinRead;
+use binrw::BinRead;
 use crate::player::score::Tempo;
-use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, binread_enum, bitflags, bitflags::BitFlags, newtype_num, resource::Input};
+use libcommon::{Reader, Resource, Unk16, Unk32, Unk8, binrw_enum, bitflags, bitflags::BitFlags, newtype_num, resource::Input};
 use libmactoolbox::{quickdraw::PaletteIndex, Rect};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -22,7 +22,7 @@ pub enum Platform {
     Win,
 }
 
-binread_enum!(Platform, i16);
+binrw_enum!(Platform, i16);
 
 #[derive(Clone, Copy, Debug, Eq, FromPrimitive, Ord, PartialEq, PartialOrd, SmartDefault)]
 pub enum Version {
@@ -60,7 +60,7 @@ pub enum Version {
     V5692 = 5692, // protected
 }
 
-binread_enum!(Version, i16);
+binrw_enum!(Version, i16);
 
 impl Version {
     #[must_use]
@@ -252,7 +252,11 @@ impl Config {
 
     #[must_use]
     pub fn version(&self) -> Version {
-        self.version
+        if self.version == Version::V5692 {
+            self.original_version
+        } else {
+            self.version
+        }
     }
 
     fn field_3a_1(old_state: i32) -> (i32, i16) {

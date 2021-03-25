@@ -1,4 +1,4 @@
-use binread::derive_binread;
+use binrw::derive_binread;
 use crate::types::PString;
 use derive_more::{Deref, DerefMut, Index, IndexMut, IntoIterator};
 

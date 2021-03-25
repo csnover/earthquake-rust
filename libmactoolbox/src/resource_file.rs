@@ -1,5 +1,4 @@
-use anyhow::anyhow;
-use binread::BinRead;
+use binrw::BinRead;
 use byteorder::{ByteOrder, BigEndian};
 use crate::{ApplicationVise, OSType, ResourceId, types::{MacString, PString}};
 use derive_more::Display;
@@ -78,16 +77,15 @@ pub enum ResourceError {
     #[error("vfs error: {0}")]
     VFSError(anyhow::Error),
     #[error("error reading {0}: {1}")]
-    ReadError(ResourceId, binread::Error),
+    ReadError(ResourceId, binrw::Error),
 }
 
-impl From<binread::Error> for ResourceError {
-    fn from(error: binread::Error) -> Self {
+impl From<binrw::Error> for ResourceError {
+    fn from(error: binrw::Error) -> Self {
         match error {
-            binread::Error::Io(error) => Self::IoError(error),
-            binread::Error::Custom { err, .. } => {
-                *Box::<dyn Any + Send>::downcast::<Self>(err)
-                    .expect("unexpected error type")
+            binrw::Error::Io(error) => Self::IoError(error),
+            binrw::Error::Custom { err, .. } => {
+                *err.downcast().expect("unexpected error type")
             },
             _ => panic!("unexpected error type"),
         }
@@ -115,13 +113,11 @@ struct Header {
 impl<T: Reader> ResourceFile<T> {
     /// Makes a new `ResourceFile` from a readable stream.
     pub fn new(mut data: T) -> ResourceResult<Self> {
+        let file_size = data.bytes_left()?;
         let header = Header::read(data.by_ref())?;
-
-        let file_size = data.len()?;
-
         let min_file_size = u64::from(core::cmp::max(
-            header.map_offset + header.map_size,
-            header.data_offset + header.data_size
+            header.map_offset.saturating_add(header.map_size),
+            header.data_offset.saturating_add(header.data_size)
         ));
 
         if file_size < min_file_size {
@@ -261,7 +257,7 @@ impl <T: Reader> ResourceSource for ResourceFile<T> {
 
         let size = u32::read(input.by_ref())
             .map_err(|error| ResourceError::ReadSizeFailure(id, match error {
-                binread::Error::Io(error) => error,
+                binrw::Error::Io(error) => error,
                 _ => unreachable!("primitive reads cannot fail except by i/o error")
             }))?;
 
@@ -281,8 +277,8 @@ impl <T: Reader> ResourceSource for ResourceFile<T> {
             ApplicationVise::is_compressed(&sig)
         };
 
-        let mut options = binread::ReadOptions::default();
-        options.endian = binread::Endian::Big;
+        let mut options = binrw::ReadOptions::default();
+        options.endian = binrw::Endian::Big;
 
         let resource = Rc::new(if is_vise_compressed {
             let data = {
@@ -370,11 +366,11 @@ struct ResourceKind {
     #[br(map = |count: i16| count + 1)]
     #[br(assert(count < 2727, ResourceError::BadMapResourceCount(count, kind)))]
     count: i16,
-    #[br(args(data_offset), count(count), offset((map_offset + 28).into()), parse_with = binread::FilePtr16::parse)]
+    #[br(args(data_offset), count(count), offset((map_offset + 28).into()), parse_with = binrw::FilePtr16::parse)]
     resources: Vec<ResourceItem>,
 }
 
-fn parse_u24<R: binread::io::Read + binread::io::Seek>(reader: &mut R, _: &binread::ReadOptions, _: ()) -> binread::BinResult<u32> {
+fn parse_u24<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, _: &binrw::ReadOptions, _: ()) -> binrw::BinResult<u32> {
     let mut bytes = [ 0; 3 ];
     reader.read_exact(&mut bytes)?;
     Ok(BigEndian::read_u24(&bytes))
