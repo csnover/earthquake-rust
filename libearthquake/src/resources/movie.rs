@@ -41,9 +41,12 @@ impl BinRead for CastListMembers {
     fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, ): Self::Args) -> binrw::BinResult<Self> {
         if let Some(count) = options.count {
             restore_on_error(reader, |reader, _| {
+                let mut options = *options;
+                options.endian = binrw::Endian::Big;
+
                 let mut data = Vec::with_capacity(count);
                 for index in 0..count {
-                    data.push(Cast::read_options(reader, options, (index, entries_per_cast))?);
+                    data.push(Cast::read_options(reader, &options, (index, entries_per_cast))?);
                 }
                 Ok(Self(data))
             })

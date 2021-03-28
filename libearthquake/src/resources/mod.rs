@@ -14,7 +14,7 @@ pub mod xtra;
 use binrw::{BinRead, derive_binread, io::{Read, Seek}};
 use bstr::BStr;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{SeekExt, TakeSeekExt};
+use libcommon::{SeekExt, TakeSeekExt, restore_on_error};
 use std::{cmp, convert::{TryFrom, TryInto}, marker::PhantomData};
 
 /// A reference counted object with a vtable.
@@ -66,17 +66,19 @@ impl BinRead for ByteVec {
     type Args = ();
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
-        let size = input.bytes_left()?;
-        let header = ByteVecHeaderV5::read_options(input, options, (size, ))?;
-        let data_size = u64::from(header.used) - u64::from(header.header_size);
-        let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
-        let bytes_read = input
-            .take(data_size)
-            .read_to_end(&mut data)?;
-        if u64::try_from(bytes_read).unwrap() != data_size {
-            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
-        }
-        Ok(Self(data))
+        restore_on_error(input, |input, _| {
+            let size = input.bytes_left()?;
+            let header = ByteVecHeaderV5::read_options(input, options, (size, ))?;
+            let data_size = u64::from(header.used) - u64::from(header.header_size);
+            let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
+            let bytes_read = input
+                .take(data_size)
+                .read_to_end(&mut data)?;
+            if u64::try_from(bytes_read).unwrap() != data_size {
+                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+            }
+            Ok(Self(data))
+        })
     }
 }
 

@@ -7,7 +7,7 @@ use binrw::{BinRead, BinReaderExt, ReadOptions};
 use crate::{ensure_sample, resources::{cast::{MemberId, MemberKind, MemberNum}, transition::{Kind as TransitionKind, QuarterSeconds}}};
 use derive_more::{Display, Deref, DerefMut, From};
 use num_traits::FromPrimitive;
-use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, bitflags::BitFlags, newtype_num};
+use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
 use libmactoolbox::{quickdraw::PaletteIndex, Point, Rect, TEHandle, quickdraw::Pen};
 use smart_default::SmartDefault;
 use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
@@ -384,42 +384,42 @@ impl BinRead for Transition {
     type Args = (Version, );
 
     fn read_options<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, _: &ReadOptions, (version, ): Self::Args) -> binrw::BinResult<Self> {
-        let last_pos = reader.pos()?;
+        restore_on_error(reader, |reader, pos| {
+            let make_tempo = |tempo: u8| {
+                Tempo::new((tempo as i8).into()).map_err(|e| binrw::Error::AssertFail {
+                    pos,
+                    message: format!("{}", e),
+                })
+            };
 
-        let make_tempo = |tempo: u8| {
-            Tempo::new((tempo as i8).into()).map_err(|e| binrw::Error::AssertFail {
-                pos: last_pos,
-                message: format!("{}", e),
-            })
-        };
-
-        let mut data = [ 0; 4 ];
-        reader.read_exact(&mut data)?;
-        Ok(if version < Version::V6 {
-            if data[3] == 0 {
-                if data[2] == 0 {
-                    Self::None
+            let mut data = [ 0; 4 ];
+            reader.read_exact(&mut data)?;
+            Ok(if version < Version::V6 {
+                if data[3] == 0 {
+                    if data[2] == 0 {
+                        Self::None
+                    } else {
+                        Self::LegacyTempo(make_tempo(data[2])?)
+                    }
                 } else {
-                    Self::LegacyTempo(make_tempo(data[2])?)
+                    Self::Legacy {
+                        chunk_size: data[1],
+                        which_transition: TransitionKind::from_u8(data[3])
+                            .ok_or_else(|| binrw::Error::AssertFail {
+                                pos,
+                                message: format!("Invalid transition kind {}", data[3]),
+                            })?,
+                        time: QuarterSeconds(data[0] & !0x80),
+                        change_area: data[0] & 0x80 != 0,
+                        tempo: make_tempo(data[2])?
+                    }
                 }
+            } else if data == [ 0; 4 ] {
+                Self::None
             } else {
-                Self::Legacy {
-                    chunk_size: data[1],
-                    which_transition: TransitionKind::from_u8(data[3])
-                        .ok_or_else(|| binrw::Error::AssertFail {
-                            pos: last_pos,
-                            message: format!("Invalid transition kind {}", data[3]),
-                        })?,
-                    time: QuarterSeconds(data[0] & !0x80),
-                    change_area: data[0] & 0x80 != 0,
-                    tempo: make_tempo(data[2])?
-                }
-            }
-        } else if data == [ 0; 4 ] {
-            Self::None
-        } else {
-            let reader = &mut Cursor::new(data);
-            Self::Cast(reader.read_be::<MemberId>()?)
+                let reader = &mut Cursor::new(data);
+                Self::Cast(reader.read_be::<MemberId>()?)
+            })
         })
     }
 }
@@ -720,37 +720,39 @@ impl BinRead for Score {
     // TODO: Should this receive a size option instead of relying on the input
     // being truncated?
     fn read_options<R: std::io::Read + std::io::Seek>(input: &mut R, options: &binrw::ReadOptions, (config_version, ): Self::Args) -> binrw::BinResult<Self> {
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
+        restore_on_error(input, |input, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        let size = input.bytes_left()?;
-        options.count = Some(size.try_into().unwrap());
-        let data = Vec::read_options(&mut input.take_seek(size), &options, ())?;
-        options.count = None;
+            let size = input.bytes_left()?;
+            options.count = Some(size.try_into().unwrap());
+            let data = Vec::read_options(&mut input.take_seek(size), &options, ())?;
+            options.count = None;
 
-        let mut input = Cursor::new(data);
+            let mut input = Cursor::new(data);
 
-        let (own_size, version) = if config_version.d4() || config_version.d5() {
-            let header = ScoreHeaderV5::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+            let (own_size, version) = if config_version.d4() || config_version.d5() {
+                let header = ScoreHeaderV5::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
 
-            // Director normally reads through all of the frame deltas here in order
-            // to byte swap them into the platform’s native endianness, but since we
-            // are using an endianness-aware reader, we’ll just let that happen
-            // when the frames are read later
+                // Director normally reads through all of the frame deltas here in order
+                // to byte swap them into the platform’s native endianness, but since we
+                // are using an endianness-aware reader, we’ll just let that happen
+                // when the frames are read later
 
-            (header.own_size, header.score_version)
-        } else if config_version.d3() || config_version.d2() || config_version.d1() {
-            let header = ScoreHeaderV3::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
-            (header.own_size, Version::V3)
-        } else {
-            todo!("Score config version {} parsing", config_version as i32);
-        };
+                (header.own_size, header.score_version)
+            } else if config_version.d3() || config_version.d2() || config_version.d1() {
+                let header = ScoreHeaderV3::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+                (header.own_size, Version::V3)
+            } else {
+                todo!("Score config version {} parsing", config_version as i32);
+            };
 
-        let pos = input.pos()?;
+            let pos = input.pos()?;
 
-        Ok(Self {
-            vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
-            ..Self::default()
+            Ok(Self {
+                vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
+                ..Self::default()
+            })
         })
     }
 }
@@ -797,15 +799,20 @@ impl BinRead for Palette {
     type Args = (Version, );
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &ReadOptions, (version, ): Self::Args) -> binrw::BinResult<Self> {
-        if version > Version::V7 {
-            todo!("Score palette version 8 parsing")
-        } else if version >= Version::V5 {
-            PaletteV5::read_options(input, options, ()).map(Self::from)
-        } else {
-            PaletteV4::read_options(input, options, (version, )).map(Self::from)
-        }
-        // TODO: reintroduce context
-        // .context("Can’t read score palette")
+        restore_on_error(input, |input, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
+
+            if version > Version::V7 {
+                todo!("Score palette version 8 parsing")
+            } else if version >= Version::V5 {
+                PaletteV5::read_options(input, &options, ()).map(Self::from)
+            } else {
+                PaletteV4::read_options(input, &options, (version, )).map(Self::from)
+            }
+            // TODO: reintroduce context
+            // .context("Can’t read score palette")
+        })
     }
 }
 
@@ -1314,18 +1321,23 @@ impl BinRead for Sprite {
     type Args = (Version, );
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
-        let (version, ) = args;
-        match version {
-            Version::V3 => SpriteV3::read_options(input, options, args).map(Self::from),
-            Version::V4 => SpriteV4::read_options(input, options, args).map(Self::from),
-            Version::V5 | Version::V6 | Version::V7 => SpriteV5::read_options(input, options, args).map(Self::from),
-            Version::Unknown => Err(binrw::Error::AssertFail {
-                pos: input.pos()?,
-                message: format!("Unknown score version {}", version),
-            })
-        }
-        // TODO: Reintroduce context
-        // .context("Can’t read sprite")
+        restore_on_error(input, |input, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
+
+            let (version, ) = args;
+            match version {
+                Version::V3 => SpriteV3::read_options(input, &options, args).map(Self::from),
+                Version::V4 => SpriteV4::read_options(input, &options, args).map(Self::from),
+                Version::V5 | Version::V6 | Version::V7 => SpriteV5::read_options(input, &options, args).map(Self::from),
+                Version::Unknown => Err(binrw::Error::AssertFail {
+                    pos: input.pos()?,
+                    message: format!("Unknown score version {}", version),
+                })
+            }
+            // TODO: Reintroduce context
+            // .context("Can’t read sprite")
+        })
     }
 }
 

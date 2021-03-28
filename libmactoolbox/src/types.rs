@@ -5,6 +5,7 @@
 use binrw::{BinRead, io};
 use bstr::{ByteSlice, ByteVec};
 use derive_more::{Deref, DerefMut, Display, From};
+use libcommon::restore_on_error;
 use std::{io::Read, rc::Rc};
 
 /// A string which may be stored in one of several forms depending upon its
@@ -119,12 +120,14 @@ impl BinRead for PString {
     type Args = ();
 
     fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
-        let size = u8::read_options(reader, options, args)?;
-        let mut data = Vec::with_capacity(size.into());
-        if reader.take(size.into()).read_to_end(&mut data)? == size.into() {
-            Ok(Self(data))
-        } else {
-            Err(io::Error::from(io::ErrorKind::UnexpectedEof).into())
-        }
+        restore_on_error(reader, |reader, _| {
+            let size = u8::read_options(reader, options, args)?;
+            let mut data = Vec::with_capacity(size.into());
+            if reader.take(size.into()).read_to_end(&mut data)? == size.into() {
+                Ok(Self(data))
+            } else {
+                Err(io::Error::from(io::ErrorKind::UnexpectedEof).into())
+            }
+        })
     }
 }

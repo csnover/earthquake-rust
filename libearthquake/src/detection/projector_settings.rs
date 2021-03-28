@@ -4,7 +4,7 @@ use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use core::convert::TryInto;
 use crate::{bail_sample, ensure_sample};
-use libcommon::SeekExt;
+use libcommon::{SeekExt, restore_on_error};
 use super::{
     projector::{
         MacCPU,
@@ -151,25 +151,26 @@ impl BinRead for ProjectorSettings {
         _: &binrw::ReadOptions,
         (version, platform): Self::Args,
     ) -> binrw::BinResult<Self> {
-        let pos = reader.pos()?;
-        let mut bits = Vec::with_capacity(reader.bytes_left()?.try_into().unwrap());
-        reader.read_to_end(&mut bits)?;
+        restore_on_error(reader, |reader, pos| {
+            let mut bits = Vec::with_capacity(reader.bytes_left()?.try_into().unwrap());
+            reader.read_to_end(&mut bits)?;
 
-        match version {
-            Version::D3 => if matches!(platform, Platform::Mac(..)) {
-                D3Settings::from_bits_mac(&bits)
-            } else {
-                D3Settings::from_bits_win(&bits)
-            }.map(Self::from),
-            Version::D4 | Version::D5 | Version::D6 => match platform {
-                platform @ Platform::Win(..) => D6Settings::from_bits_win(&bits, version, platform),
-                Platform::Mac(..) => D6Settings::from_bits_mac(&bits, version)
-            }.map(Self::from),
-            Version::D7 => todo!("D7 projector settings parser"),
-        }
-        .map_err(|err| binrw::Error::Custom {
-            pos,
-            err: Box::new(err),
+            match version {
+                Version::D3 => if matches!(platform, Platform::Mac(..)) {
+                    D3Settings::from_bits_mac(&bits)
+                } else {
+                    D3Settings::from_bits_win(&bits)
+                }.map(Self::from),
+                Version::D4 | Version::D5 | Version::D6 => match platform {
+                    platform @ Platform::Win(..) => D6Settings::from_bits_win(&bits, version, platform),
+                    Platform::Mac(..) => D6Settings::from_bits_mac(&bits, version)
+                }.map(Self::from),
+                Version::D7 => todo!("D7 projector settings parser"),
+            }
+            .map_err(|err| binrw::Error::Custom {
+                pos,
+                err: Box::new(err),
+            })
         })
     }
 }

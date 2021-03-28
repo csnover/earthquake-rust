@@ -122,10 +122,10 @@ impl BinRead for CastMap {
     type Args = ();
 
     fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
-
         restore_on_error(reader, |reader, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
+
             let count = reader.bytes_left()? / 4;
             let mut data = Vec::with_capacity(usize::try_from(count).unwrap());
             for _ in 0..count {

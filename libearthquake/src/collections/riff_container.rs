@@ -2,7 +2,7 @@ use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use bstr::BStr;
 use crate::resources::{ByteVec, StdList};
-use libcommon::{Reader, SeekExt};
+use libcommon::{Reader, SeekExt, restore_on_error};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use smart_default::SmartDefault;
 use std::{io::{Read, Seek}, rc::Rc};
@@ -40,21 +40,26 @@ impl BinRead for ChunkFile {
     type Args = ();
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
-        let size = input.bytes_left()?;
-        if !(4..=8).contains(&size) {
-            return Err(binrw::Error::AssertFail {
-                pos: input.pos()?,
-                message: format!("Bad ChunkFile size {}", size)
-            });
-        }
-        let chunk_index = ChunkIndex::read_options(input, options, ())?;
-        let kind = if size == 4 {
-            ChunkFileKind::Movie
-        } else {
-            ChunkFileKind::read_options(input, options, ())?
-        };
+        restore_on_error(input, |input, pos| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        Ok(Self { chunk_index, kind })
+            let size = input.bytes_left()?;
+            if !(4..=8).contains(&size) {
+                return Err(binrw::Error::AssertFail {
+                    pos,
+                    message: format!("Bad ChunkFile size {}", size)
+                });
+            }
+            let chunk_index = ChunkIndex::read_options(input, &options, ())?;
+            let kind = if size == 4 {
+                ChunkFileKind::Movie
+            } else {
+                ChunkFileKind::read_options(input, &options, ())?
+            };
+
+            Ok(Self { chunk_index, kind })
+        })
     }
 }
 
@@ -79,23 +84,25 @@ impl BinRead for Dict {
     type Args = ();
 
     fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
-        let pos = input.pos()?;
-        let size = input.bytes_left()?;
-        let (dict_size, keys_size) = <(u32, u32)>::read_options(input, &options, args)?;
-        let expected_size = u64::from(dict_size + keys_size);
-        if expected_size > size {
-            return Err(binrw::Error::AssertFail {
-                pos,
-                message: format!("Bad Dict size at {} ({} > {})", pos, expected_size, size)
-            });
-        }
+        restore_on_error(input, |input, pos| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        let (mut dict, keys) = <(InnerDict, ByteVec)>::read_options(input, &options, args)?;
-        dict.keys_mut().replace(keys);
+            let size = input.bytes_left()?;
+            let (dict_size, keys_size) = <(u32, u32)>::read_options(input, &options, args)?;
+            let expected_size = u64::from(dict_size + keys_size);
+            if expected_size > size {
+                return Err(binrw::Error::AssertFail {
+                    pos,
+                    message: format!("Bad Dict size at {} ({} > {})", pos, expected_size, size)
+                });
+            }
 
-        Ok(Self(dict))
+            let (mut dict, keys) = <(InnerDict, ByteVec)>::read_options(input, &options, args)?;
+            dict.keys_mut().replace(keys);
+
+            Ok(Self(dict))
+        })
     }
 }
 

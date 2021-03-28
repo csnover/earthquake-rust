@@ -18,7 +18,6 @@ pub mod encodings;
 pub mod error;
 // TODO: use positioned_io crate?
 mod shared_stream;
-pub mod string;
 pub mod vfs;
 
 pub use shared_stream::SharedStream;

@@ -1,5 +1,6 @@
 use binrw::{BinRead, io};
 use bstr::BString;
+use libcommon::restore_on_error;
 use std::io::Read;
 
 /// A hybrid between a Pascal string and a C string.
@@ -35,23 +36,25 @@ impl BinRead for WinPString {
     type Args = ();
 
     fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
-        let size = u8::read_options(reader, options, args)?;
-        let mut data = Vec::with_capacity(Self::MAX.into());
+        restore_on_error(reader, |reader, _| {
+            let size = u8::read_options(reader, options, args)?;
+            let mut data = Vec::with_capacity(Self::MAX.into());
 
-        if reader.take(size.into()).read_to_end(&mut data)? != size.into() {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
-        }
+            if reader.take(size.into()).read_to_end(&mut data)? != size.into() {
+                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+            }
 
-        if size == u8::MAX {
-            for byte in reader.bytes() {
-                match byte {
-                    Ok(0) => break,
-                    Ok(byte) => data.push(byte),
-                    Err(error) => return Err(error.into()),
+            if size == u8::MAX {
+                for byte in reader.bytes() {
+                    match byte {
+                        Ok(0) => break,
+                        Ok(byte) => data.push(byte),
+                        Err(error) => return Err(error.into()),
+                    }
                 }
             }
-        }
 
-        Ok(Self(data.into()))
+            Ok(Self(data.into()))
+        })
     }
 }

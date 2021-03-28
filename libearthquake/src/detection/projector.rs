@@ -8,7 +8,7 @@ use crate::{
     panic_sample,
 };
 use derive_more::Display;
-use libcommon::{SeekExt, string::ReadExt};
+use libcommon::SeekExt;
 use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode, types::{MacString, PString}};
 use std::{convert::TryInto, io::{Cursor, Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
@@ -472,13 +472,13 @@ fn internal_movie<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, offset: 
 }
 
 mod pe {
+    use binrw::{BinReaderExt, NullWideString};
     use std::{convert::TryInto, io};
     use super::{
         AResult,
         ByteOrder,
         LittleEndian,
         ReadBytesExt,
-        ReadExt,
         SeekExt,
         SeekFrom,
     };
@@ -519,7 +519,7 @@ mod pe {
         }
         let value_padding = if value_size & 3 == 0 { 0 } else { 4 - (value_size & 3) };
         let end = start + u64::from(size) + u64::from(if size & 3 == 0 { 0 } else { 4 - (size & 3) });
-        let key = input.read_utf16_c_str::<LittleEndian>()?;
+        let key = input.read_le::<NullWideString>()?.into_string();
 
         let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
         if key_padding_size != 0 {
@@ -529,7 +529,7 @@ mod pe {
         let is_string_table = key == "StringFileInfo" || (key.len() == 8 && &key[4..8] == "04b0");
 
         match key.as_ref() {
-            "ProductName" => Ok(Some(input.read_utf16_c_str::<LittleEndian>()?)),
+            "ProductName" => Ok(Some(input.read_le::<NullWideString>()?.into_string())),
             "VS_VERSION_INFO" => {
                 input.skip((value_size + value_padding).into())?;
                 read_version_struct(input)

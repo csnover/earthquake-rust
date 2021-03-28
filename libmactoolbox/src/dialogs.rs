@@ -5,7 +5,7 @@
 use binrw::BinRead;
 use bitstream_io::{BigEndian, BitReader};
 use crate::Rect;
-use libcommon::SeekExt;
+use libcommon::{SeekExt, restore_on_error};
 
 #[derive(Clone, Copy, Debug)]
 struct Alert {
@@ -24,36 +24,38 @@ struct AlertStage {
 
 impl BinRead for Alert {
     type Args = ();
-    fn read_options<R: binrw::io::Read + binrw::io::Seek>(mut input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
-        let size = input.bytes_left()?;
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+        restore_on_error(reader, |mut input, _| {
+            let size = input.bytes_left()?;
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        let bounds_rect = Rect::read_options(input, &options, ())?;
-        let ditl_id = i16::read_options(input, &options, ())?;
-        let mut stages = [AlertStage::default(); 4];
+            let bounds_rect = Rect::read_options(input, &options, ())?;
+            let ditl_id = i16::read_options(input, &options, ())?;
+            let mut stages = [AlertStage::default(); 4];
 
-        {
-            let mut bits = BitReader::endian(&mut input, BigEndian);
+            {
+                let mut bits = BitReader::endian(&mut input, BigEndian);
 
-            for mut stage in &mut stages[..].iter_mut().rev() {
-                stage.bold_outline = bits.read_bit()?;
-                stage.draw_alert = bits.read_bit()?;
-                stage.beeps = bits.read(2)?;
+                for mut stage in &mut stages[..].iter_mut().rev() {
+                    stage.bold_outline = bits.read_bit()?;
+                    stage.draw_alert = bits.read_bit()?;
+                    stage.beeps = bits.read(2)?;
+                }
             }
-        }
 
-        let auto_position = if size > 12 {
-            Some(u16::read_options(input, &options, ())?)
-        } else {
-            None
-        };
+            let auto_position = if size > 12 {
+                Some(u16::read_options(input, &options, ())?)
+            } else {
+                None
+            };
 
-        Ok(Alert {
-            bounds_rect,
-            ditl_id,
-            stages,
-            auto_position,
+            Ok(Alert {
+                bounds_rect,
+                ditl_id,
+                stages,
+                auto_position,
+            })
         })
     }
 }
