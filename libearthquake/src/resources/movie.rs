@@ -3,7 +3,7 @@ use libmactoolbox::types::PString;
 use crate::pvec;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use libcommon::restore_on_error;
-use super::{List, cast::{MemberId, MemberNum}};
+use super::{StdList, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
 // MCsL
@@ -90,6 +90,6 @@ pub struct Cast {
 // The list of all cast members in the movie, sorted by the order in which they
 // first appear in the score. Internal cast members which are not in the score
 // are included at the end of the list.
-#[derive(BinRead, Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
+#[derive(BinRead, Clone, Debug, Deref, DerefMut, Index, IndexMut)]
 #[br(big)]
-pub struct CastScoreOrder(List<MemberId>);
+pub struct CastScoreOrder(StdList<MemberId>);

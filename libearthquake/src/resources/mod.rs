@@ -15,7 +15,7 @@ use binrw::{BinRead, derive_binread, io::{Read, Seek}};
 use bstr::BStr;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use libcommon::{SeekExt, TakeSeekExt};
-use std::{cmp, convert::{TryFrom, TryInto}};
+use std::{cmp, convert::{TryFrom, TryInto}, marker::PhantomData};
 
 /// A reference counted object with a vtable.
 ///
@@ -80,17 +80,22 @@ impl BinRead for ByteVec {
     }
 }
 
+pub trait ListHeader: BinRead<Args = ()> + Clone + Copy + core::fmt::Debug {
+    const SIZE: u16;
+
+    fn calc_size(&self) -> u64 {
+        u64::from(self.header_size()) + u64::from(self.item_size()) * u64::from(self.used())
+    }
+
+    fn header_size(&self) -> u16;
+
+    fn item_size(&self) -> u16;
+
+    fn used(&self) -> u32;
+}
+
 #[derive(BinRead, Clone, Copy, Debug)]
-#[br(import(size: u64))]
-#[br(assert(
-    size >= Self::calc_size(header_size, item_size, used),
-    "Bad List size ({} > {})", Self::calc_size(header_size, item_size, used), size)
-)]
-#[br(assert(
-    header_size == Self::SIZE,
-    "Generic List loader called on specialised List with header size {}", header_size
-))]
-struct ListHeaderV5 {
+pub struct ListHeaderV5 {
     __: Rc,
     used: u32,
     capacity: u32,
@@ -98,31 +103,69 @@ struct ListHeaderV5 {
     item_size: u16,
 }
 
-impl ListHeaderV5 {
+impl ListHeader for ListHeaderV5 {
     const SIZE: u16 = 0x14;
 
-    fn calc_size(header_size: u16, item_size: u16, used: u32) -> u64 {
-        u64::from(header_size) + u64::from(item_size) * u64::from(used)
+    fn header_size(&self) -> u16 {
+        self.header_size
+    }
+
+    fn used(&self) -> u32 {
+        self.used
+    }
+
+    fn item_size(&self) -> u16 {
+        self.item_size
     }
 }
 
-/// A growable list of homogeneous items.
+/// A growable list of homogeneous items with a generic header.
 #[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
-pub struct List<T: BinRead>(Vec<T>);
+pub struct List<Header: ListHeader, T: BinRead>(
+    #[deref] #[deref_mut] #[index] #[index_mut]
+    Vec<T>,
+    PhantomData<Header>
+);
 
-impl <T: BinRead> BinRead for List<T> {
+/// A standard growable list of homogenous items.
+pub type StdList<T> = List<ListHeaderV5, T>;
+
+impl <Header: ListHeader, T: BinRead> BinRead for List<Header, T> {
     type Args = T::Args;
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        let pos = input.pos()?;
         let size = input.bytes_left()?;
-        let header = ListHeaderV5::read_options(input, options, (size, ))?;
-        input.skip((header.header_size - ListHeaderV5::SIZE).into())?;
-        let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
-        let item_size = u64::from(header.item_size);
-        for _ in 0..header.used {
+        let header = Header::read_options(input, options, ())?;
+
+        if header.header_size() != Header::SIZE {
+            return Err(binrw::Error::AssertFail {
+                pos,
+                message: format!(
+                    "Incorrect List loader called on specialised List with header size {} (should be {})",
+                    header.header_size(),
+                    Header::SIZE,
+                )
+            });
+        }
+
+        let calculated_size = header.calc_size();
+        if size < calculated_size {
+            return Err(binrw::Error::AssertFail {
+                pos,
+                message: format!("Bad List size ({} > {})", calculated_size, size)
+            });
+        }
+
+        let item_size = u64::from(header.item_size());
+        let mut data = Vec::with_capacity(
+            usize::try_from(header.used()).unwrap() * core::mem::size_of::<T>()
+        );
+        for _ in 0..header.used() {
             data.push(T::read_options(&mut input.take_seek(item_size), options, args.clone())?);
         }
-        Ok(Self(data))
+
+        Ok(Self(data, PhantomData))
     }
 }
 
@@ -351,6 +394,25 @@ where
     value: T,
 }
 
+#[derive(BinRead, Clone, Copy, Debug)]
+pub struct DictListHeaderV5(#[br(pad_after = 8)] ListHeaderV5);
+
+impl ListHeader for DictListHeaderV5 {
+    const SIZE: u16 = 0x1c;
+
+    fn header_size(&self) -> u16 {
+        self.0.header_size
+    }
+
+    fn item_size(&self) -> u16 {
+        self.0.item_size
+    }
+
+    fn used(&self) -> u32 {
+        self.0.used
+    }
+}
+
 /// An ordered dictionary with case-insensitive keys.
 ///
 /// In Director, this keys are stored sorted case-insensitively (according
@@ -367,7 +429,7 @@ where
     T::Error: std::error::Error + Send + Sync + 'static,
 {
     #[index] #[index_mut]
-    list: List<DictItem<T>>,
+    list: List<DictListHeaderV5, DictItem<T>>,
     #[br(default)]
     keys: Option<ByteVec>,
 }
@@ -379,9 +441,12 @@ where
 {
     #[must_use]
     pub fn key_by_index(&self, index: usize) -> Option<&BStr> {
-        self.keys.as_ref().and_then(|keys| {
-            todo!()
-        })
+        let keys = self.keys.as_ref()?;
+        let offset = self.list.get(index)?.key_offset - usize::from(ByteVecHeaderV5::SIZE);
+        let size = usize::try_from(
+            u32::from_be_bytes(keys.get(offset..offset + 4)?.try_into().unwrap())
+        ).unwrap();
+        keys.get(offset + 4..offset + 4 + size).map(|b| b.into())
     }
 
     pub fn keys_mut(&mut self) -> &mut Option<ByteVec> {

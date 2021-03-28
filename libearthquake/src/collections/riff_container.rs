@@ -1,8 +1,8 @@
 use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use bstr::BStr;
-use crate::resources::{ByteVec, List};
-use libcommon::SeekExt;
+use crate::resources::{ByteVec, StdList};
+use libcommon::{Reader, SeekExt};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use smart_default::SmartDefault;
 use std::{io::{Read, Seek}, rc::Rc};
@@ -79,18 +79,20 @@ impl BinRead for Dict {
     type Args = ();
 
     fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        let mut options = *options;
+        options.endian = binrw::Endian::Big;
         let pos = input.pos()?;
         let size = input.bytes_left()?;
-        let (dict_size, keys_size) = <(u32, u32)>::read_options(input, options, args)?;
-        let actual_size = u64::from(dict_size + keys_size);
-        if actual_size > size {
+        let (dict_size, keys_size) = <(u32, u32)>::read_options(input, &options, args)?;
+        let expected_size = u64::from(dict_size + keys_size);
+        if expected_size > size {
             return Err(binrw::Error::AssertFail {
                 pos,
-                message: format!("Bad Dict size at {} ({} > {})", pos, actual_size, size)
+                message: format!("Bad Dict size at {} ({} > {})", pos, expected_size, size)
             });
         }
 
-        let (mut dict, keys) = <(InnerDict, ByteVec)>::read_options(input, options, args)?;
+        let (mut dict, keys) = <(InnerDict, ByteVec)>::read_options(input, &options, args)?;
         dict.keys_mut().replace(keys);
 
         Ok(Self(dict))
@@ -109,17 +111,17 @@ impl BinRead for Dict {
 /// Starting in Director 6 (TODO: maybe 7? check this), the container was
 /// extended to also include binary Xtras.
 #[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
-pub struct RiffContainer<T: binrw::io::Read + binrw::io::Seek> {
+pub struct RiffContainer<T: Reader> {
     riff: Rc<Riff<T>>,
     #[deref] #[deref_mut] #[index] #[index_mut]
-    file_list: List<ChunkFile>,
+    file_list: StdList<ChunkFile>,
     file_dict: Dict,
 }
 
-impl <T: binrw::io::Read + binrw::io::Seek> RiffContainer<T> {
+impl <T: Reader> RiffContainer<T> {
     pub fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
-        let file_list = riff.load_chunk::<List<ChunkFile>>(riff.first_of_kind(b"List")).context("Bad List chunk")?;
+        let file_list = riff.load_chunk::<StdList<ChunkFile>>(riff.first_of_kind(b"List")).context("Bad List chunk")?;
         let file_dict = riff.load_chunk::<Dict>(riff.first_of_kind(b"Dict")).context("Bad Dict chunk")?;
 
         Ok(Self {

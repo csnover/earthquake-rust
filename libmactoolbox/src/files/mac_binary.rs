@@ -113,7 +113,7 @@ impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
         let resource_fork_start = aligned_header_size + align_power_of_two(data_fork_size, BLOCK_SIZE);
         let resource_fork_end = resource_fork_start + BigEndian::read_u32(&header[87..]);
 
-        let input = SharedStream::from(data);
+        let input = SharedStream::substream_from(data);
         let data_fork = if data_fork_start == data_fork_end {
             None
         } else {

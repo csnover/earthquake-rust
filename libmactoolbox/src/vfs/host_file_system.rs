@@ -62,7 +62,7 @@ impl HostFileSystem {
     fn try_raw_files(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
         Ok((
             None::<PathBuf>,
-            Some(SharedStream::from(match kind {
+            Some(SharedStream::substream_from(match kind {
                 ForkKind::Data => File::open(&path)?,
                 ForkKind::Resource => open_resource_fork(&path)?,
             }))

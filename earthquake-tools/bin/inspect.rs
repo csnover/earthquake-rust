@@ -30,7 +30,7 @@ use libearthquake::{collections::{
         },
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
-use libcommon::SharedStream;
+use libcommon::{Reader, SharedStream};
 use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
 use pico_args::Arguments;
 use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::PathBuf, process::exit};
@@ -247,7 +247,7 @@ fn print_frame_sprites(frame: &Frame, fields: &[String]) {
     }
 }
 
-fn print_mac_resource<R: binrw::io::Read + binrw::io::Seek>(rom: &ResourceFile<R>, id: ResourceId) {
+fn print_mac_resource(rom: &ResourceFile<impl Reader>, id: ResourceId) {
     print_resource(id, rom.load::<Vec<u8>>(id).map_err(anyhow::Error::new));
 }
 
@@ -258,7 +258,7 @@ fn print_resource(id: ResourceId, result: AResult<impl std::fmt::Debug>) {
     }
 }
 
-fn print_riff_resource<R: binrw::io::Read + binrw::io::Seek>(riff: &Riff<R>, id: ResourceId) {
+fn print_riff_resource(riff: &Riff<impl Reader>, id: ResourceId) {
     print_resource(id, riff.load::<Vec<u8>>(id).map_err(anyhow::Error::new));
 }
 
@@ -302,13 +302,13 @@ fn main() -> AResult<()> {
     Ok(())
 }
 
-fn inspect_riff<R: binrw::io::Read + binrw::io::Seek>(stream: &mut R, options: &Options) -> AResult<()> {
+fn inspect_riff(stream: &mut impl Reader, options: &Options) -> AResult<()> {
     let riff = Riff::new(stream)?;
     inspect_riff_contents(&riff, options)?;
     Ok(())
 }
 
-fn inspect_riff_contents<R: binrw::io::Read + binrw::io::Seek>(riff: &Riff<R>, options: &Options) -> AResult<()> {
+fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult<()> {
     let config_id = if riff.contains((b"VWCF", 1024)) {
         Some(ResourceId::new(b"VWCF", 1024))
     } else if riff.contains((b"DRCF", 1024)) {
@@ -387,7 +387,7 @@ fn inspect_riff_contents<R: binrw::io::Read + binrw::io::Seek>(riff: &Riff<R>, o
     Ok(())
 }
 
-fn inspect_riff_container<R: binrw::io::Read + binrw::io::Seek>(stream: R, options: &Options) -> AResult<()> {
+fn inspect_riff_container(stream: impl Reader, options: &Options) -> AResult<()> {
     let riff_container = RiffContainer::new(stream)?;
     for index in 0..riff_container.len() {
         println!("\nFile {}: {}", index + 1, riff_container.filename(index).unwrap());
@@ -441,7 +441,7 @@ fn print_score(options: &Options, source: &impl ResourceSource) {
     }
 }
 
-fn read_embedded_movie<R: binrw::io::Read + binrw::io::Seek>(num_movies: u16, stream: R, options: &Options) -> AResult<()> {
+fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) -> AResult<()> {
     let rom = ResourceFile::new(stream)?;
 
     if options.print_config() {
@@ -483,7 +483,7 @@ fn read_file(filename: &str, options: &Options) -> AResult<()> {
     let Detection { info, resource_fork, data_fork } = detect(&fs, filename)?;
 
     if options.detect() {
-        println!("{:?}", info);
+        println!("{:#?}", info);
     }
 
     match info {
@@ -500,16 +500,16 @@ fn read_file(filename: &str, options: &Options) -> AResult<()> {
     }
 }
 
-fn read_movie<R: binrw::io::Read + binrw::io::Seek>(info: &MovieDetectionInfo, mut stream: R, options: &Options) -> AResult<()> {
+fn read_movie(info: &MovieDetectionInfo, mut stream: impl Reader, options: &Options) -> AResult<()> {
     match info.kind() {
         MovieKind::Movie | MovieKind::Cast => inspect_riff(&mut stream, options),
         MovieKind::Accelerator | MovieKind::Embedded => read_embedded_movie(1, stream, options),
     }
 }
 
-fn read_projector<R: binrw::io::Read + binrw::io::Seek>(
+fn read_projector(
     info: &ProjectorDetectionInfo,
-    mut stream: R,
+    mut stream: impl Reader,
     options: &Options
 ) -> AResult<()> {
     match info.movie() {

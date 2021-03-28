@@ -124,6 +124,8 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
             return Err(ResourceError::FileTooSmall(file_size, min_file_size));
         }
 
+        data.seek(SeekFrom::Start(header.map_offset.into()))?;
+
         let resource_map = ResourceMap::read(data.by_ref())?;
 
         Ok(Self {
@@ -345,13 +347,12 @@ struct ResourceMap {
     #[br(pad_before(2), calc = RefNum(REF_NUM.fetch_add(1, Ordering::Relaxed)))]
     ref_num: RefNum,
     _attributes: i16,
+    #[br(assert(type_list_offset >= 28))]
     type_list_offset: u16,
     name_list_offset: u16,
     #[br(map = |count: i16| count + 1)]
     #[br(assert(count < 2727, ResourceError::BadMapKindCount(count)))]
     count: i16,
-    // TODO: Must assert here that the type_list_offset is >= 28; if it is not
-    // this is not a valid resource file
     #[br(args(data_offset, map_offset), count(count), offset(u64::from(type_list_offset) - 28))]
     kinds: Vec<ResourceKind>,
     #[br(count(map_size - u32::from(name_list_offset)), seek_before(SeekFrom::Start((map_offset + u32::from(name_list_offset)).into())))]

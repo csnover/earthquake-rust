@@ -1,8 +1,10 @@
 #![allow(clippy::struct_excessive_bools)]
 
 use anyhow::{Context, Result as AResult};
+use binrw::BinRead;
+use core::convert::TryInto;
 use crate::{bail_sample, ensure_sample};
-use derive_more::Deref;
+use libcommon::SeekExt;
 use super::{
     projector::{
         MacCPU,
@@ -11,125 +13,6 @@ use super::{
     },
     Version,
 };
-
-#[derive(Clone, Copy, Debug)]
-/// The strategy used when there is not enough memory to load an accelerator
-/// into memory.
-/// TODO: The existence of this configuration option makes absolutely no sense
-/// to me. Why would you ever not want to load in chunks?
-pub enum AccelMode {
-    /// Play only the part of the accelerator which fits in memory.
-    FillMemory,
-
-    /// Load into memory frame by frame.
-    Frame,
-
-    /// Load into memory in chunks.
-    Chunk,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum D3PlatformSettings {
-    Mac {
-        /// Playback of the first movie will not begin until the mouse is
-        /// clicked? TODO: Verify what this actually does. It does not seem to
-        /// be exposed to Lingo, so it may not be necessary to store this, since
-        /// it is not a desirable behaviour except by user configuration.
-        wait_for_click: bool,
-
-        /// The loading strategy used for Accelerator files.
-        /// TODO: Is this actually needed? We can pick our own playback
-        /// strategy.
-        accel_mode: AccelMode,
-    },
-
-    Win {
-        /// Hide the desktop in windowed mode.
-        hide_desktop: bool,
-    },
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct D3Settings {
-    /// Loop movies instead of exiting after the last movie is finished
-    /// playing.
-    loop_playback: bool,
-
-    /// Movies are external to the projector instead of being embedded.
-    /// TODO: Is this actually needed? We store the movie list separately
-    /// in an enum which already says if it is external or not.
-    use_external_files: bool,
-
-    /// Platform-specific Director 3 settings.
-    per_platform: D3PlatformSettings,
-}
-
-impl D3Settings {
-    #[must_use]
-    pub fn use_external_files(self) -> bool {
-        self.use_external_files
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct D4Settings {
-    /// Center the stage on the screen instead of putting it at the top-left
-    /// corner. This value is exposed by Lingo, so it has to be stored for
-    /// compatibility.
-    center_stage_on_screen: bool,
-
-    /// All movies in the playlist of the projector will be played in sequence,
-    /// instead of only the first movie.
-    play_every_movie: bool,
-
-    /// Continue playing the movie when the window is not focused.
-    /// TODO: This is not exposed to Lingo and is something that, at most, users
-    /// should be specifying instead of the projector.
-    play_in_background: bool,
-
-    /// Show the title bar of the movie in windowed mode.
-    /// TODO: This may not be exposed to Lingo; check the behaviour of the
-    /// titleVisible property to see if it exposes this configuration or not. If
-    /// it is not exposed, this should not be stored, since title bars should
-    /// always exist for windowed projectors.
-    show_title_bar: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deref)]
-pub struct D5Settings {
-    #[deref]
-    base: D4Settings,
-
-    /// The projector was created using optimisation which creates duplicate
-    /// cast members.
-    /// TODO: This is not exposed to Lingo, so it may not be necessary to
-    /// store this.
-    duplicate_cast: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deref)]
-pub struct D6Settings {
-    #[deref]
-    base: D4Settings,
-
-    /// The movie in the projector has been compressed.
-    compressed: bool,
-
-    /// Movie Xtras have been processed and added to the projector.
-    has_xtras: bool,
-
-    /// Xtras for connecting to the internet have been added to the
-    /// projector.
-    has_network_xtras: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum PerVersionSettings {
-    D3(D3Settings),
-    D4(D4Settings),
-    D5(D5Settings),
-    D6(D6Settings),
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProjectorSettings {
@@ -150,32 +33,379 @@ pub struct ProjectorSettings {
     /// since this is not exposed by Lingo.
     full_screen: bool,
 
-    /// Director-version—specific settings.
-    per_version: PerVersionSettings,
+    /// Loop movies instead of exiting after the last movie is finished
+    /// playing.
+    ///
+    /// Used only by Director 3.
+    loop_playback: bool,
+
+    /// Playback of the first movie will not begin until the mouse is
+    /// clicked? TODO: Verify what this actually does. It does not seem to
+    /// be exposed to Lingo, so it may not be necessary to store this, since
+    /// it is not a desirable behaviour except by user configuration.
+    ///
+    /// Used only by Director 3.
+    wait_for_click: bool,
+
+    /// Movies are external to the projector instead of being embedded.
+    /// TODO: Is this actually needed? We store the movie list separately
+    /// in an enum which already says if it is external or not.
+    ///
+    /// Used only by Director 3.
+    use_external_files: bool,
+
+    /// The number of movies in the projector.
+    ///
+    /// Used only by Director 3.
+    num_movies: u16,
+
+    // TODO: Seems like some pre-release version of Director 4
+    // created projectors with no PJxx in the data fork. In these
+    // ones the CPU flag appears to always be zero. Then before GM
+    // they added the CPU flag and PJxx in the data fork. Based on
+    // the corresponding structure in the Windows projectors, this
+    // extra data is probably:
+    //
+    // 4 - "PJxx"
+    // 4 - RIFF offset
+    //
+    // and then different by version:
+    //
+    // D4 (PJ93):
+    // 4x9 - fixed driver offsets?
+    // <PPC executable>
+    //
+    // D5+ (PJ95, PJ97, PJ00, etc.):
+    // 4  - num drivers
+    // 4  - num drivers to skip
+    // .. - drivers
+    // <PPC executable>
+    /// Used only in Director 4 Mac?
+    has_extended_data_fork: bool,
+
+    /// Center the stage on the screen instead of putting it at the top-left
+    /// corner. This value is exposed by Lingo, so it has to be stored for
+    /// compatibility.
+    ///
+    /// New in Director 4.
+    center_stage_on_screen: bool,
+
+    /// All movies in the playlist of the projector will be played in sequence,
+    /// instead of only the first movie.
+    ///
+    /// New in Director 4.
+    play_every_movie: bool,
+
+    /// The projector was created using optimisation which creates duplicate
+    /// cast members.
+    /// TODO: This is not exposed to Lingo, so it may not be necessary to
+    /// store this.
+    ///
+    /// Used only in Director 5.
+    duplicate_cast: bool,
+
+    /// The movie in the projector has been compressed.
+    ///
+    /// New in Director 6.
+    compressed: bool,
+
+    /// Movie Xtras have been processed and added to the projector.
+    ///
+    /// New in Director 6.
+    has_xtras: bool,
+
+    /// Xtras for connecting to the internet have been added to the
+    /// projector.
+    ///
+    /// New in Director 6.
+    has_network_xtras: bool,
 }
 
 impl ProjectorSettings {
     #[must_use]
-    pub fn d3(&self) -> Option<&D3Settings> {
-        if let PerVersionSettings::D3(settings) = &self.per_version {
-            Some(settings)
-        } else {
-            None
-        }
+    pub fn has_extended_data_fork(&self) -> bool {
+        self.has_extended_data_fork
     }
 
-    pub(super) fn parse_mac(version: Version, bits: &[u8]) -> AResult<Self> {
-        if version == Version::D3 {
-            return Self::parse_d3_mac(bits);
-        }
+    #[must_use]
+    pub fn num_movies(&self) -> u16 {
+        self.num_movies
+    }
 
+    #[must_use]
+    pub fn platform(&self) -> Platform {
+        self.platform
+    }
+
+    #[must_use]
+    pub fn use_external_files(&self) -> bool {
+        self.use_external_files
+    }
+}
+
+impl BinRead for ProjectorSettings {
+    type Args = (Version, Platform);
+
+    fn read_options<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
+        _: &binrw::ReadOptions,
+        (version, platform): Self::Args,
+    ) -> binrw::BinResult<Self> {
+        let pos = reader.pos()?;
+        let mut bits = Vec::with_capacity(reader.bytes_left()?.try_into().unwrap());
+        reader.read_to_end(&mut bits)?;
+
+        match version {
+            Version::D3 => if matches!(platform, Platform::Mac(..)) {
+                D3Settings::from_bits_mac(&bits)
+            } else {
+                D3Settings::from_bits_win(&bits)
+            }.map(Self::from),
+            Version::D4 | Version::D5 | Version::D6 => match platform {
+                platform @ Platform::Win(..) => D6Settings::from_bits_win(&bits, version, platform),
+                Platform::Mac(..) => D6Settings::from_bits_mac(&bits, version)
+            }.map(Self::from),
+            Version::D7 => todo!("D7 projector settings parser"),
+        }
+        .map_err(|err| binrw::Error::Custom {
+            pos,
+            err: Box::new(err),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+/// The strategy used when there is not enough memory to load an accelerator
+/// into memory.
+/// TODO: The existence of this configuration option makes absolutely no sense
+/// to me. Why would you ever not want to load in chunks?
+pub enum AccelMode {
+    /// Play only the part of the accelerator which fits in memory.
+    FillMemory,
+
+    /// Load into memory frame by frame.
+    Frame,
+
+    /// Load into memory in chunks.
+    Chunk,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct D3Settings {
+    /// Resize the stage when a new movie plays instead of keeping the
+    /// stage the same size as the first movie.
+    resize_stage: bool,
+
+    /// Change the system colour depth. We do not do this, but this value is
+    /// exposed by Lingo, so it has to be stored for compatibility.
+    switch_color_depth: bool,
+
+    /// The original platform of the projector. This value is exposed by Lingo,
+    /// so it has to be stored for compatibility.
+    platform: Platform,
+
+    /// Run the projector in full screen mode by default.
+    /// TODO: Probably we want to ignore this setting and let the user choose,
+    /// since this is not exposed by Lingo.
+    full_screen: bool,
+
+    /// Loop movies instead of exiting after the last movie is finished
+    /// playing.
+    loop_playback: bool,
+
+    /// Movies are external to the projector instead of being embedded.
+    /// TODO: Is this actually needed? We store the movie list separately
+    /// in an enum which already says if it is external or not.
+    use_external_files: bool,
+
+    /// The number of movies embedded in the projector.
+    num_movies: u16,
+
+    /// Playback of the first movie will not begin until the mouse is
+    /// clicked?
+    ///
+    /// Mac only.
+    /// TODO: Verify what this actually does. It does not seem to
+    /// be exposed to Lingo, so it may not be necessary to store this, since
+    /// it is not a desirable behaviour except by user configuration.
+    wait_for_click: bool,
+
+    /// The loading strategy used for Accelerator files.
+    ///
+    /// Mac only.
+    /// TODO: Is this actually needed? We can pick our own playback
+    /// strategy.
+    accel_mode: AccelMode,
+
+    /// Hide the desktop in windowed mode.
+    ///
+    /// Windows only.
+    hide_desktop: bool,
+}
+
+impl From<D3Settings> for ProjectorSettings {
+    fn from(other: D3Settings) -> Self {
+        Self {
+            resize_stage: other.resize_stage,
+            switch_color_depth: other.switch_color_depth,
+            platform: other.platform,
+            full_screen: other.full_screen,
+            loop_playback: other.loop_playback,
+            use_external_files: other.use_external_files,
+            num_movies: other.num_movies,
+            wait_for_click: other.wait_for_click,
+            has_extended_data_fork: false,
+            center_stage_on_screen: false,
+            play_every_movie: true,
+            duplicate_cast: false,
+            compressed: false,
+            has_xtras: false,
+            has_network_xtras: false,
+        }
+    }
+}
+
+impl D3Settings {
+    fn from_bits_mac(bits: &[u8]) -> AResult<Self> {
+        // Sanity check: these bits cannot normally be changed by an author
+        // This is 1 in GADGET. ensure_sample!(bits[0] == 0, "D3Mac PJst byte 0");
+        ensure_sample!(bits[11] == 0, "Unexpected D3Mac PJst byte 11");
+
+        Ok(Self {
+            resize_stage:       bits[2] & 1 != 0,
+            switch_color_depth: bits[3] & 1 != 0,
+            platform:           Platform::Mac(MacCPU::M68K),
+            full_screen:        false,
+            loop_playback:      bits[1] & 1 != 0,
+            use_external_files: bits[4] & 1 != 0,
+            num_movies:         u16::from_be_bytes((&bits[6..8]).try_into().unwrap()),
+            wait_for_click:     bits[5] & 1 == 0,
+            accel_mode:         match bits[10] {
+                1 => AccelMode::FillMemory,
+                2 => AccelMode::Frame,
+                3 => AccelMode::Chunk,
+                mode => bail_sample!("Unknown accel mode {}", mode),
+            },
+            hide_desktop: false,
+        })
+    }
+
+    fn from_bits_win(bits: &[u8]) -> AResult<Self> {
+        Ok(Self {
+            resize_stage:       false,
+            switch_color_depth: false,
+            full_screen:        bits[2] & 1 == 0,
+            platform:           Platform::Win(WinVersion::Win3),
+            loop_playback:      bits[3] & 1 != 0,
+            use_external_files: bits[5] & 1 != 0,
+            num_movies:         u16::from_le_bytes((&bits[0..2]).try_into().unwrap()),
+            hide_desktop:       bits[5] & 4 != 0,
+            wait_for_click:     false,
+            accel_mode:         AccelMode::Chunk,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct D6Settings {
+    /// Resize the stage when a new movie plays instead of keeping the
+    /// stage the same size as the first movie.
+    resize_stage: bool,
+
+    /// Change the system colour depth. We do not do this, but this value is
+    /// exposed by Lingo, so it has to be stored for compatibility.
+    switch_color_depth: bool,
+
+    /// The original platform of the projector. This value is exposed by Lingo,
+    /// so it has to be stored for compatibility.
+    platform: Platform,
+
+    /// Run the projector in full screen mode by default.
+    /// TODO: Probably we want to ignore this setting and let the user choose,
+    /// since this is not exposed by Lingo.
+    full_screen: bool,
+
+    /// Center the stage on the screen instead of putting it at the top-left
+    /// corner. This value is exposed by Lingo, so it has to be stored for
+    /// compatibility.
+    center_stage_on_screen: bool,
+
+    /// All movies in the playlist of the projector will be played in sequence,
+    /// instead of only the first movie.
+    play_every_movie: bool,
+
+    /// Continue playing the movie when the window is not focused.
+    /// TODO: This is not exposed to Lingo and is something that, at most, users
+    /// should be specifying instead of the projector.
+    play_in_background: bool,
+
+    /// Show the title bar of the movie in windowed mode.
+    ///
+    /// Windows only.
+    /// TODO: This may not be exposed to Lingo; check the behaviour of the
+    /// titleVisible property to see if it exposes this configuration or not. If
+    /// it is not exposed, this should not be stored, since title bars should
+    /// always exist for windowed projectors.
+    show_title_bar: bool,
+
+    /// Added in Mac Director 4.
+    has_extended_data_fork: bool,
+
+    /// The projector was created using optimisation which creates duplicate
+    /// cast members.
+    ///
+    /// Used only by Director 5.
+    /// TODO: This is not exposed to Lingo, so it may not be necessary to
+    /// store this.
+    duplicate_cast: bool,
+
+    /// The movie in the projector has been compressed.
+    ///
+    /// Added in Director 6.
+    compressed: bool,
+
+    /// Movie Xtras have been processed and added to the projector.
+    ///
+    /// Added in Director 6.
+    has_xtras: bool,
+
+    /// Xtras for connecting to the internet have been added to the
+    /// projector.
+    ///
+    /// Added in Director 6.
+    has_network_xtras: bool,
+}
+
+impl From<D6Settings> for ProjectorSettings {
+    fn from(other: D6Settings) -> Self {
+        Self {
+            resize_stage: other.resize_stage,
+            switch_color_depth: other.switch_color_depth,
+            platform: other.platform,
+            full_screen: other.full_screen,
+            loop_playback: false,
+            use_external_files: false,
+            num_movies: 0,
+            wait_for_click: false,
+            has_extended_data_fork: other.has_extended_data_fork,
+            center_stage_on_screen: other.center_stage_on_screen,
+            play_every_movie: other.play_every_movie,
+            duplicate_cast: other.duplicate_cast,
+            compressed: other.compressed,
+            has_xtras: other.has_xtras,
+            has_network_xtras: other.has_network_xtras,
+        }
+    }
+}
+
+impl D6Settings {
+    fn from_bits_mac(bits: &[u8], version: Version) -> AResult<Self> {
         // Sanity check: these bits cannot normally be changed by an author
         // (but may be different for Education editions)
         ensure_sample!(bits[0..=1] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 0-1");
         ensure_sample!(bits[4..=5] == [ 0; 2 ], "Unexpected D4+Mac PJst bytes 4-5");
         ensure_sample!(bits[8] == 0, "Unexpected D4+Mac PJst byte 8");
         match version {
-            Version::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
             Version::D4 => {
                 // TODO: This is 0x14 for the post-release D4 and 0x04 in the
                 // pre-release D4.
@@ -188,7 +418,7 @@ impl ProjectorSettings {
             Version::D6 => {
                 ensure_sample!(bits[6] & 0x24 == 0x24, "Unexpected D6Mac PJst byte 6");
             },
-            Version::D7 => todo!("D7Mac projector settings parser"),
+            Version::D3 | Version::D7 => unreachable!(),
         }
 
         let cpu = if bits[7] == 0 {
@@ -206,64 +436,56 @@ impl ProjectorSettings {
         let play_in_background     = bits[2] & 1 != 0;
         let show_title_bar         = false;
         let platform               = Platform::Mac(cpu);
+        let has_extended_data_fork = bits[7] != 0;
+        let full_screen;
+        let duplicate_cast;
+        let compressed;
+        let has_xtras;
+        let has_network_xtras;
 
-        Ok(match version {
-            Version::D3 => unreachable!("D3 has incompatible projector settings and is parsed separately"),
+        match version {
             Version::D4 => {
-                Self {
-                    resize_stage,
-                    switch_color_depth,
-                    platform,
-                    full_screen: false,
-                    per_version: PerVersionSettings::D4(D4Settings {
-                        center_stage_on_screen,
-                        play_every_movie,
-                        play_in_background,
-                        show_title_bar,
-                    }),
-                }
+                full_screen = false;
+                duplicate_cast = false;
+                compressed = false;
+                has_xtras = false;
+                has_network_xtras = false;
             },
             Version::D5 => {
-                Self {
-                    resize_stage,
-                    switch_color_depth,
-                    platform,
-                    full_screen: bits[6] & 2 != 0,
-                    per_version: PerVersionSettings::D5(D5Settings {
-                        base: D4Settings {
-                            center_stage_on_screen,
-                            play_every_movie,
-                            play_in_background,
-                            show_title_bar,
-                        },
-                        duplicate_cast: bits[6] & 1 != 0,
-                    }),
-                }
+                full_screen = bits[6] & 2 != 0;
+                duplicate_cast = bits[6] & 1 != 0;
+                compressed = false;
+                has_xtras = false;
+                has_network_xtras = false;
             },
             Version::D6 => {
-                Self {
-                    resize_stage,
-                    switch_color_depth,
-                    platform,
-                    full_screen: bits[6] & 2 != 0,
-                    per_version: PerVersionSettings::D6(D6Settings {
-                        base: D4Settings {
-                            center_stage_on_screen,
-                            play_every_movie,
-                            play_in_background,
-                            show_title_bar,
-                        },
-                        compressed: bits[6] & 1 != 0,
-                        has_xtras: bits[6] & 0x80 != 0,
-                        has_network_xtras: bits[6] & 0x40 != 0,
-                    }),
-                }
+                full_screen = bits[6] & 2 != 0;
+                duplicate_cast = false;
+                compressed = bits[6] & 1 != 0;
+                has_xtras = bits[6] & 0x80 != 0;
+                has_network_xtras = bits[6] & 0x40 != 0;
             },
-            Version::D7 => todo!("D7Mac projector settings parser"),
+            Version::D3 | Version::D7 => unreachable!(),
+        }
+
+        Ok(Self {
+            resize_stage,
+            switch_color_depth,
+            platform,
+            full_screen,
+            center_stage_on_screen,
+            play_every_movie,
+            play_in_background,
+            has_extended_data_fork,
+            show_title_bar,
+            duplicate_cast,
+            compressed,
+            has_xtras,
+            has_network_xtras,
         })
     }
 
-    pub(crate) fn parse_win(version: Version, platform: Platform, bits: &[u8]) -> AResult<Self> {
+    fn from_bits_win(bits: &[u8], version: Version, platform: Platform) -> AResult<Self> {
         // Sanity check: these bits cannot normally be changed by an author
         match version {
             Version::D3 => {
@@ -287,104 +509,59 @@ impl ProjectorSettings {
                 ensure_sample!(bits[0] & 0x20 != 0, "Unexpected D6Win PJ95 byte 0");
                 ensure_sample!(bits[5..=11] == [ 0; 7 ], "Unexpected D6Win PJ95 bytes 5-11");
             },
-            Version::D7 => todo!("D7Win projector settings parser"),
+            Version::D7 => unreachable!(),
         }
 
         Ok(match version {
-            Version::D3 => Self {
-                resize_stage: false,
-                switch_color_depth: false,
-                full_screen: bits[2] & 1 == 0,
-                platform: Platform::Win(WinVersion::Win3),
-
-                per_version: PerVersionSettings::D3(D3Settings {
-                    loop_playback: bits[3] & 1 != 0,
-                    use_external_files: bits[5] & 1 != 0,
-
-                    per_platform: D3PlatformSettings::Win {
-                        hide_desktop: bits[5] & 4 != 0,
-                    },
-                }),
-            },
             Version::D4 => Self {
                 resize_stage:           bits[0] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 8 != 0,
                 platform:               Platform::Win(WinVersion::Win3),
-                per_version: PerVersionSettings::D4(D4Settings {
-                    center_stage_on_screen: true,
-                    play_every_movie:       bits[0] & 1 != 0,
-                    play_in_background:     bits[0] & 2 != 0,
-                    show_title_bar:         bits[0] & 0x10 != 0,
-                }),
+                center_stage_on_screen: true,
+                play_every_movie:       bits[0] & 1 != 0,
+                play_in_background:     bits[0] & 2 != 0,
+                has_extended_data_fork: false,
+                show_title_bar:         bits[0] & 0x10 != 0,
+                duplicate_cast:         false,
+                compressed:             false,
+                has_xtras:              false,
+                has_network_xtras:      false,
             },
             Version::D5 => Self {
                 resize_stage:           bits[4] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
                 platform,
-                per_version: PerVersionSettings::D5(D5Settings {
-                    base: D4Settings {
-                        center_stage_on_screen: true,
-                        play_every_movie:       bits[4] & 1 != 0,
-                        play_in_background:     bits[4] & 2 != 0,
-                        show_title_bar:         bits[4] & 8 != 0,
-                    },
-                    duplicate_cast:         bits[0] & 1 != 0,
-                }),
+                center_stage_on_screen: true,
+                play_every_movie:       bits[4] & 1 != 0,
+                play_in_background:     bits[4] & 2 != 0,
+                has_extended_data_fork: false,
+                show_title_bar:         bits[4] & 8 != 0,
+                duplicate_cast:         bits[0] & 1 != 0,
+                compressed:             false,
+                has_xtras:              false,
+                has_network_xtras:      false,
             },
             Version::D6 => Self {
                 resize_stage:           bits[4] & 4 != 0,
                 switch_color_depth:     false,
                 full_screen:            bits[0] & 2 != 0,
                 platform,
-                per_version: PerVersionSettings::D6(D6Settings {
-                    base: D4Settings {
-                        center_stage_on_screen: true,
-                        play_every_movie:       bits[4] & 1 != 0,
-                        play_in_background:     bits[4] & 2 != 0,
-                        // different from D5 starting here
-                        show_title_bar:         bits[4] & 8 != 0,
-                    },
-                    compressed:             bits[0] & 1 != 0,
-                    // TODO: Other bytes are 0xff when this is enabled; not sure
-                    // if this is garbage or actually has significance
-                    has_xtras:              bits[0] & 0x80 != 0,
-                    has_network_xtras:      bits[0] & 0x40 != 0,
-                }),
+                center_stage_on_screen: true,
+                play_every_movie:       bits[4] & 1 != 0,
+                play_in_background:     bits[4] & 2 != 0,
+                has_extended_data_fork: false,
+                // different from D5 starting here
+                duplicate_cast:         false,
+                show_title_bar:         bits[4] & 8 != 0,
+                compressed:             bits[0] & 1 != 0,
+                // TODO: Other bytes are 0xff when this is enabled; not sure
+                // if this is garbage or actually has significance
+                has_xtras:              bits[0] & 0x80 != 0,
+                has_network_xtras:      bits[0] & 0x40 != 0,
             },
-            Version::D7 => todo!("D7Win projector settings parser"),
-        })
-    }
-
-    #[must_use]
-    pub fn platform(&self) -> Platform {
-        self.platform
-    }
-
-    fn parse_d3_mac(bits: &[u8]) -> AResult<Self> {
-        // Sanity check: these bits cannot normally be changed by an author
-        // This is 1 in GADGET. ensure_sample!(bits[0] == 0, "D3Mac PJst byte 0");
-        ensure_sample!(bits[11] == 0, "Unexpected D3Mac PJst byte 11");
-
-        Ok(Self {
-            resize_stage:       bits[2] & 1 != 0,
-            switch_color_depth: bits[3] & 1 != 0,
-            platform:           Platform::Mac(MacCPU::M68K),
-            full_screen:        false,
-            per_version: PerVersionSettings::D3(D3Settings {
-                loop_playback:      bits[1] & 1 != 0,
-                use_external_files: bits[4] & 1 != 0,
-                per_platform: D3PlatformSettings::Mac {
-                    wait_for_click:     bits[5] & 1 == 0,
-                    accel_mode:         match bits[10] {
-                        1 => AccelMode::FillMemory,
-                        2 => AccelMode::Frame,
-                        3 => AccelMode::Chunk,
-                        mode => bail_sample!("Unknown accel mode {}", mode),
-                    },
-                },
-            }),
+            Version::D3 | Version::D7 => todo!("D7Win projector settings parser"),
         })
     }
 }

@@ -22,26 +22,26 @@ impl<T> SharedStream<T> where T: Read + Seek {
     }
 }
 
-// TODO: This is hella questionable
-impl<T> From<Inner<T>> for SharedStream<T> where T: Read + Seek {
-    fn from(input: Inner<T>) -> Self {
-        let (start_pos, end_pos) = {
-            let mut input = input.borrow_mut();
-            (input.pos().unwrap(), input.len().unwrap())
-        };
+impl<T> SharedStream<T> where T: Read + Seek {
+    /// Creates a new `SharedStream` from the given input, using the full range
+    /// of the input stream and setting the current position to the input’s
+    /// current position.
+    pub fn new(mut input: T) -> Self {
+        let current_pos = input.pos().unwrap();
+        let end_pos = input.len().unwrap();
 
         Self {
-            inner: input,
-            start_pos,
-            current_pos: start_pos,
+            inner: Rc::new(RefCell::new(input)),
+            start_pos: 0,
+            current_pos,
             end_pos,
         }
     }
-}
 
-// TODO: This is hella questionable
-impl<T> From<T> for SharedStream<T> where T: Read + Seek {
-    fn from(mut input: T) -> Self {
+    /// Creates a new `SharedStream` from the given input, bounding the new
+    /// stream using the current position of the input stream as the start
+    /// position.
+    pub fn substream_from(mut input: T) -> Self {
         let start_pos = input.pos().unwrap();
         let end_pos = input.len().unwrap();
 
@@ -52,18 +52,9 @@ impl<T> From<T> for SharedStream<T> where T: Read + Seek {
             end_pos,
         }
     }
-}
 
-impl<T> SharedStream<T> where T: Read + Seek {
-    pub fn new(mut input: T) -> Self {
-        Self {
-            start_pos: 0,
-            current_pos: input.pos().unwrap(),
-            end_pos: input.len().unwrap(),
-            inner: Rc::new(RefCell::new(input)),
-        }
-    }
-
+    /// Creates a new `SharedStream` from the given input, bounding the new
+    /// stream with the given start and end position.
     pub fn with_bounds(input: T, start_pos: u64, end_pos: u64) -> Self {
         Self {
             inner: Rc::new(RefCell::new(input)),
@@ -103,11 +94,15 @@ impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
             Err(err) => return Err(Error::new(ErrorKind::Other, err))
         };
         inner.seek(SeekFrom::Start(self.current_pos))?;
-        let n = if self.current_pos + u64::try_from(buf.len()).unwrap() > self.end_pos {
-            inner.read(&mut buf[0..usize::try_from(self.end_pos - self.current_pos).unwrap()])?
-        } else {
-            inner.read(buf)?
-        };
+        let limit = usize::try_from(self.end_pos.saturating_sub(self.current_pos)).unwrap();
+
+        // Don't call into inner reader at all at EOF because it may still block
+        if limit == 0 {
+            return Ok(0);
+        }
+
+        let max = core::cmp::min(buf.len(), limit);
+        let n = inner.read(&mut buf[0..max])?;
         self.current_pos += u64::try_from(n).unwrap();
         Ok(n)
     }

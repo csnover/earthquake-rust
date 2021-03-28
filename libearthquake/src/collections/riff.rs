@@ -10,7 +10,7 @@ use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
 use derive_more::{Constructor, Deref, DerefMut, Display};
-use libcommon::{SeekExt, SharedStream, TakeSeekExt, newtype_num};
+use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
 use libmactoolbox::{OSType, OSTypeReadExt, ResourceError, ResourceId, ResourceResult, ResourceSource};
 use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, rc::{Rc, Weak}};
 
@@ -80,13 +80,13 @@ newtype_num! {
 
 #[derive(Debug, Display)]
 #[display(fmt = "{} -> chunk {}", id, chunk_index)]
-pub struct Iter<'a, T: Read + Seek> {
+pub struct Iter<'a, T: Reader> {
     id: ResourceId,
     owner: &'a Riff<T>,
     chunk_index: ChunkIndex,
 }
 
-impl<'a, T: Read + Seek> Iter<'a, T> {
+impl<'a, T: Reader> Iter<'a, T> {
     #[must_use]
     pub fn id(&self) -> ResourceId {
         self.id
@@ -116,7 +116,7 @@ impl<'a, T: Read + Seek> Iter<'a, T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Riff<T: Read + Seek> {
+pub struct Riff<T: Reader> {
     // TODO: This is needed to convert a Riff chunk back to its owner filename,
     // but not enough information is recorded currently to actually do this.
     id: Identity,
@@ -134,7 +134,7 @@ pub struct Riff<T: Read + Seek> {
     info: DetectionInfo,
 }
 
-impl<T: Read + Seek> Riff<T> {
+impl<T: Reader> Riff<T> {
     pub fn new(input: T) -> RiffResult<Self> {
         Self::with_identity(Identity::Parent, SharedStream::new(input))
     }
@@ -469,7 +469,7 @@ impl<T: Read + Seek> Riff<T> {
     }
 }
 
-impl <T: Read + Seek> ResourceSource for Riff<T> {
+impl <T: Reader> ResourceSource for Riff<T> {
     fn contains(&self, id: impl Into<ResourceId>) -> bool {
         self.resource_map.get(&id.into()).is_some()
     }

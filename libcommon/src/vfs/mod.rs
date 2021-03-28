@@ -1,4 +1,5 @@
 use anyhow::Result as AResult;
+use crate::Reader;
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12,7 +13,7 @@ pub trait VirtualFileSystem {
     fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>>;
 }
 
-pub trait VirtualFile : binrw::io::Read + binrw::io::Seek + core::fmt::Debug {
+pub trait VirtualFile : Reader {
     /// The original name of the file, which may come from internal file
     /// metadata.
     fn name(&self) -> Option<&Path> {

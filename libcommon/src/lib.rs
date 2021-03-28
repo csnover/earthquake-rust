@@ -24,9 +24,8 @@ pub mod vfs;
 pub use shared_stream::SharedStream;
 
 use anyhow::{anyhow, Context, Error as AError, Result as AResult};
-use binrw::BinRead;
+use binrw::{BinRead, io};
 use core::{cmp, convert::{TryFrom, TryInto}};
-use std::io;
 
 pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> AResult<T> {
     for error in chained_error.chain() {
@@ -36,13 +35,16 @@ pub fn flatten_errors<T>(mut result: AResult<T>, chained_error: &AError) -> ARes
 }
 
 // TODO: Should be generic for all manual read_options implementations
-pub fn restore_on_error<R: binrw::io::Read + binrw::io::Seek, F: Fn(&mut R, u64) -> binrw::BinResult<T>, T>(reader: &mut R, f: F) -> binrw::BinResult<T> {
+pub fn restore_on_error<R: io::Read + io::Seek, F: Fn(&mut R, u64) -> binrw::BinResult<T>, T>(reader: &mut R, f: F) -> binrw::BinResult<T> {
     let pos = reader.pos()?;
     f(reader, pos).or_else(|err| {
-        reader.seek(binrw::io::SeekFrom::Start(pos))?;
+        reader.seek(io::SeekFrom::Start(pos))?;
         Err(err)
     })
 }
+
+pub trait Reader: io::Read + io::Seek + core::fmt::Debug {}
+impl <T: io::Read + io::Seek + core::fmt::Debug> Reader for T {}
 
 // TODO: Lots of redundancy with SharedStream here, the only real difference is
 // that this one does has no `start_pos` and does not shove `inner` into a
@@ -143,7 +145,7 @@ pub trait SeekExt: io::Seek {
         let pos = self.pos()?;
         let end = self.seek(io::SeekFrom::End(0))?;
         self.seek(io::SeekFrom::Start(pos))?;
-        Ok(end - pos)
+        Ok(end)
     }
 
     /// The current position of the stream.
@@ -398,7 +400,7 @@ macro_rules! binrw_enum {
         impl ::binrw::BinRead for $name {
             type Args = ();
 
-            fn read_options<R: ::binrw::io::Read + ::binrw::io::Seek>(reader: &mut R, options: &::binrw::ReadOptions, args: Self::Args) -> ::binrw::BinResult<Self> {
+            fn read_options<R: ::io::Read + ::io::Seek>(reader: &mut R, options: &::binrw::ReadOptions, args: Self::Args) -> ::binrw::BinResult<Self> {
                 use $crate::SeekExt;
                 $crate::restore_on_error(reader, |reader, pos| {
                     let value = <$size>::read_options(reader, options, args)?;

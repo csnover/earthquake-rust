@@ -10,7 +10,7 @@ use crate::{
 use derive_more::Display;
 use libcommon::{SeekExt, string::ReadExt};
 use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode, types::{MacString, PString}};
-use std::{convert::TryInto, io::{Read, SeekFrom}, rc::Rc};
+use std::{convert::TryInto, io::{Cursor, Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone)]
@@ -151,15 +151,12 @@ where
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
         let resource_id = ResourceId::new(os_type, 0);
-        rom.load::<Vec<u8>>(resource_id)?
+        rom.load_args::<ProjectorSettings>(resource_id, (version, Platform::Mac(MacCPU::ANY)))?
     };
 
-    let (config, movie) = match version {
+    let movie = match version {
         Version::D3 => {
-            let has_external_data = config[4] != 0;
-            let num_movies = BigEndian::read_u16(&config[6..]);
-            let config = ProjectorSettings::parse_mac(version, &config)?;
-            if has_external_data {
+            if config.use_external_files() {
                 let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0))
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
@@ -167,38 +164,15 @@ where
                 for filename in &mut movies {
                     *filename = filename.replace(b":", b"/").into();
                 }
-                (config, Movie::External(movies.into_iter().map(MacString::Raw).collect::<Vec::<_>>()))
+                Movie::External(movies.into_iter().map(MacString::Raw).collect::<Vec::<_>>())
             } else {
                 // Embedded movies start at Resource ID 1024
-                (config, Movie::Embedded(num_movies))
+                Movie::Embedded(config.num_movies())
             }
         },
         Version::D4 | Version::D5 | Version::D6 => {
             if let Some(mut data_fork) = data_fork {
-                // TODO: Seems like some pre-release version of Director 4
-                // created projectors with no PJxx in the data fork. In these
-                // ones the CPU flag appears to always be zero. Then before GM
-                // they added the CPU flag and PJxx in the data fork. Based on
-                // the corresponding structure in the Windows projectors, this
-                // extra data is probably:
-                //
-                // 4 - "PJxx"
-                // 4 - RIFF offset
-                //
-                // and then different by version:
-                //
-                // D4 (PJ93):
-                // 4x9 - fixed driver offsets?
-                // <PPC executable>
-                //
-                // D5+ (PJ95, PJ97, PJ00, etc.):
-                // 4  - num drivers
-                // 4  - num drivers to skip
-                // .. - drivers
-                // <PPC executable>
-                let has_extended_data_fork = config[7] != 0;
-                let config = ProjectorSettings::parse_mac(version, &config)?;
-                if has_extended_data_fork {
+                if config.has_extended_data_fork() {
                     let mut buffer = [ 0; 8 ];
                     data_fork.read_exact(&mut buffer).context("Can’t read Projector header")?;
                     let data_version = data_version(&buffer[0..4]);
@@ -217,9 +191,9 @@ where
                     }
 
                     let riff_offset = BigEndian::read_u32(&buffer[4..]);
-                    (config, internal_movie(&mut data_fork, riff_offset)?)
+                    internal_movie(&mut data_fork, riff_offset)?
                 } else {
-                    (config, internal_movie(&mut data_fork, 0)?)
+                    internal_movie(&mut data_fork, 0)?
                 }
             } else {
                 bail!("No data fork; can’t get offset of internal movie");
@@ -248,7 +222,7 @@ where
         version,
         movie,
         system_resources,
-        config,
+        config: *config,
     })
 }
 
@@ -301,9 +275,12 @@ pub fn detect_win<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResul
     let (platform, name) = get_exe_info(input)?;
     let (config, movie, system_resources) = if version == Version::D3 {
         input.seek(SeekFrom::Start((offset + 7).into()))?;
-        let config = ProjectorSettings::parse_win(version, platform, &header[0..7])?;
-        let num_movies = LittleEndian::read_u16(&header);
-        let movie = if config.d3().unwrap().use_external_files() {
+        let config = ProjectorSettings::read_args(
+            &mut Cursor::new(header),
+            (version, Platform::Win(WinVersion::Win3))
+        )?;
+        let num_movies = config.num_movies();
+        let movie = if config.use_external_files() {
             let mut movies = Vec::with_capacity(num_movies.into());
             for i in 0..num_movies {
                 let (_, filename) = d3_win_movie_info(input.by_ref(), i)?;
@@ -362,7 +339,7 @@ pub fn detect_win<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResul
         }
 
         (
-            ProjectorSettings::parse_win(version, platform, &buffer)?,
+            ProjectorSettings::read_args(&mut Cursor::new(buffer), (version, platform))?,
             internal_movie(input, LittleEndian::read_u32(&header[4..]))?,
             get_projector_rsrc(input, offset, version)?
         )

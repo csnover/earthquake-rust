@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
-binrw = { path = "../ext/binrw/binrw" }
+binrw = "0.2"
 bitflags = "1.2"
 bstr = "0.2"
 byteorder = "1.3"
