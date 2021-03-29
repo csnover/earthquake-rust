@@ -8,7 +8,7 @@ use crate::{ensure_sample, resources::{cast::{MemberId, MemberKind, MemberNum}, 
 use derive_more::{Display, Deref, DerefMut, From};
 use num_traits::FromPrimitive;
 use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
-use libmactoolbox::{quickdraw::PaletteIndex, Point, Rect, TEHandle, quickdraw::Pen};
+use libmactoolbox::{quickdraw::{PaletteIndex, Pen, Point, Rect}, TEHandle};
 use smart_default::SmartDefault;
 use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
 
@@ -46,7 +46,7 @@ newtype_num! {
 
 newtype_num! {
     #[derive(Debug)]
-    pub struct FPS(pub i16);
+    pub struct Fps(pub i16);
 }
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
@@ -54,7 +54,7 @@ newtype_num! {
 pub enum Tempo {
     #[default]
     Inherit,
-    FPS(FPS),
+    Fps(Fps),
     WaitForVideo(ChannelNum),
     WaitForSeconds(Seconds),
     WaitForClick,
@@ -66,7 +66,7 @@ impl Tempo {
     pub fn new(tempo: i16) -> AResult<Self> {
         Ok(match tempo {
             0 => Self::Inherit,
-            1..=120 => Self::FPS(FPS(tempo)),
+            1..=120 => Self::Fps(Fps(tempo)),
             -0x78..=-0x48 => Self::WaitForVideo(ChannelNum(tempo + 0x7e)),
             -60..=-1 => Self::WaitForSeconds(Seconds(-tempo)),
             -0x80 => Self::WaitForClick,
@@ -80,7 +80,7 @@ impl Tempo {
     pub fn to_primitive(self) -> i16 {
         match self {
             Tempo::Inherit => 0,
-            Tempo::FPS(fps) => fps.0,
+            Tempo::Fps(fps) => fps.0,
             Tempo::WaitForVideo(channel) => channel.0 - 0x7e,
             Tempo::WaitForSeconds(seconds) => -seconds.0,
             Tempo::WaitForClick => -0x80,
@@ -595,7 +595,7 @@ pub struct Score {
     maybe_current_editable_sprite_num: i16,
     field_16f2: Unk16,
     current_frame_num: FrameNum,
-    #[default(Tempo::FPS(FPS(15)))]
+    #[default(Tempo::Fps(Fps(15)))]
     current_tempo: Tempo,
     flags: Flags,
     palette_mapping: bool,
@@ -820,8 +820,8 @@ impl BinRead for Palette {
 #[br(big)]
 pub struct PaletteV5 {
     id: MemberId,
-    #[br(map = |num: i8| FPS(num.into()))]
-    rate: FPS,
+    #[br(map = |num: i8| Fps(num.into()))]
+    rate: Fps,
     flags: PaletteFlags,
     cycle_start_color: SignedPaletteIndex,
     cycle_end_color: SignedPaletteIndex,
@@ -840,8 +840,8 @@ struct PaletteV4 {
     cycle_start_color: SignedPaletteIndex,
     cycle_end_color: SignedPaletteIndex,
     flags: PaletteFlags,
-    #[br(map = |num: i8| FPS(num.into()))]
-    rate: FPS,
+    #[br(map = |num: i8| Fps(num.into()))]
+    rate: Fps,
     num_frames: i16,
     num_cycles: i16,
     field_c: Unk8,

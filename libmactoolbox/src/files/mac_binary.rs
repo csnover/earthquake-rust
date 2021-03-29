@@ -1,13 +1,13 @@
 use anyhow::{bail, Context, Result as AResult};
+use binrw::io::SeekFrom;
 use byteorder::{ByteOrder, BigEndian};
-use crate::{script_manager::decode_text};
+use crate::types::MacString;
 use crc::crc16::checksum_x25;
 use libcommon::{SeekExt, SharedStream};
-use std::io::{Cursor, SeekFrom};
 
 #[derive(Debug)]
 pub struct MacBinary<T: binrw::io::Read + binrw::io::Seek> {
-    name: String,
+    name: MacString,
     data_fork: Option<SharedStream<T>>,
     resource_fork: Option<SharedStream<T>>,
 }
@@ -74,7 +74,7 @@ impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
     }
 
     #[must_use]
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &MacString {
         &self.name
     }
 
@@ -97,15 +97,18 @@ impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
         let data_fork_size = BigEndian::read_u32(&header[83..]);
 
         let script_code = if version == Version::V3 && header[106] & SCRIPT_FLAG != 0 {
-            header[106] & !SCRIPT_FLAG
+            Some(header[106] & !SCRIPT_FLAG)
         } else {
-            // TODO: Chardet, or bstr, or Vec<u8>
-            0
+            None
         };
 
         let name = {
-            let raw_name = &header[2..2 + usize::from(header[1])];
-            decode_text(&mut Cursor::new(raw_name), script_code)
+            let mut name = MacString::Raw((&header[2..2 + usize::from(header[1])]).into());
+            #[cfg(feature = "intl")]
+            if let Some(script_code) = script_code {
+                name.decode(script_code).ok();
+            }
+            name
         };
 
         let data_fork_start = aligned_header_size;
@@ -155,7 +158,7 @@ mod tests {
     #[test]
     fn validate() {
         use std::io::Cursor;
-        const DATA: &'_ [u8] = include_bytes!("../tests/data/mac_binary/test.bin");
+        const DATA: &'_ [u8] = include_bytes!("./test_data/mac_binary/test.bin");
         let data = Cursor::new(DATA);
         let bin = MacBinary::new(data).unwrap();
         assert_eq!(bin.name, "File I/O TextFile");

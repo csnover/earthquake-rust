@@ -1,7 +1,7 @@
 use anyhow::{bail, Result as AResult};
 use binrw::Endian;
 use derive_more::Display;
-use libmactoolbox::{ResourceFile, ResourceId, ResourceSource};
+use libmactoolbox::resources::{File as ResourceFile, ResourceId, Source as ResourceSource};
 use super::Version;
 
 #[derive(Clone, Debug)]

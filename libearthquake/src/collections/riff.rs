@@ -11,7 +11,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
 use derive_more::{Constructor, Deref, DerefMut, Display};
 use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
-use libmactoolbox::{OSType, OSTypeReadExt, ResourceError, ResourceId, ResourceResult, ResourceSource};
+use libmactoolbox::resources::{OsType, OsTypeReadExt, Error as ResourceError, ResourceId, Result as ResourceResult, Source as ResourceSource};
 use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, rc::{Rc, Weak}};
 
 pub type RiffResult<T> = Result<T, RiffError>;
@@ -28,11 +28,11 @@ pub enum RiffError {
     #[error("RIFF-LE. Please send this file for analysis")]
     UnsupportedRiff,
     #[error("missing resource map; found {0} instead")]
-    ResourceMapNotFound(OSType),
+    ResourceMapNotFound(OsType),
     #[error("bad chunk index {0}")]
     BadIndex(ChunkIndex),
     #[error("bad data type for chunk index {0}; OSType is {1}")]
-    BadDataType(ChunkIndex, OSType),
+    BadDataType(ChunkIndex, OsType),
     #[error("i/o error seeking to index {0} (offset {1}): {2}")]
     SeekFailure(ChunkIndex, u32, std::io::Error),
     #[error("i/o error seeking to mmap: {0}")]
@@ -58,7 +58,7 @@ pub enum RiffError {
     #[error("i/o error skipping resource name of index {0}: {1}")]
     D3ResourceNameSkipError(ChunkIndex, std::io::Error),
     #[error("can’t load {0} chunk {1} at {2}: {3}")]
-    ReadError(OSType, ChunkIndex, u32, binrw::Error),
+    ReadError(OsType, ChunkIndex, u32, binrw::Error),
 }
 
 impl From<binrw::Error> for RiffError {
@@ -140,7 +140,7 @@ impl<T: Reader> Riff<T> {
     }
 
     #[must_use]
-    pub fn first_of_kind(&self, kind: impl Into<OSType>) -> ChunkIndex {
+    pub fn first_of_kind(&self, kind: impl Into<OsType>) -> ChunkIndex {
         let kind = kind.into();
         for (index, item) in self.memory_map.iter().enumerate() {
             if item.os_type == kind {
@@ -479,14 +479,14 @@ impl <T: Reader> ResourceSource for Riff<T> {
             Self::load_chunk_args::<R>(self, chunk_index, args).map_err(|error| {
                 // TODO: Losing a lot of data here.
                 match error {
-                    RiffError::IoError(error) => ResourceError::IoError(error),
+                    RiffError::IoError(error) => ResourceError::Io(error),
                     RiffError::BadIndex(_) => ResourceError::NotFound(id),
                     RiffError::BadDataType(_, _) => ResourceError::BadDataType(id),
                     RiffError::SeekFailure(_, _, error)
                     | RiffError::D3ResourceIdSkipError(_, error)
                     | RiffError::D3ResourceNameSkipError(_, error) => ResourceError::SeekFailure(id, error),
                     RiffError::D3ResourceNameSizeReadError(_, error) => ResourceError::ReadSizeFailure(id, error),
-                    RiffError::ReadError(_, _, _, error) => ResourceError::ReadError(id, error),
+                    RiffError::ReadError(_, _, _, error) => ResourceError::ResourceReadFailure(id, error),
                     _ => todo!("split RiffError to distinguish between resource loads and riff loads"),
                 }
             })
@@ -572,7 +572,7 @@ bitflags! {
 
 #[derive(Clone, Debug)]
 pub struct MemoryMapItem {
-    os_type: OSType,
+    os_type: OsType,
     size: u32,
     offset: u32,
     flags: MemoryMapFlags,
@@ -632,7 +632,7 @@ fn detect_subtype<T: Read + Seek>(reader: &mut T) -> Option<DetectionInfo> {
     }
 }
 
-fn get_riff_attributes(os_type: OSType, raw_size: &[u8]) -> (Endian, u32) {
+fn get_riff_attributes(os_type: OsType, raw_size: &[u8]) -> (Endian, u32) {
     // Director checks endianness based on the main RIFX OSType, but this works
     // just as well and simplifies support for the special D3Win format
     let endianness = match os_type.as_bytes()[0] {

@@ -24,7 +24,7 @@ use std::{io::Read, rc::Rc};
 /// data, but there is no guarantee that all data can safely be transformed into
 /// UTF-8, nor that the correct script code will be available at the time data
 /// is read out of the resource manager.
-#[derive(Clone, Debug, Display, From)]
+#[derive(Clone, Debug, Display, Eq, From, PartialEq)]
 pub enum MacString {
     Std(String),
     Raw(PString),
@@ -32,6 +32,23 @@ pub enum MacString {
 }
 
 impl MacString {
+    #[cfg(feature = "intl")]
+    /// Decodes the string in place to UTF-8, interpreting according to the the
+    /// given script code.
+    ///
+    /// If the string is already UTF-8, no decoding will occur. If the script
+    /// code is not valid or decoding fails, an [`intl::Error`] will be
+    /// returned.
+    pub fn decode(&mut self, script_code: impl core::convert::TryInto<crate::intl::ScriptCode>) -> Result<&mut Self, crate::intl::Error> {
+        *self = MacString::Std(match self {
+            MacString::Std(_) => return Ok(self),
+            MacString::Raw(s) => crate::intl::convert_text(&s, script_code)?,
+            MacString::RawRc(s) => crate::intl::convert_text(s.as_ref(), script_code)?
+        });
+
+        Ok(self)
+    }
+
     /// Converts the string to a path, replacing invalid UTF-8 bytes with the
     /// Unicode replacement character.
     ///
@@ -78,6 +95,16 @@ impl MacString {
     }
 }
 
+impl PartialEq<&str> for MacString {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            MacString::Std(s) => s == other,
+            MacString::Raw(r) => r.as_bstr() == other,
+            MacString::RawRc(r) => r.as_bstr() == other,
+        }
+    }
+}
+
 /// A binary [Pascal string](https://en.wikipedia.org/wiki/String_(computer_science)#Length-prefixed).
 ///
 /// In Macintosh Toolbox, string types are defined in several lengths with
@@ -88,7 +115,8 @@ impl MacString {
 /// simplicity. This should be fine, since Pascal strings inside
 /// [resources](crate::resources) were not stored with padding, so there is no
 /// reason to have 6 distinct string types that differ only by length.
-#[derive(Clone, Default, Deref, DerefMut, Eq, From, PartialEq)]
+#[derive(Clone, Default, Deref, DerefMut, Eq, From, PartialEq, derive_more::AsRef)]
+#[as_ref(forward)]
 #[from(forward)]
 #[must_use]
 pub struct PString(Vec<u8>);

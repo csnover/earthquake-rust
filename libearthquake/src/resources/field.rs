@@ -1,6 +1,6 @@
 use binrw::BinRead;
 use libcommon::bitflags;
-use libmactoolbox::{quickdraw::{Pixels, RGBColor}, Rect};
+use libmactoolbox::quickdraw::{Pixels, Rect, RgbColor};
 use smart_default::SmartDefault;
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +50,7 @@ pub struct Meta {
     box_shadow_size: Pixels,
     frame: Frame,
     alignment: Alignment,
-    back_color: RGBColor,
+    back_color: RgbColor,
     scroll_top: Pixels,
     /// The viewport of the field, excluding decorations.
     bounds: Rect,

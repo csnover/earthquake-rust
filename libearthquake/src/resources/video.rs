@@ -1,6 +1,6 @@
 use binrw::BinRead;
 use libcommon::{bitflags, bitflags::BitFlags};
-use libmactoolbox::Rect;
+use libmactoolbox::quickdraw::Rect;
 
 bitflags! {
     pub struct Flags: u32 {

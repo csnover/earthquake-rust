@@ -1,12 +1,12 @@
 use binrw::BinRead;
 use libcommon::Unk16;
-use libmactoolbox::{Rect, quickdraw::{Pixels, RGBColor}};
+use libmactoolbox::quickdraw::{Pixels, Rect, RgbColor};
 use super::config::Version as ConfigVersion;
 
 #[derive(BinRead, Clone, Copy, Eq, PartialEq)]
-pub struct RGB24(u32);
+pub struct Rgb24(u32);
 
-impl std::fmt::Debug for RGB24 {
+impl std::fmt::Debug for Rgb24 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "rgb8({}, {}, {})",
             (self.0 >> 16) & 0xff,
@@ -37,6 +37,6 @@ pub struct Meta {
     field_12: Unk16,
     anti_alias_min_font_size: Pixels,
     height: Pixels,
-    fore_color: RGB24,
-    back_color: RGBColor,
+    fore_color: Rgb24,
+    back_color: RgbColor,
 }

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result as AResult};
-use crate::{AppleDouble, MacBinary};
+use crate::files::{AppleDouble, MacBinary};
 use libcommon::{flatten_errors, SharedStream, vfs::{ForkKind, VirtualFile, VirtualFileSystem}};
 use std::{ffi::OsString, fs::{File, metadata}, io::{prelude::*, self}, path::{Path, PathBuf}};
 
@@ -35,7 +35,7 @@ impl HostFileSystem {
     fn try_apple_double(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
         AppleDouble::new(File::open(&path)?, open_apple_double(&path).ok())
             .map(|f| (
-                f.name().map(PathBuf::from),
+                f.name().map(|name| name.to_path_lossy().into()),
                 match kind {
                     ForkKind::Data => f.data_fork(),
                     ForkKind::Resource => f.resource_fork(),
@@ -50,7 +50,7 @@ impl HostFileSystem {
 
         MacBinary::new(file)
             .map(|f| (
-                Some(f.name().into()),
+                Some(f.name().to_path_lossy().into()),
                 match kind {
                     ForkKind::Data => f.data_fork(),
                     ForkKind::Resource => f.resource_fork(),

@@ -1,5 +1,5 @@
 use binrw::BinRead;
-use libmactoolbox::{Rect, quickdraw::{PaletteIndex, Pixels}};
+use libmactoolbox::quickdraw::{PaletteIndex, Pixels, Rect};
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
 #[br(big, repr(u16))]

@@ -4,7 +4,7 @@
 
 use binrw::BinRead;
 use bitstream_io::{BigEndian, BitReader};
-use crate::Rect;
+use crate::quickdraw::Rect;
 use libcommon::{SeekExt, restore_on_error};
 
 #[derive(Clone, Copy, Debug)]

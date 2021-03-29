@@ -1,7 +1,7 @@
 use binrw::BinRead;
 use crate::player::score::Tempo;
 use libcommon::{Unk16, Unk32, Unk8, bitflags, bitflags::BitFlags, newtype_num};
-use libmactoolbox::{quickdraw::PaletteIndex, Rect};
+use libmactoolbox::quickdraw::{PaletteIndex, Rect};
 use std::convert::TryInto;
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};

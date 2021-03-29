@@ -31,7 +31,7 @@ use libearthquake::{collections::{
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
 use libcommon::{Reader, SharedStream};
-use libmactoolbox::{OSType, ResourceFile, ResourceId, ResourceSource, vfs::HostFileSystem};
+use libmactoolbox::{resources::{OsType, File as ResourceFile, ResourceId, Source as ResourceSource}, vfs::HostFileSystem};
 use pico_args::Arguments;
 use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::PathBuf, process::exit};
 
@@ -164,7 +164,7 @@ fn parse_member_id(id: &str) -> AResult<MemberId> {
 fn parse_resource_id(id: &str) -> AResult<ResourceId> {
     match id.split(',').take(3).collect::<Vec<_>>().as_slice() {
         [ os_type, resource_id ] => {
-            let os_type = os_type.parse::<OSType>()
+            let os_type = os_type.parse::<OsType>()
                 .with_context(|| format!("Malformed resource kind '{}'", os_type))?;
             let resource_id = resource_id.parse::<i16>()
                 .with_context(|| format!("Malformed resource number '{}'", resource_id))?;

@@ -1,100 +1,26 @@
-use binrw::BinRead;
-use byteorder::{ByteOrder, BigEndian};
-use crate::{ApplicationVise, OSType, ResourceId, types::{MacString, PString}};
-use derive_more::Display;
-use libcommon::{bitflags::BitFlags, bitflags, SeekExt};
-use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
+//! Type definitions for [Mac Resource Files].
+//!
+//! [Mac Resource Files]: https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf#page=151
 
+use binrw::{BinRead, io};
+use byteorder::{ByteOrder, BigEndian};
+use crate::types::{MacString, PString};
+use derive_more::Display;
+use libcommon::{SeekExt, TakeSeekExt, bitflags::BitFlags, bitflags};
+use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
+use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResourceId, Source};
+
+/// A file reference number which corresponds to an open resource fork.
 #[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
 pub struct RefNum(pub i16);
+
+// TODO: This should eventually be associated with the resource manager so it
+// can be serialised along with everything else.
 static REF_NUM: AtomicI16 = AtomicI16::new(1);
-
-pub trait ResourceSource {
-    fn contains(&self, id: impl Into<ResourceId>) -> bool;
-    fn load<R>(&self, id: ResourceId) -> ResourceResult<Rc<R>>
-    where
-        R: BinRead + 'static,
-        R::Args: Default + Sized
-    {
-        self.load_args(id, R::Args::default())
-    }
-    fn load_args<R: BinRead + 'static>(&self, id: ResourceId, args: R::Args) -> ResourceResult<Rc<R>>;
-}
-
-pub type ResourceResult<T> = Result<T, ResourceError>;
-
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ResourceError {
-    #[error("unknown i/o error: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("input borrow failed: {0}")]
-    BorrowMutFailed(#[from] std::cell::BorrowMutError),
-    #[error("resource {0} not found")]
-    NotFound(ResourceId),
-    #[error("resource {0} uses unsupported compression")]
-    UnsupportedCompression(ResourceId),
-    #[error("bad data type for resource {0}")]
-    BadDataType(ResourceId),
-    #[error("i/o error seeking to resource {0}: {1}")]
-    SeekFailure(ResourceId, std::io::Error),
-    #[error("i/o error reading size of resource {0}: {1}")]
-    ReadSizeFailure(ResourceId, std::io::Error),
-    #[error("i/o error reading header: {0}")]
-    HeaderReadError(std::io::Error),
-    #[error("i/o error reading map size: {0}")]
-    MapSizeReadError(std::io::Error),
-    #[error("bad fork data size ({0})")]
-    BadDataSize(u32),
-    #[error("bad map offset ({0})")]
-    BadMapOffset(u32),
-    #[error("bad map size ({0})")]
-    BadMapSize(u32),
-    #[error("bad map OSType count ({0})")]
-    BadMapKindCount(i16),
-    #[error("bad map resource count ({0}) for OSType {1}")]
-    BadMapResourceCount(i16, OSType),
-    #[error("can’t decompress resource {0}: {1}")]
-    BadCompression(ResourceId, std::io::Error),
-    #[error("file too small ({0} < {1})")]
-    FileTooSmall(u64, u64),
-    #[error("bad resource map")]
-    BadResourceMap,
-    #[error("can’t find Application VISE signature on resource {0}")]
-    MissingViseSignature(ResourceId),
-    #[error("can’t find Application VISE CODE resource")]
-    MissingViseResource,
-    #[error("can’t find Application VISE shared dictionary")]
-    MissingViseDictionary,
-    #[error("missing decompressor")]
-    MissingDecompressor,
-    #[error("invalid resource file number {0}")]
-    BadRefNum(RefNum),
-    #[error("current_file invalid ({0} >= {1})")]
-    BadCurrentFile(usize, usize),
-    #[error("no system file")]
-    NoSystemFile,
-    #[error("vfs error: {0}")]
-    VFSError(anyhow::Error),
-    #[error("error reading {0}: {1}")]
-    ReadError(ResourceId, binrw::Error),
-}
-
-impl From<binrw::Error> for ResourceError {
-    fn from(error: binrw::Error) -> Self {
-        match error {
-            binrw::Error::Io(error) => Self::IoError(error),
-            binrw::Error::Custom { err, .. } => {
-                *err.downcast().expect("unexpected error type")
-            },
-            _ => panic!("unexpected error type"),
-        }
-    }
-}
 
 #[derive(Debug)]
 /// A Macintosh Resource File Format file reader.
-pub struct ResourceFile<T: binrw::io::Read + binrw::io::Seek> {
+pub struct File<T: io::Read + io::Seek> {
     input: RefCell<T>,
     decompressor: RefCell<DecompressorState>,
     resource_map: ResourceMap,
@@ -110,9 +36,12 @@ struct Header {
     map_size: u32,
 }
 
-impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
-    /// Makes a new `ResourceFile` from a readable stream.
-    pub fn new(mut data: T) -> ResourceResult<Self> {
+impl<T: io::Read + io::Seek> File<T> {
+    /// Makes a new `ResourceFile` from a stream.
+    ///
+    /// The input stream should be restricted to the range of the resource file
+    /// data.
+    pub fn new(mut data: T) -> Result<Self> {
         let file_size = data.bytes_left()?;
         let header = Header::read(data.by_ref())?;
         let min_file_size = u64::from(core::cmp::max(
@@ -136,12 +65,17 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
     }
 
     /// Returns the number of resources with the given [`OSType`].
-    pub fn count(&self, os_type: impl Into<OSType>) -> i16 {
+    pub fn count(&self, os_type: impl Into<OsType>) -> i16 {
         self.find_kind(os_type).map_or(0, |kind| kind.count)
     }
 
     /// Returns a resource ID for the named resource with the given [`OSType`].
-    pub fn id_of_name(&self, os_type: impl Into<OSType>, name: impl AsRef<[u8]>) -> Option<ResourceId> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if a name offset in the resource data is negative, other than the
+    /// “no name” sentinel.
+    pub fn id_of_name(&self, os_type: impl Into<OsType>, name: impl AsRef<[u8]>) -> Option<ResourceId> {
         let os_type = os_type.into();
         self.find_kind(os_type)
             .and_then(|kind| kind.resources.iter().find(|res| {
@@ -157,7 +91,11 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
     }
 
     /// Returns the [`ResourceId`] of a resource with the given type and index.
-    pub fn id_of_index(&self, os_type: impl Into<OSType>, index: i16) -> Option<ResourceId> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given index is negative.
+    pub fn id_of_index(&self, os_type: impl Into<OsType>, index: i16) -> Option<ResourceId> {
         let os_type = os_type.into();
         self.find_kind(os_type)
             .and_then(|kind| kind.resources.get(usize::try_from(index).unwrap()))
@@ -178,7 +116,7 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
     }
 
     /// Returns an iterator over all resource IDs with the given type.
-    pub fn iter_kind(&self, os_type: impl Into<OSType>) -> impl Iterator<Item = ResourceId> + '_ {
+    pub fn iter_kind(&self, os_type: impl Into<OsType>) -> impl Iterator<Item = ResourceId> + '_ {
         let os_type = os_type.into();
         self.find_kind(os_type)
             .into_iter()
@@ -197,7 +135,7 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
         self.resource_map.ref_num
     }
 
-    fn decompress(&self, for_id: ResourceId, data: &[u8]) -> ResourceResult<Vec<u8>> {
+    fn decompress(&self, for_id: ResourceId, data: &[u8]) -> Result<Vec<u8>> {
         // TODO: is this still needed?
         // https://stackoverflow.com/questions/33495933/how-to-end-a-borrow-in-a-match-or-if-let-expression
         let resource_id = if let DecompressorState::Waiting = *self.decompressor.borrow() {
@@ -230,18 +168,18 @@ impl<T: binrw::io::Read + binrw::io::Seek> ResourceFile<T> {
             })
     }
 
-    fn find_kind(&self, os_type: impl Into<OSType>) -> Option<&ResourceKind> {
+    fn find_kind(&self, os_type: impl Into<OsType>) -> Option<&ResourceKind> {
         let os_type = os_type.into();
         self.resource_map.kinds.iter().find(move |&kind| kind.kind == os_type)
     }
 }
 
-impl <T: binrw::io::Read + binrw::io::Seek> ResourceSource for ResourceFile<T> {
+impl <T: io::Read + io::Seek> Source for File<T> {
     fn contains(&self, id: impl Into<ResourceId>) -> bool {
         self.find_item(id.into()).is_some()
     }
 
-    fn load_args<R: BinRead + 'static>(&self, id: ResourceId, args: R::Args) -> ResourceResult<Rc<R>> {
+    fn load_args<R: BinRead + 'static>(&self, id: ResourceId, args: R::Args) -> Result<Rc<R>> {
         let entry = self.find_item(id).ok_or(ResourceError::NotFound(id))?;
 
         if entry.flags.contains(ResourceFlags::COMPRESSED) {
@@ -290,9 +228,7 @@ impl <T: binrw::io::Read + binrw::io::Seek> ResourceSource for ResourceFile<T> {
             };
             R::read_options(&mut Cursor::new(data), &options, args)?
         } else {
-            // TODO: Get the resource size to those resources which need to
-            // know about it
-            R::read_options(input.by_ref(), &options, args)?
+            R::read_options(&mut input.by_ref().take_seek(size.into()), &options, args)?
         });
 
         *entry.data.borrow_mut() = Some(Rc::downgrade(&(Rc::clone(&resource) as _)));
@@ -363,7 +299,7 @@ struct ResourceMap {
 #[br(big, import(data_offset: u32, map_offset: u32))]
 struct ResourceKind {
     #[br(map = |b: u32| b.into())]
-    kind: OSType,
+    kind: OsType,
     #[br(map = |count: i16| count + 1)]
     #[br(assert(count < 2727, ResourceError::BadMapResourceCount(count, kind)))]
     count: i16,
@@ -371,7 +307,8 @@ struct ResourceKind {
     resources: Vec<ResourceItem>,
 }
 
-fn parse_u24<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, _: &binrw::ReadOptions, _: ()) -> binrw::BinResult<u32> {
+// TODO: Uplift to binrw
+fn parse_u24<R: io::Read + io::Seek>(reader: &mut R, _: &binrw::ReadOptions, _: ()) -> binrw::BinResult<u32> {
     let mut bytes = [ 0; 3 ];
     reader.read_exact(&mut bytes)?;
     Ok(BigEndian::read_u24(&bytes))
@@ -387,9 +324,4 @@ struct ResourceItem {
     data_offset: u32,
     #[br(pad_before(4), default)]
     data: RefCell<Option<Weak<dyn Any>>>,
-}
-
-#[cfg(test)]
-mod tests {
-    // TODO
 }

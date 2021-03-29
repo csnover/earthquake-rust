@@ -4,7 +4,7 @@
 
 use anyhow::{bail, Result as AResult};
 use bitflags::bitflags;
-use crate::{OSType, Point};
+use crate::{resources::OsType, quickdraw::Point};
 use libcommon::UnkPtr;
 use smart_default::SmartDefault;
 use std::{collections::VecDeque, convert::TryInto, rc::Weak, time::{Duration, Instant}};
@@ -24,7 +24,7 @@ pub enum EventKind {
     Update    = 6,
     Disk      = 7,
     Activate  = 8,
-    OS        = 15,
+    Os        = 15,
     HighLevel = 23,
 }
 
@@ -85,7 +85,7 @@ impl EventRecord {
     }
 
     #[must_use]
-    pub fn high_level_kind(&self) -> Option<OSType> {
+    pub fn high_level_kind(&self) -> Option<OsType> {
         match self.data {
             EventData::HighLevel(o) => Some(o),
             _ => None,
@@ -144,7 +144,7 @@ pub enum EventData {
     Key(Point, char, i32),
     Window(Point, Weak<UnkPtr>),
     ActiveWindow(Point, Weak<UnkPtr>, bool),
-    HighLevel(OSType),
+    HighLevel(OsType),
 }
 
 #[derive(Debug, SmartDefault)]
@@ -232,7 +232,7 @@ impl EventManager {
             } else {
                 None
             },
-            EventKind::OS => todo!("OS events"),
+            EventKind::Os => todo!("OS events"),
             EventKind::HighLevel => if let EventData::HighLevel(..) = data {
                 todo!("high level events")
             } else {
@@ -307,6 +307,14 @@ impl EventManager {
         }
     }
 
+    /// Returns the threshold time for considering two clicks to be a double
+    /// clicks.
+    ///
+    /// `GetDblTime`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the double click interval from the OS is invalid.
     #[must_use]
     pub fn get_double_time(&self) -> Duration {
         Duration::from_millis(unsafe {

@@ -16,6 +16,11 @@ pub struct SharedStream<T: Read + Seek + ?Sized> {
 }
 
 impl<T> SharedStream<T> where T: Read + Seek {
+    /// Consumes this stream, returning the inner stream.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the inner stream has more than one strong reference.
     #[must_use]
     pub fn into_inner(self) -> T {
         Rc::try_unwrap(self.inner).map_err(|_| "could not unwrap SharedStream Rc").unwrap().into_inner()
@@ -26,6 +31,10 @@ impl<T> SharedStream<T> where T: Read + Seek {
     /// Creates a new `SharedStream` from the given input, using the full range
     /// of the input stream and setting the current position to the input’s
     /// current position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the getting the position or length of the input stream fails.
     pub fn new(mut input: T) -> Self {
         let current_pos = input.pos().unwrap();
         let end_pos = input.len().unwrap();
@@ -41,6 +50,10 @@ impl<T> SharedStream<T> where T: Read + Seek {
     /// Creates a new `SharedStream` from the given input, bounding the new
     /// stream using the current position of the input stream as the start
     /// position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the getting the position or length of the input stream fails.
     pub fn substream_from(mut input: T) -> Self {
         let start_pos = input.pos().unwrap();
         let end_pos = input.len().unwrap();
@@ -64,6 +77,12 @@ impl<T> SharedStream<T> where T: Read + Seek {
         }
     }
 
+    /// Creates a new `SharedStream` from the this stream with the given start
+    /// and end positions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given `end_pos` is beyond the end of this stream.
     #[must_use]
     pub fn substream(&self, start_pos: u64, end_pos: u64) -> Self {
         assert!(end_pos <= self.end_pos);

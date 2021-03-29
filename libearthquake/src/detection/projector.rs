@@ -9,7 +9,7 @@ use crate::{
 };
 use derive_more::Display;
 use libcommon::SeekExt;
-use libmactoolbox::{ResourceFile, ResourceId, ResourceSource, resources::string_list::StringList as StringListResource, script_manager::ScriptCode, types::{MacString, PString}};
+use libmactoolbox::{resources::{File as ResourceFile, ResourceId, Source as ResourceSource, kinds::StringList as StringListResource}, intl::ScriptCode, types::{MacString, PString}};
 use std::{convert::TryInto, io::{Cursor, Read, SeekFrom}, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 

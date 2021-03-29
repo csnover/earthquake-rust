@@ -1,9 +1,5 @@
-use libcommon::{
-    encodings::{Decoder, DecoderRef, MAC_CYRILLIC, MAC_JAPANESE, MAC_ROMAN},
-};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use strum_macros::EnumVariantNames;
 
 #[derive(Copy, Clone, Debug, FromPrimitive)]
 pub enum CountryCode {
@@ -116,89 +112,10 @@ pub enum CountryCode {
     Greenland         = 107  // kl
 }
 
-impl CountryCode {
-    #[must_use]
-    pub fn encoding(self) -> DecoderRef {
-        // This translation matrix is based on the list at
-        // https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/ReadMe.txt.
-        // Trying to get away with just doing a mapping from the country code
-        // instead of also needing a script code because country codes can be
-        // found in any 'vers' resource but script codes are generally not
-        // available in the resource fork.
-        #![allow(clippy::match_same_arms)]
-        match self {
-            Self::Turkey | Self::Croatia | Self::Slovenian | Self::YugoCroatian |
-            Self::Iceland | Self::FaroeIsl | Self::Ireland | Self::ScottishGaelic |
-            Self::ManxGaelic | Self::Breton | Self::Welsh | Self::IrishGaelicScript |
-            Self::Greece => unimplemented!(),
-            Self::Japan => MAC_JAPANESE as &dyn Decoder,
-            Self::China => unimplemented!(),
-            Self::Korea => unimplemented!(),
-            Self::Arabic => unimplemented!(),
-            Self::Iran => unimplemented!(),
-            Self::Israel => unimplemented!(),
-            Self::Russia => MAC_CYRILLIC as &dyn Decoder,
-            Self::Ukraine => unimplemented!(),
-            Self::IndiaHindi => unimplemented!(),
-            Self::Thailand => unimplemented!(),
-            Self::Taiwan => unimplemented!(),
-            Self::Tibetan => unimplemented!(),
-            Self::Nunavut => unimplemented!(),
-            Self::Poland | Self::Czech | Self::Slovak | Self::Hungary |
-            Self::Estonia | Self::Latvia | Self::Lithuania => unimplemented!(),
-            _ => MAC_ROMAN as &dyn Decoder,
-        }
-    }
-}
+impl core::convert::TryFrom<u16> for CountryCode {
+    type Error = super::Error;
 
-#[derive(Clone, Copy, Debug, EnumVariantNames, FromPrimitive)]
-#[strum(serialize_all = "kebab-case")]
-pub enum ScriptCode {
-    Roman = 0,
-    Japanese,
-    ChineseTraditional,
-    Korean,
-    Arabic,
-    Hebrew,
-    Greek,
-    Russian,
-    RightLeftSymbols,
-    Devanagari,
-    Gurmukhi,
-    Oriya,
-    Bengali,
-    Tamil,
-    Telugu,
-    Kannada,
-    Malayalam,
-    Sinhalese,
-    Burmese,
-    Cambodian,
-    Thai,
-    Laotian,
-    Georgian,
-    Armenian,
-    ChineseSimplified,
-    Tibetan,
-    Mongolian,
-    Ethiopian,
-    NonCyrillicSlavic,
-    Vietnamese,
-    Sindhi,
-    UninterpretedSymbols,
-}
-
-// TODO: This is not sufficient; region codes are needed in addition to the
-// script code for correct decoding of Turkish, Croatian, Icelandic, Romanian,
-// Celtic, Gaelic, Greek, and Farsi.
-pub fn decode_text<T: binrw::io::Read + binrw::io::Seek>(input: &mut T, script_code: u8) -> String {
-    #![allow(clippy::match_same_arms)]
-    match ScriptCode::from_u8(script_code) {
-        Some(ScriptCode::Roman) | None       => MAC_ROMAN.decode_stream(input),
-        Some(ScriptCode::Japanese)           => MAC_JAPANESE.decode_stream(input),
-        Some(ScriptCode::ChineseTraditional) => todo!("Chinese traditional decoder"),
-        Some(ScriptCode::Korean)             => todo!("Korean decoder"),
-        Some(ScriptCode::Russian)            => MAC_CYRILLIC.decode_stream(input),
-        _ => unimplemented!("no currently known uses of other script codes"),
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::from_u16(value).ok_or(super::Error::BadCountryCode(value))
     }
 }

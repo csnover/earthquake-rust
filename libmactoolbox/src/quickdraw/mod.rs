@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 
 use binrw::BinRead;
-use crate::{Point, Rect};
 use num_derive::FromPrimitive;
 use libcommon::{
     newtype_num,
@@ -62,6 +61,47 @@ impl std::fmt::Debug for Pixels {
     }
 }
 
+#[derive(BinRead, Clone, Copy, Debug, Default)]
+pub struct Point {
+    pub x: Pixels,
+    pub y: Pixels,
+}
+
+#[derive(BinRead, Clone, Copy, Default)]
+pub struct Rect {
+    pub top: Pixels,
+    pub left: Pixels,
+    pub bottom: Pixels,
+    pub right: Pixels,
+}
+
+impl Rect {
+    #[inline]
+    #[must_use]
+    pub fn height(self) -> Pixels {
+        self.bottom - self.top
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn width(self) -> Pixels {
+        self.right - self.left
+    }
+}
+
+impl std::fmt::Debug for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("top", &self.top)
+            .field("left", &self.left)
+            .field("bottom", &self.bottom)
+            .field("right", &self.right)
+            .field("(width)", &self.width())
+            .field("(height)", &self.height())
+            .finish()
+    }
+}
+
 newtype_num! {
     #[derive(BinRead)]
     pub struct PaletteIndex(u8);
@@ -74,17 +114,17 @@ impl std::fmt::Debug for PaletteIndex {
 }
 
 #[derive(BinRead, Clone, Copy, Default, Eq, PartialEq)]
-pub struct RGBColor {
+pub struct RgbColor {
     pub r: u16,
     pub g: u16,
     pub b: u16,
 }
 
-impl RGBColor {
+impl RgbColor {
     pub const SIZE: u32 = 6;
 }
 
-impl std::fmt::Debug for RGBColor {
+impl std::fmt::Debug for RgbColor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "rgb16({}, {}, {})", self.r, self.g, self.b)
     }
@@ -102,8 +142,8 @@ pub struct CGrafPort {
     vis_rgn: RgnHandle,
     clip_rgn: RgnHandle,
     bk_pix_pat: PixPatHandle,
-    rgb_fg_color: RGBColor,
-    rgb_bk_color: RGBColor,
+    rgb_fg_color: RgbColor,
+    rgb_bk_color: RgbColor,
     pn_loc: Point,
     pn_size: Point,
     pn_mode: u16,

@@ -340,7 +340,7 @@ pub enum MemberKind {
     DigitalVideo,
     Script,
     Text,
-    OLE,
+    Ole,
     Transition,
     Xtra,
 }
@@ -361,7 +361,7 @@ pub enum MemberMetadata {
     Script(ScriptMeta),
     // This uses Microsoft RTF, whereas the Field type uses Mac Styled Text
     Text(TextMeta),
-    OLE(BitmapMeta),
+    Ole(BitmapMeta),
     Transition(TransitionMeta),
     Xtra(XtraMeta),
 }
@@ -387,7 +387,7 @@ impl BinRead for MemberMetadata {
             MemberKind::Field => MemberMetadata::Field(FieldMeta::read_options(input, &options, (size, ))?),
             MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::read_options(input, &options, (size, ))?),
             MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::read_options(input, &options, (size, ))?),
-            MemberKind::OLE => MemberMetadata::OLE(BitmapMeta::read_options(input, &options, (size, ))?),
+            MemberKind::Ole => MemberMetadata::Ole(BitmapMeta::read_options(input, &options, (size, ))?),
             MemberKind::Palette => MemberMetadata::Palette,
             MemberKind::Picture => MemberMetadata::Picture,
             MemberKind::Script => MemberMetadata::Script(ScriptMeta::read_options(input, &options, (size, ))?),

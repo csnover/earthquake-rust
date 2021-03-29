@@ -1,6 +1,6 @@
 use binrw::BinRead;
 use libcommon::bitflags;
-use libmactoolbox::{Point, Rect};
+use libmactoolbox::quickdraw::{Point, Rect};
 use super::cast::MemberId;
 
 bitflags! {

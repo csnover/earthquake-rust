@@ -1,19 +1,19 @@
 use anyhow::{bail, Context, Result as AResult};
 use binrw::BinRead;
-use crate::{OSType, ResourceError, ResourceFile, ResourceId, ResourceResult, resource_file::{RefNum, ResourceSource}, resources::string_list::StringList, types::{MacString, PString}};
-use libcommon::{encodings::DecoderRef, vfs::{VirtualFile, VirtualFileSystem}};
+use crate::types::{MacString, PString};
+use libcommon::vfs::{VirtualFile, VirtualFileSystem};
 use std::{convert::TryFrom, io::Cursor, path::Path, rc::Rc};
+use super::{Error as ResourceError, File as ResourceFile, OsType, RefNum, Result as ResourceResult, ResourceId, Source as ResourceSource, kinds::StringList};
 
-pub struct ResourceManager<'vfs> {
+pub struct Manager<'vfs> {
     fs: Rc<dyn VirtualFileSystem + 'vfs>,
     current_file: usize,
     files: Vec<ResourceFile<Box<dyn VirtualFile + 'vfs>>>,
     system: Option<ResourceFile<Cursor<Vec<u8>>>>,
-    decoder: DecoderRef,
 }
 
-impl <'vfs> ResourceManager<'vfs> {
-    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, decoder: DecoderRef, system: Option<Vec<u8>>) -> AResult<Self> {
+impl <'vfs> Manager<'vfs> {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, system: Option<Vec<u8>>) -> AResult<Self> {
         Ok(Self {
             fs,
             current_file: 0,
@@ -24,7 +24,6 @@ impl <'vfs> ResourceManager<'vfs> {
             } else {
                 None
             },
-            decoder,
         })
     }
 
@@ -47,7 +46,7 @@ impl <'vfs> ResourceManager<'vfs> {
     ///
     /// `Count1Resources`
     #[must_use]
-    pub fn count_one_resources(&self, kind: OSType) -> i16 {
+    pub fn count_one_resources(&self, kind: OsType) -> i16 {
         if self.current_file == 0 {
             self.system.as_ref().map_or(0, |file| file.count(kind))
         } else {
@@ -61,7 +60,7 @@ impl <'vfs> ResourceManager<'vfs> {
     ///
     /// `CountResources`
     #[must_use]
-    pub fn count_resources(&self, kind: OSType) -> i16 {
+    pub fn count_resources(&self, kind: OsType) -> i16 {
         self.system.as_ref().map_or(0, |file| file.count(kind))
         + self.files.iter().fold(0, |count, file| count + file.count(kind))
     }
@@ -96,7 +95,11 @@ impl <'vfs> ResourceManager<'vfs> {
 
     /// Gets a string from a string list (`'STR#'`) resource.
     ///
-    ///  `GetIndString`
+    /// `GetIndString`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is negative.
     pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<PString> {
         self.get_resource::<StringList>(ResourceId::new(b"STR#", id), ())
             .unwrap_or(None)
@@ -108,7 +111,7 @@ impl <'vfs> ResourceManager<'vfs> {
     /// Gets the data for a named resource.
     ///
     ///  `GetNamedResource`
-    pub fn get_named_resource<R: BinRead + 'static>(&self, kind: OSType, name: impl AsRef<[u8]>, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
+    pub fn get_named_resource<R: BinRead + 'static>(&self, kind: OsType, name: impl AsRef<[u8]>, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
         for file in self.files.iter().take(self.current_file).rev() {
             if let Some(id) = file.id_of_name(kind, &name) {
                 return file.load_args::<R>(id, args).map(Some);
@@ -127,7 +130,7 @@ impl <'vfs> ResourceManager<'vfs> {
     /// Gets the data for a named resource in the [current] resource file.
     ///
     /// `Get1NamedResource`
-    pub fn get_one_named_resource<R: BinRead + 'static>(&self, os_type: OSType, name: impl AsRef<[u8]>, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
+    pub fn get_one_named_resource<R: BinRead + 'static>(&self, os_type: OsType, name: impl AsRef<[u8]>, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
         self.one_resource::<R, _, _>(
             |file| file.id_of_name(os_type, name.as_ref()),
             |file| file.id_of_name(os_type, name.as_ref()),
@@ -150,7 +153,7 @@ impl <'vfs> ResourceManager<'vfs> {
     /// [current] resource file.
     ///
     /// `Get1IndResource`
-    pub fn get_one_indexed_resource<R: BinRead + 'static>(&self, kind: OSType, index: i16, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
+    pub fn get_one_indexed_resource<R: BinRead + 'static>(&self, kind: OsType, index: i16, args: R::Args) -> ResourceResult<Option<Rc<R>>> {
         self.one_resource::<R, _, _>(
             |file| file.id_of_index(kind, index),
             |file| file.id_of_index(kind, index),
@@ -181,7 +184,7 @@ impl <'vfs> ResourceManager<'vfs> {
     ///
     /// `OpenResFile`
     pub fn open_resource_file(&'vfs mut self, path: impl AsRef<Path>) -> ResourceResult<()> {
-        let file = self.fs.open_resource_fork(&path).map_err(ResourceError::VFSError)?;
+        let file = self.fs.open_resource_fork(&path).map_err(ResourceError::VfsFailure)?;
         let res_file = ResourceFile::new(file)?;
         self.files.push(res_file);
         self.current_file = self.files.len();

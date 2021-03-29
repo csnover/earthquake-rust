@@ -14,7 +14,6 @@
 
 #[macro_use]
 pub mod bitflags;
-pub mod encodings;
 pub mod error;
 // TODO: use positioned_io crate?
 mod shared_stream;
@@ -386,31 +385,4 @@ newtype_num! {
 newtype_num! {
     #[derive(BinRead, Debug)]
     pub struct Unk8(i8);
-}
-
-#[doc(hidden)]
-pub mod __private {
-    pub use paste::paste;
-}
-
-#[macro_export]
-macro_rules! binrw_enum {
-    ($name: ident, $size: ty) => {
-        impl ::binrw::BinRead for $name {
-            type Args = ();
-
-            fn read_options<R: ::io::Read + ::io::Seek>(reader: &mut R, options: &::binrw::ReadOptions, args: Self::Args) -> ::binrw::BinResult<Self> {
-                use $crate::SeekExt;
-                $crate::restore_on_error(reader, |reader, pos| {
-                    let value = <$size>::read_options(reader, options, args)?;
-                    $crate::__private::paste! {
-                        Self::[<from_ $size>](value).ok_or_else(|| ::binrw::Error::AssertFail {
-                            pos,
-                            message: format!(concat!("Invalid ", stringify!($name), " value 0x{:x}"), value),
-                        })
-                    }
-                })
-            }
-        }
-    }
 }
