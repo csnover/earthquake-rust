@@ -23,7 +23,7 @@ use crate::qt::EQApplication;
 use engine::Engine;
 use fluent_ergonomics::FluentErgo;
 use libearthquake::detection::detect;
-use libmactoolbox::{script_manager::ScriptCode, vfs::HostFileSystem};
+use libmactoolbox::{intl::ScriptCode, vfs::HostFileSystem};
 use loader::Loader;
 use num_traits::FromPrimitive;
 use pico_args::Arguments;

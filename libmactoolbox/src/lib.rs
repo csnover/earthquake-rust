@@ -15,7 +15,7 @@
 #[cfg(feature = "dialogs")]
 mod dialogs;
 #[cfg(feature = "events")]
-mod events;
+pub mod events;
 mod files;
 #[cfg(feature = "intl")]
 pub mod intl;
@@ -23,12 +23,8 @@ pub mod resources;
 #[cfg(feature = "quickdraw")]
 pub mod quickdraw;
 mod system;
+pub mod text_edit;
 pub mod types;
 pub mod vfs;
 
-pub use events::*;
 pub use system::System;
-
-// TODO
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TEHandle(u32);

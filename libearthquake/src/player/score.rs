@@ -8,7 +8,7 @@ use crate::{ensure_sample, resources::{cast::{MemberId, MemberKind, MemberNum}, 
 use derive_more::{Display, Deref, DerefMut, From};
 use num_traits::FromPrimitive;
 use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
-use libmactoolbox::{quickdraw::{PaletteIndex, Pen, Point, Rect}, TEHandle};
+use libmactoolbox::{quickdraw::{PaletteIndex, Pen, Point, Rect}, text_edit::Handle as TEHandle};
 use smart_default::SmartDefault;
 use std::{convert::{TryFrom, TryInto}, io::{Cursor, Read}, io::SeekFrom, iter::Rev, io::Seek};
 

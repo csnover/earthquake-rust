@@ -1,154 +1,14 @@
-// TODO: You know, finish this file and then remove these overrides
-#![allow(dead_code)]
-#![allow(clippy::unused_self)]
-
-use anyhow::{bail, Result as AResult};
-use bitflags::bitflags;
-use crate::{resources::OsType, quickdraw::Point};
-use libcommon::UnkPtr;
-use smart_default::SmartDefault;
-use std::{collections::VecDeque, convert::TryInto, rc::Weak, time::{Duration, Instant}};
-use qt_core::{MouseButton, KeyboardModifier};
+use core::convert::TryInto;
+use crate::quickdraw::Point;
+use libcommon::bitflags::BitFlags;
+use qt_core::{KeyboardModifier, MouseButton};
 use qt_gui::{QCursor, QGuiApplication};
-
-type Tick = Instant;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EventKind {
-    Null      = 0,
-    MouseDown = 1,
-    MouseUp   = 2,
-    KeyDown   = 3,
-    KeyUp     = 4,
-    AutoKey   = 5,
-    Update    = 6,
-    Disk      = 7,
-    Activate  = 8,
-    Os        = 15,
-    HighLevel = 23,
-}
-
-bitflags! {
-    pub struct EventMask: u16 {
-        const NULL       = 1 << 0;
-        const MOUSE_DOWN = 1 << 1;
-        const MOUSE_UP   = 1 << 2;
-        const KEY_DOWN   = 1 << 3;
-        const KEY_UP     = 1 << 4;
-        const AUTO_KEY   = 1 << 5;
-        const UPDATE     = 1 << 6;
-        const DISK       = 1 << 7;
-        const ACTIVATE   = 1 << 8;
-        const HIGH_LEVEL = 1 << 10;
-        const OS         = 1 << 15;
-    }
-}
-
-bitflags! {
-    pub struct EventModifiers: u16 {
-        const ACTIVE            = 1 << 0;
-        const BUTTON_STATE      = 1 << 7;
-        const COMMAND_KEY       = 1 << 8;
-        const SHIFT_KEY         = 1 << 9;
-        const CAPS_LOCK         = 1 << 10;
-        const OPTION_KEY        = 1 << 11;
-        const CONTROL_KEY       = 1 << 12;
-        const RIGHT_SHIFT_KEY   = 1 << 13;
-        const RIGHT_OPTION_KEY  = 1 << 14;
-        const RIGHT_CONTROL_KEY = 1 << 15;
-    }
-}
-
-#[derive(Debug)]
-pub struct EventRecord {
-    kind: EventKind,
-    when: Tick,
-    modifiers: EventModifiers,
-    data: EventData,
-}
-
-impl EventRecord {
-    #[must_use]
-    pub fn activate(&self) -> Option<bool> {
-        match self.data {
-            EventData::ActiveWindow(_, _, a) => Some(a),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn char_code(&self) -> Option<char> {
-        match self.data {
-            EventData::Key(_, c, _) => Some(c),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn high_level_kind(&self) -> Option<OsType> {
-        match self.data {
-            EventData::HighLevel(o) => Some(o),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn kind(&self) -> EventKind {
-        self.kind
-    }
-
-    #[must_use]
-    pub fn modifiers(&self) -> EventModifiers {
-        self.modifiers
-    }
-
-    #[must_use]
-    pub fn mouse(&self) -> Option<Point> {
-        match self.data {
-            EventData::Null
-            | EventData::HighLevel(_) => None,
-            EventData::Mouse(p)
-            | EventData::Key(p, _, _)
-            | EventData::Window(p, _)
-            | EventData::ActiveWindow(p, _, _) => Some(p),
-        }
-    }
-
-    #[must_use]
-    pub fn scan_code(&self) -> Option<i32> {
-        match self.data {
-            EventData::Key(_, _, s) => Some(s),
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn when(&self) -> Tick {
-        self.when
-    }
-
-    #[must_use]
-    pub fn window(&self) -> Option<Weak<UnkPtr>> {
-        match &self.data {
-            EventData::Window(_, w)
-            | EventData::ActiveWindow(_, w, _) => Some(w.clone()),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum EventData {
-    Null,
-    Mouse(Point),
-    Key(Point, char, i32),
-    Window(Point, Weak<UnkPtr>),
-    ActiveWindow(Point, Weak<UnkPtr>, bool),
-    HighLevel(OsType),
-}
+use smart_default::SmartDefault;
+use std::{collections::VecDeque, time::{Duration, Instant}};
+use super::{Error, event::{Data as EventData, Kind as EventKind, Modifiers as EventModifiers, Record as EventRecord, Tick}};
 
 #[derive(Debug, SmartDefault)]
-pub struct EventManager {
+pub struct Manager {
     #[default(Instant::now())]
     start: Instant,
     #[default(Instant::now())]
@@ -156,7 +16,7 @@ pub struct EventManager {
     queue: VecDeque<EventRecord>,
 }
 
-impl EventManager {
+impl Manager {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -186,7 +46,7 @@ impl EventManager {
     }
 
     /// `PostEvent`
-    pub fn post_event(&mut self, kind: EventKind, data: EventData) -> AResult<()> {
+    pub fn post_event(&mut self, kind: EventKind, data: EventData) -> Result<(), Error> {
         let event = match kind {
             EventKind::Null
             | EventKind::MouseDown
@@ -245,7 +105,7 @@ impl EventManager {
             self.queue.push_back(event);
             Ok(())
         } else {
-            bail!("Invalid event type")
+            Err(Error::BadEventKind)
         }
     }
 

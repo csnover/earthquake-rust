@@ -153,7 +153,7 @@ macro_rules! bitflags {
             impl $BitFlags {
                 $(
                     $(#[$inner])*
-                    const $field: $BitFlags = Self { inner: [< $BitFlags Inner >]::$field };
+                    $vis const $field: $BitFlags = Self { inner: [< $BitFlags Inner >]::$field };
                 )*
             }
 

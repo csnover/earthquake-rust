@@ -1,8 +1,12 @@
-use anyhow::{Context, Result as AResult};
-use crate::{EventManager, intl::ScriptCode};
-use crate::resources::Manager as ResourceManager;
+use crate::{events::Manager as EventManager, intl::ScriptCode, resources::{Error as ResourceError, Manager as ResourceManager}};
 use libcommon::vfs::VirtualFileSystem;
 use std::rc::Rc;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("can’t create resource manager: {0}")]
+    ResourceManagerInit(ResourceError),
+}
 
 pub struct System<'vfs> {
     event_manager: EventManager,
@@ -10,11 +14,11 @@ pub struct System<'vfs> {
 }
 
 impl <'vfs> System<'vfs> {
-    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, script: ScriptCode, system: Option<Vec<u8>>) -> AResult<Self> {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, script: ScriptCode, system: Option<Vec<u8>>) -> Result<Self, Error> {
         Ok(Self {
             event_manager: EventManager::new(),
             resource_manager: ResourceManager::new(fs, system)
-                .context("Can’t create resource manager")?,
+                .map_err(Error::ResourceManagerInit)?,
         })
     }
 

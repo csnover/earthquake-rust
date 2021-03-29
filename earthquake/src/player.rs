@@ -22,7 +22,7 @@ use libearthquake::{
         score::Score,
     },
 };
-use libmactoolbox::{EventData, EventKind, ResourceFile, System, script_manager::ScriptCode, types::MacString};
+use libmactoolbox::{System, events::{EventData, EventKind}, intl::ScriptCode, resources::File as ResourceFile, types::MacString};
 use std::{io::SeekFrom, rc::Rc, time::Instant};
 use qt_core::{QBox, q_event::Type as QEventType};
 use qt_widgets::QWidget;
@@ -160,7 +160,7 @@ impl <'vfs> Player<'vfs> {
     }
 
     pub fn post_event(&mut self, kind: EventKind, data: EventData) -> AResult<()> {
-        self.system.event_manager_mut().post_event(kind, data)
+        self.system.event_manager_mut().post_event(kind, data).map_err(anyhow::Error::new)
     }
 
     unsafe fn new_stage_window() -> QBox<QWidget> {

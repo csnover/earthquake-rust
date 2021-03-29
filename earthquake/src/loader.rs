@@ -1,6 +1,6 @@
 
 use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
-use libcommon::{error::ReasonsExt, vfs::VirtualFileSystem};
+use libcommon::{ReasonsExt, vfs::VirtualFileSystem};
 use crate::{qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libearthquake::{
@@ -8,7 +8,7 @@ use libearthquake::{
     name,
     version,
 };
-use libmactoolbox::script_manager::ScriptCode;
+use libmactoolbox::intl::ScriptCode;
 use qt_core::{
     q_dir::Filter as DirFilter,
     AlignmentFlag,

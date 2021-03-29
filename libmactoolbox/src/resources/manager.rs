@@ -1,4 +1,3 @@
-use anyhow::{bail, Context, Result as AResult};
 use binrw::BinRead;
 use crate::types::{MacString, PString};
 use libcommon::vfs::{VirtualFile, VirtualFileSystem};
@@ -13,14 +12,14 @@ pub struct Manager<'vfs> {
 }
 
 impl <'vfs> Manager<'vfs> {
-    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, system: Option<Vec<u8>>) -> AResult<Self> {
+    pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, system: Option<Vec<u8>>) -> ResourceResult<Self> {
         Ok(Self {
             fs,
             current_file: 0,
             files: Vec::new(),
             system: if let Some(data) = system {
                 Some(ResourceFile::new(Cursor::new(data))
-                    .context("Can’t create system resource from memory")?)
+                    .map_err(|error| ResourceError::BadSystemResource(Box::new(error)))?)
             } else {
                 None
             },
@@ -30,7 +29,7 @@ impl <'vfs> Manager<'vfs> {
     /// Closes a resource fork.
     ///
     /// `CloseResFile`
-    pub fn close_resource_file(&mut self, ref_num: RefNum) -> AResult<()> {
+    pub fn close_resource_file(&mut self, ref_num: RefNum) -> ResourceResult<()> {
         for (index, file) in self.files.iter().enumerate() {
             if file.reference_number() == ref_num {
                 self.files.remove(index);
@@ -38,7 +37,7 @@ impl <'vfs> Manager<'vfs> {
             }
         }
 
-        bail!("Invalid resource file index");
+        Err(ResourceError::BadRefNum(ref_num))
     }
 
     /// Gets the total number of resources of a given type in the [current]

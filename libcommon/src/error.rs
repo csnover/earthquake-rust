@@ -1,3 +1,10 @@
+pub fn flatten_errors<T>(mut result: anyhow::Result<T>, chained_error: &anyhow::Error) -> anyhow::Result<T> {
+    for error in chained_error.chain() {
+        result = anyhow::Context::context(result, anyhow::anyhow!("{}", error));
+    }
+    result
+}
+
 pub trait ReasonsExt {
     fn reasons(&self) -> String;
 }

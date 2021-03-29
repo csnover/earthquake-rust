@@ -58,6 +58,8 @@ pub enum Error {
     VfsFailure(anyhow::Error),
     #[error("error reading {0}: {1}")]
     ResourceReadFailure(ResourceId, binrw::Error),
+    #[error("can’t create system resource from memory: {0}")]
+    BadSystemResource(Box<Self>),
 }
 
 impl From<binrw::Error> for Error {

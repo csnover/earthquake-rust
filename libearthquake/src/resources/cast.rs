@@ -108,7 +108,7 @@ impl MemberId {
 
 impl From<MemberNum> for MemberId {
     fn from(num: MemberNum) -> Self {
-        Self(if num.0 == 0 { 0i16 } else { 1i16 }.into(), num)
+        Self(if num.0 == 0 { 0_i16 } else { 1_i16 }.into(), num)
     }
 }
 
