@@ -21,8 +21,6 @@ libcommon = { path = "../libcommon" }
 libmactoolbox = { path = "../libmactoolbox" }
 num-derive = "0.3"
 num-traits = "0.2"
-pest = "2.1"
-pest_derive = "2.1"
 smart-default = "0.6"
 thiserror = "1.0"
 

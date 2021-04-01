@@ -1,4 +1,4 @@
-use anyhow::{Context, Result as AResult};
+use anyhow::{anyhow, Context, Result as AResult};
 use binrw::BinRead;
 use bstr::BStr;
 use crate::resources::{ByteVec, StdList};
@@ -6,7 +6,7 @@ use libcommon::{Reader, SeekExt, restore_on_error};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use smart_default::SmartDefault;
 use std::{io::{Read, Seek}, rc::Rc};
-use super::riff::{ChunkIndex, Riff, RiffResult};
+use super::riff::{ChunkIndex, Riff, Result as RiffResult};
 
 /// An index entry for a file embedded within a [`RiffContainer`].
 #[derive(BinRead, Copy, Clone, Debug, Eq, PartialEq, SmartDefault)]
@@ -133,8 +133,8 @@ impl <T: Reader> RiffContainer<T> {
 
         Ok(Self {
             riff: Rc::new(riff),
-            file_list: Rc::try_unwrap(file_list).unwrap(),
-            file_dict: Rc::try_unwrap(file_dict).unwrap(),
+            file_list: Rc::try_unwrap(file_list).map_err(|_| anyhow!("Can’t unwrap RiffContainer list"))?,
+            file_dict: Rc::try_unwrap(file_dict).map_err(|_| anyhow!("Can’t unwrap RiffContainer dict"))?,
         })
     }
 

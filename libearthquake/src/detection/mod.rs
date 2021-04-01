@@ -43,13 +43,15 @@ pub struct Detection<'vfs> {
 }
 
 pub fn detect(fs: &'_ dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'_>> {
-    fs.open_resource_fork(&path).and_then(|mut res_file| {
+    fs.open_resource_fork(&path)
+    .map_err(anyhow::Error::new)
+    .and_then(|mut res_file| {
         let mut data_file = fs.open(&path).ok();
         detect_mac(&mut res_file, data_file.as_mut()).map(|ft| {
             Detection { info: ft, resource_fork: Some(res_file), data_fork: data_file }
         })
-    }).or_else(|ref e| {
-        let data_file = fs.open(&path).ok().context("No data file");
+    }).or_else(|e| {
+        let data_file = fs.open(&path).ok().context("no data fork");
         flatten_errors(data_file.and_then(|mut df| {
             projector::detect_win(&mut df)
                 .map_err(|e| anyhow!("Not a Director for Windows file: {}", e))
@@ -57,7 +59,7 @@ pub fn detect(fs: &'_ dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<
                 .or_else(|ref e| { df.reset()?; flatten_errors(detect_mac(&mut df, None::<&mut Box<dyn VirtualFile>>), e) })
                 .or_else(|ref e| { df.reset()?; flatten_errors(detect_riff(&mut df), e) })
                 .map(|ft| Detection { info: ft, resource_fork: None, data_fork: Some(df) })
-        }), e)
+        }), &e)
     }).context("Detection failed")
 }
 
@@ -79,7 +81,7 @@ where
                 FileType::Movie(m)
             }), e)
         })
-        .map_err(|e| anyhow!("Not a Director for Mac file: {:?}", e))
+        .map_err(|e| anyhow!("Not a Director for Mac file: {}", e))
 }
 
 fn detect_riff<R: binrw::io::Read + binrw::io::Seek>(data_fork: &mut R) -> AResult<FileType> {

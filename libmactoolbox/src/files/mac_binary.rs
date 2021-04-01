@@ -1,9 +1,24 @@
-use anyhow::{bail, Context, Result as AResult};
 use binrw::io::SeekFrom;
 use byteorder::{ByteOrder, BigEndian};
 use crate::types::MacString;
 use crc::crc16::checksum_x25;
 use libcommon::{SeekExt, SharedStream};
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("unknown i/o error: {0}")]
+    Io(#[from] binrw::io::Error),
+    #[error("file too small")]
+    FileTooSmall,
+    #[error("bad magic byte {0}: 0x{1:x}")]
+    BadMagicByte(u8, u8),
+    #[error("bad header padding")]
+    BadHeaderPadding,
+    #[error("bad filename length")]
+    BadFilenameLength,
+    #[error("bad fork length (resource: {0}, data: {0})")]
+    BadForkLength(u32, u32),
+}
 
 #[derive(Debug)]
 pub struct MacBinary<T: binrw::io::Read + binrw::io::Seek> {
@@ -13,21 +28,21 @@ pub struct MacBinary<T: binrw::io::Read + binrw::io::Seek> {
 }
 
 impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
-    pub fn new(mut data: T) -> AResult<Self> {
+    pub fn new(mut data: T) -> Result<Self, Error> {
         let start_pos = data.pos()?;
         let header = {
             let mut header = [ 0; 128 ];
-            data.read_exact(&mut header).context("File too small")?;
+            data.read_exact(&mut header).map_err(|_| Error::FileTooSmall)?;
             data.seek(SeekFrom::Start(start_pos))?;
             header
         };
 
         if header[0] != 0 {
-            bail!("Bad magic byte 0");
+            return Err(Error::BadMagicByte(0, header[0]));
         }
 
         if header[74] != 0 {
-            bail!("Bad magic byte 1");
+            return Err(Error::BadMagicByte(1, header[74]));
         }
 
         if &header[102..106] == b"mBIN" {
@@ -45,24 +60,24 @@ impl<T: binrw::io::Read + binrw::io::Seek> MacBinary<T> {
         }
 
         if header[82] != 0 {
-            bail!("Bad magic byte 2");
+            return Err(Error::BadMagicByte(2, header[82]));
         }
 
         for &byte in &header[101..=125] {
             if byte != 0 {
-                bail!("Bad header padding");
+                return Err(Error::BadHeaderPadding);
             }
         }
 
         if header[1] < 1 || header[1] > 63 {
-            bail!("Bad filename length");
+            return Err(Error::BadFilenameLength);
         }
 
         let resource_size = BigEndian::read_u32(&header[83..]);
         let data_size = BigEndian::read_u32(&header[87..]);
 
         if resource_size > 0x7f_ffff || data_size > 0x7f_ffff || (resource_size == 0 && data_size == 0) {
-            bail!("Bad fork length");
+            return Err(Error::BadForkLength(resource_size, data_size));
         }
 
         Ok(Self::build(data, &header, Version::V1))

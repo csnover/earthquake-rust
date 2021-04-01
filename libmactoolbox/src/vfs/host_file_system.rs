@@ -1,7 +1,7 @@
-use anyhow::{anyhow, bail, Result as AResult};
+use binrw::io::{ErrorKind, prelude::*, self};
 use crate::files::{AppleDouble, MacBinary};
-use libcommon::{flatten_errors, SharedStream, vfs::{ForkKind, VirtualFile, VirtualFileSystem}};
-use std::{ffi::OsString, fs::{File, metadata}, io::{prelude::*, self}, path::{Path, PathBuf}};
+use libcommon::{SharedStream, vfs::{ForkKind, Result, ResultExt, VirtualFile, VirtualFileSystem}};
+use std::{ffi::OsString, fs::{File, metadata}, path::{Path, PathBuf}};
 
 #[derive(Default)]
 pub struct HostFileSystem;
@@ -14,10 +14,10 @@ impl HostFileSystem {
 }
 
 impl HostFileSystem {
-    fn open_impl(path: impl AsRef<Path>, kind: ForkKind) -> AResult<Box<dyn VirtualFile>> {
+    fn open_impl(path: impl AsRef<Path>, kind: ForkKind) -> Result<Box<dyn VirtualFile>> {
         let (name, inner) = Self::try_apple_double(&path, kind)
-            .or_else(|e| flatten_errors(Self::try_mac_binary(&path, kind), &e))
-            .or_else(|e| flatten_errors(Self::try_raw_files(&path, kind), &e))?;
+            .or_else(|e| Self::try_mac_binary(&path, kind).chain(e))
+            .or_else(|e| Self::try_raw_files(&path, kind).chain(e))?;
 
         match inner {
             Some(inner) => Ok(Box::new(HostFile {
@@ -25,14 +25,14 @@ impl HostFileSystem {
                 path: path.as_ref().to_path_buf(),
                 inner,
             })),
-            None => bail!("No {} fork", match kind {
+            None => Err(io::Error::new(ErrorKind::NotFound, format!("no {} fork", match kind {
                 ForkKind::Data => "data",
                 ForkKind::Resource => "resource"
-            })
+            })).into()),
         }
     }
 
-    fn try_apple_double(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
+    fn try_apple_double(path: impl AsRef<Path>, kind: ForkKind) -> io::Result<(Option<PathBuf>, Option<SharedStream<File>>)> {
         AppleDouble::new(File::open(&path)?, open_apple_double(&path).ok())
             .map(|f| (
                 f.name().map(|name| name.to_path_lossy().into()),
@@ -41,10 +41,10 @@ impl HostFileSystem {
                     ForkKind::Resource => f.resource_fork(),
                 }.cloned()
             ))
-            .map_err(|e| anyhow!("Not an AppleSingle/AppleDouble file: {}", e))
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("not an AppleSingle/AppleDouble file: {}", e)))
     }
 
-    fn try_mac_binary(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
+    fn try_mac_binary(path: impl AsRef<Path>, kind: ForkKind) -> io::Result<(Option<PathBuf>, Option<SharedStream<File>>)> {
         let file = File::open(&path)
             .or_else(|_| open_file_with_ext(&path, "bin"))?;
 
@@ -56,10 +56,10 @@ impl HostFileSystem {
                     ForkKind::Resource => f.resource_fork(),
                 }.cloned()
             ))
-            .map_err(|e| anyhow!("Not a MacBinary file: {}", e))
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("not a MacBinary file: {}", e)))
     }
 
-    fn try_raw_files(path: impl AsRef<Path>, kind: ForkKind) -> AResult<(Option<PathBuf>, Option<SharedStream<File>>)> {
+    fn try_raw_files(path: impl AsRef<Path>, kind: ForkKind) -> io::Result<(Option<PathBuf>, Option<SharedStream<File>>)> {
         Ok((
             None::<PathBuf>,
             Some(SharedStream::substream_from(match kind {
@@ -71,11 +71,11 @@ impl HostFileSystem {
 }
 
 impl VirtualFileSystem for HostFileSystem {
-    fn open<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>> {
+    fn open<'a>(&'a self, path: &dyn AsRef<Path>) -> Result<Box<dyn VirtualFile + 'a>> {
         Self::open_impl(&path, ForkKind::Data)
     }
 
-    fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>> {
+    fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> Result<Box<dyn VirtualFile + 'a>> {
         Self::open_impl(&path, ForkKind::Resource)
     }
 }
@@ -146,8 +146,4 @@ fn open_named_fork<T: AsRef<Path>>(path: T) -> io::Result<File> {
 fn open_resource_fork(path: impl AsRef<Path>) -> io::Result<File> {
     open_named_fork(path.as_ref())
         .or_else(|_| open_file_with_ext(path, "rsrc"))
-}
-
-mod tests {
-    // TODO
 }

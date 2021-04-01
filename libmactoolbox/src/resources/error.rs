@@ -55,7 +55,7 @@ pub enum Error {
     #[error("no system file")]
     NoSystemFile,
     #[error("vfs error: {0}")]
-    VfsFailure(anyhow::Error),
+    VfsFailure(libcommon::vfs::Error),
     #[error("error reading {0}: {1}")]
     ResourceReadFailure(ResourceId, binrw::Error),
     #[error("can’t create system resource from memory: {0}")]

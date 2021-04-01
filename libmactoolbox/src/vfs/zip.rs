@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Result as AResult};
-use libcommon::{SeekExt, SharedStream, vfs::{VirtualFile, VirtualFileSystem}};
+use binrw::io::{Error, ErrorKind};
+use libcommon::{SeekExt, SharedStream, vfs::{Result, VirtualFile, VirtualFileSystem}};
 use rc_zip::{Archive, EntryReader, ReadZip, EntryContents, StoredEntry};
 use std::{convert::TryFrom, fmt, fs::File, io::{Read, Seek, SeekFrom, self}, path::{Path, PathBuf}};
 use tempfile::SpooledTempFile;
@@ -12,9 +12,9 @@ pub struct Zip {
 }
 
 impl Zip {
-    pub fn new(path: impl AsRef<Path>) -> AResult<Self> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(&path)?;
-        let archive = file.read_zip()?;
+        let archive = file.read_zip().map_err(Into::<Error>::into)?;
         let stream = SharedStream::new(file);
 
         Ok(Self {
@@ -24,9 +24,10 @@ impl Zip {
         })
     }
 
-    fn make_file<'a>(&'a self, path: impl AsRef<Path>, entry: &'a StoredEntry) -> AResult<Box<dyn VirtualFile + 'a>> {
+    fn make_file<'a>(&'a self, path: impl AsRef<Path>, entry: &'a StoredEntry) -> Result<Box<dyn VirtualFile + 'a>> {
         match entry.contents() {
-            EntryContents::Directory(_) | EntryContents::Symlink(_) => bail!("Not a file"),
+            EntryContents::Directory(_) | EntryContents::Symlink(_) =>
+                Err(Error::new(ErrorKind::InvalidInput, "not a file").into()),
             EntryContents::File(_) => Ok({
                 let reader = entry.reader(|offset| self.stream.substream(offset, offset + entry.compressed_size));
                 let size = entry.uncompressed_size;
@@ -43,22 +44,22 @@ fn make_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
 }
 
 impl VirtualFileSystem for Zip {
-    fn open<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>> {
+    fn open<'a>(&'a self, path: &dyn AsRef<Path>) -> Result<Box<dyn VirtualFile + 'a>> {
         // TODO: by_name does not work correctly because (1) case-sensitivity
         // and (2) different character sets in archives
         self.archive
             .by_name(path.as_ref().to_string_lossy())
-            .ok_or_else(|| anyhow!("File not found"))
+            .ok_or_else(|| Error::from(ErrorKind::NotFound).into())
             .and_then(|entry| self.make_file(path, entry))
     }
 
-    fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> AResult<Box<dyn VirtualFile + 'a>> {
+    fn open_resource_fork<'a>(&'a self, path: &dyn AsRef<Path>) -> Result<Box<dyn VirtualFile + 'a>> {
         // TODO: by_name does not work correctly because (1) case-sensitivity
         // and (2) different character sets in archives
         self.archive
             .by_name(&make_path("XtraStuf.mac", &path))
             .or_else(|| self.archive.by_name(&make_path("__MACOSX", &path)))
-            .ok_or_else(|| anyhow!("File not found"))
+            .ok_or_else(|| Error::from(ErrorKind::NotFound).into())
             .and_then(|entry| self.make_file(path, entry))
     }
 }
