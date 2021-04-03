@@ -159,3 +159,9 @@ impl BinRead for PString {
         })
     }
 }
+
+impl PartialEq<&str> for PString {
+    fn eq(&self, other: &&str) -> bool {
+        self.0.as_bstr() == other
+    }
+}

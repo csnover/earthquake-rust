@@ -254,6 +254,15 @@ impl PVecOffsets {
     pub fn len(&self) -> usize {
         self.0.len() - 1
     }
+
+    /// Creates a new `PVecOffsets` by copying from the given position and
+    /// count.
+    ///
+    /// This is a hack to work around the lack of generic associated types.
+    pub fn slice(&self, at: usize, count: usize) -> Self {
+        // `+ 1` for the terminator entry
+        Self(self.0[at..at + count + 1].to_vec())
+    }
 }
 
 #[macro_export]

@@ -336,10 +336,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
             let id = resource.id();
             if id.os_type().as_bytes() == b"MCsL" {
                 let cast_list = riff.load::<CastList>(id)?;
-                println!("{:?}", cast_list);
-                for (i, cast) in cast_list.iter().enumerate() {
-                    println!("{}: {:?}", i, cast);
-                }
+                println!("{:#?}", cast_list);
             }
         }
     }
