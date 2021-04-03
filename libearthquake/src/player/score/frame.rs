@@ -158,7 +158,7 @@ pub struct FrameV5 {
     pub sound_2_related: Unk8,
     pub script_related: Unk8,
     pub transition_related: Unk8,
-    #[br(args(version, transition), parse_with = Self::parse_tempo)]
+    #[br(args(version, transition), parse_with = parse_tempo)]
     pub tempo: Tempo,
     #[br(align_before(24))]
     pub palette: Palette,
@@ -167,19 +167,17 @@ pub struct FrameV5 {
     pub sprites: [ Sprite; NUM_SPRITES ],
 }
 
-impl FrameV5 {
-    fn parse_tempo<R>(reader: &mut R, options: &binrw::ReadOptions, args: (Version, Transition)) -> binrw::BinResult<Tempo>
-    where R: Read + binrw::io::Seek {
-        let (version, transition) = args;
-        if version < Version::V6 {
-            Ok(transition.tempo())
-        } else {
-            let last_pos = reader.seek(SeekFrom::Current(0))?;
-            let value = i8::read_options(reader, options, ())?;
-            Tempo::new(value.into()).map_err(|e| binrw::Error::AssertFail {
-                pos: last_pos,
-                message: format!("{}", e)
-            })
-        }
+fn parse_tempo<R>(reader: &mut R, options: &binrw::ReadOptions, args: (Version, Transition)) -> binrw::BinResult<Tempo>
+where R: Read + binrw::io::Seek {
+    let (version, transition) = args;
+    if version < Version::V6 {
+        Ok(transition.tempo())
+    } else {
+        let last_pos = reader.seek(SeekFrom::Current(0))?;
+        let value = i8::read_options(reader, options, ())?;
+        Tempo::new(value.into()).map_err(|e| binrw::Error::AssertFail {
+            pos: last_pos,
+            message: format!("{}", e)
+        })
     }
 }

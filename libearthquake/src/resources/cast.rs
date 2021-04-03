@@ -152,9 +152,9 @@ bitflags! {
     struct MemberInfoFlags: u32 {
         const NONE          = 0;
         const EXTERNAL_FILE = 1;
-        const NEVER_PURGE   = 4;
+        const PURGE_NEVER   = 4;
         const PURGE_LAST    = 8;
-        const PURGE_NEXT    = Self::NEVER_PURGE.bits | Self::PURGE_LAST.bits;
+        const PURGE_NEXT    = Self::PURGE_NEVER.bits | Self::PURGE_LAST.bits;
         const SOUND_ON      = 0x10;
     }
 }

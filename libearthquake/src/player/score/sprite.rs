@@ -9,7 +9,7 @@ use super::Version;
 
 #[derive(BinRead, Copy, Clone, Debug, Eq, PartialEq, SmartDefault)]
 #[br(repr(u8))]
-pub enum SpriteKind {
+pub enum Kind {
     #[default]
     None = 0,
     Bitmap,
@@ -34,7 +34,7 @@ pub enum SpriteKind {
 
 bitflags! {
     #[derive(Default)]
-    pub struct SpriteLineSize: u8 {
+    pub struct LineSize: u8 {
         const LINE_SIZE = 0xf;
         const BLEND     = 0x10;
         const FLAG_20   = 0x20;
@@ -44,12 +44,9 @@ bitflags! {
     }
 }
 
-// TODO: Reintroduce validation:
-// let ink = (ink_and_flags & SpriteInk::INK_KIND).bits();
-// Pen::from_u8(ink).with_context(|| format!("Invalid sprite ink {}", ink))?;
 bitflags! {
     #[derive(Default)]
-    pub struct SpriteInk: u8 {
+    pub struct Ink: u8 {
         const INK_KIND = 0x3f;
         const TRAILS   = 0x40;
         const STRETCH  = 0x80;
@@ -58,7 +55,7 @@ bitflags! {
 
 bitflags! {
     #[derive(Default)]
-    pub struct SpriteScoreColor: u8 {
+    pub struct ScoreColor: u8 {
         const COLOR    = 0xf;
         const FLAG_10  = 0x10;
         const FLAG_20  = 0x20;
@@ -67,16 +64,16 @@ bitflags! {
     }
 }
 
-fn fix_v0_v6_sprite_kind(kind: SpriteKind) -> SpriteKind {
+fn fix_v0_v6_sprite_kind(kind: Kind) -> Kind {
     match kind {
-        SpriteKind::Bitmap
-        | SpriteKind::Field
-        | SpriteKind::Button
-        | SpriteKind::CheckBox
-        | SpriteKind::RadioButton
-        | SpriteKind::Picture
-        | SpriteKind::Cast
-        | SpriteKind::Text => SpriteKind::Cast,
+        Kind::Bitmap
+        | Kind::Field
+        | Kind::Button
+        | Kind::CheckBox
+        | Kind::RadioButton
+        | Kind::Picture
+        | Kind::Cast
+        | Kind::Text => Kind::Cast,
         kind => kind
     }
 }
@@ -89,11 +86,11 @@ pub(super) struct SpriteV3 {
     // extra fields should be added to Frame to store it. Also, it turns out
     // this is not the script-related field from D4.
     script: u8,
-    kind: SpriteKind,
+    kind: Kind,
     fore_color_index: u8,
     back_color_index: u8,
-    line_size_and_flags: SpriteLineSize,
-    ink_and_flags: SpriteInk,
+    line_size_and_flags: LineSize,
+    ink_and_flags: Ink,
     id: MemberNum,
     origin: Point,
     height: i16,
@@ -121,17 +118,17 @@ impl From<SpriteV3> for SpriteV5 {
 #[br(big, import(version: Version))]
 pub(super) struct SpriteV4 {
     field_0: Unk8,
-    kind: SpriteKind,
+    kind: Kind,
     fore_color_index: u8,
     back_color_index: u8,
-    line_size_and_flags: SpriteLineSize,
-    ink_and_flags: SpriteInk,
+    line_size_and_flags: LineSize,
+    ink_and_flags: Ink,
     id: MemberNum,
     origin: Point,
     height: i16,
     width: i16,
     script: MemberNum,
-    score_color_and_flags: SpriteScoreColor,
+    score_color_and_flags: ScoreColor,
     #[br(align_after(20))]
     blend_amount: u8,
 }
@@ -158,9 +155,9 @@ impl From<SpriteV4> for SpriteV5 {
 #[derive(BinRead, Clone, Copy, Default)]
 #[br(big, import(version: Version))]
 pub struct SpriteV5 {
-    #[br(map = |kind: SpriteKind| if version == Version::V7 { kind } else { fix_v0_v6_sprite_kind(kind) })]
-    kind: SpriteKind,
-    ink_and_flags: SpriteInk,
+    #[br(map = |kind: Kind| if version == Version::V7 { kind } else { fix_v0_v6_sprite_kind(kind) })]
+    kind: Kind,
+    ink_and_flags: Ink,
     id: MemberId,
     script: MemberId,
     fore_color_index: u8,
@@ -168,10 +165,10 @@ pub struct SpriteV5 {
     origin: Point,
     height: i16,
     width: i16,
-    score_color_and_flags: SpriteScoreColor,
+    score_color_and_flags: ScoreColor,
     blend_amount: u8,
     #[br(align_after(24))]
-    line_size_and_flags: SpriteLineSize,
+    line_size_and_flags: LineSize,
 }
 
 #[derive(Clone, Copy, Default, Deref, DerefMut, From)]
@@ -189,7 +186,7 @@ impl Sprite {
 
     #[must_use]
     pub fn blend(&self) -> bool {
-        self.line_size_and_flags.contains(SpriteLineSize::BLEND)
+        self.line_size_and_flags.contains(LineSize::BLEND)
     }
 
     #[must_use]
@@ -199,7 +196,7 @@ impl Sprite {
 
     #[must_use]
     pub fn editable(&self) -> bool {
-        self.score_color_and_flags.contains(SpriteScoreColor::EDITABLE)
+        self.score_color_and_flags.contains(ScoreColor::EDITABLE)
     }
 
     #[must_use]
@@ -219,22 +216,22 @@ impl Sprite {
 
     #[must_use]
     pub fn ink(&self) -> Pen {
-        Pen::from_u8((self.ink_and_flags & SpriteInk::INK_KIND).bits()).unwrap()
+        Pen::from_u8((self.ink_and_flags & Ink::INK_KIND).bits()).unwrap()
     }
 
     #[must_use]
-    pub fn kind(&self) -> SpriteKind {
+    pub fn kind(&self) -> Kind {
         self.kind
     }
 
     #[must_use]
     pub fn line_size(&self) -> u8 {
-        (self.line_size_and_flags & SpriteLineSize::LINE_SIZE).bits()
+        (self.line_size_and_flags & LineSize::LINE_SIZE).bits()
     }
 
     #[must_use]
     pub fn moveable(&self) -> bool {
-        self.score_color_and_flags.contains(SpriteScoreColor::MOVEABLE)
+        self.score_color_and_flags.contains(ScoreColor::MOVEABLE)
     }
 
     #[must_use]
@@ -244,17 +241,17 @@ impl Sprite {
 
     #[must_use]
     pub fn score_color(&self) -> u8 {
-        (self.score_color_and_flags & SpriteScoreColor::COLOR).bits()
+        (self.score_color_and_flags & ScoreColor::COLOR).bits()
     }
 
     #[must_use]
-    pub fn score_color_flags(&self) -> SpriteScoreColor {
-        self.score_color_and_flags & !SpriteScoreColor::COLOR
+    pub fn score_color_flags(&self) -> ScoreColor {
+        self.score_color_and_flags & !ScoreColor::COLOR
     }
 
-    pub fn set_score_color_flags(&mut self, mut flags: SpriteScoreColor) {
-        flags &= !SpriteScoreColor::COLOR;
-        self.score_color_and_flags.remove(!SpriteScoreColor::COLOR);
+    pub fn set_score_color_flags(&mut self, mut flags: ScoreColor) {
+        flags &= !ScoreColor::COLOR;
+        self.score_color_and_flags.remove(!ScoreColor::COLOR);
         self.score_color_and_flags |= flags;
     }
 
@@ -269,12 +266,12 @@ impl Sprite {
 
     #[must_use]
     pub fn stretch(&self) -> bool {
-        self.ink_and_flags.contains(SpriteInk::STRETCH)
+        self.ink_and_flags.contains(Ink::STRETCH)
     }
 
     #[must_use]
     pub fn trails(&self) -> bool {
-        self.ink_and_flags.contains(SpriteInk::TRAILS)
+        self.ink_and_flags.contains(Ink::TRAILS)
     }
 
     #[must_use]

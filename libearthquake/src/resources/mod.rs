@@ -259,6 +259,8 @@ impl PVecOffsets {
     /// count.
     ///
     /// This is a hack to work around the lack of generic associated types.
+    #[allow(clippy::range_plus_one)]
+    #[must_use]
     pub fn slice(&self, at: usize, count: usize) -> Self {
         // `+ 1` for the terminator entry
         Self(self.0[at..at + count + 1].to_vec())
@@ -450,6 +452,11 @@ where
     T: TryFrom<i32>,
     T::Error: std::error::Error + Send + Sync + 'static,
 {
+    /// Gets the key used by the given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key offset in the data is out of range for `usize`.
     #[must_use]
     pub fn key_by_index(&self, index: usize) -> Option<&BStr> {
         let keys = self.keys.as_ref()?;

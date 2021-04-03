@@ -190,7 +190,7 @@ impl <'vfs> EventReceiver for Engine<'vfs> {
 
             QEventType::KeyPress | QEventType::KeyRelease => {
                 if let Some(player) = self.player.as_mut() {
-                    let event = unsafe { &*(event as *const QEvent as *const QKeyEvent) };
+                    let event = unsafe { &*(event as *const QEvent).cast::<QKeyEvent>() };
                     let char = unsafe { event.text() }.to_std_string().chars().next().unwrap_or('\0');
                     let key = unsafe { event.key() };
                     player.post_event(if e == QEventType::KeyRelease {

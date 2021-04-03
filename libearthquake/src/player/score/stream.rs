@@ -6,7 +6,7 @@ use smart_default::SmartDefault;
 use super::{Frame, SpriteBitmask, Version};
 
 #[derive(Clone, Debug, SmartDefault)]
-pub struct ScoreStream {
+pub struct Stream {
     input: Cursor<Vec<u8>>,
     data_start_pos: u32,
     data_end_pos: u32,
@@ -16,7 +16,7 @@ pub struct ScoreStream {
     raw_last_frame: [ u8; Frame::V5_SIZE as usize ],
 }
 
-impl ScoreStream {
+impl Stream {
     pub(super) fn new(mut input: Cursor<Vec<u8>>, data_start_pos: u32, data_end_pos: u32, version: Version) -> Self {
         input.seek(SeekFrom::Start(data_start_pos.into())).unwrap();
         Self {

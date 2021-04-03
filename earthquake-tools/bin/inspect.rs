@@ -146,7 +146,7 @@ fn parse_frames(frames: &str) -> AResult<(i16, i16)> {
 
 fn parse_member_id(id: &str) -> AResult<MemberId> {
     if let Ok(member_num) = id.parse::<i16>() {
-        Ok(MemberId::new(0i16, member_num))
+        Ok(MemberId::new(0_i16, member_num))
     } else {
         match id.split(',').take(3).collect::<Vec<_>>().as_slice() {
             [ lib_num, member_num ] => {
@@ -366,7 +366,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
             for (i, &chunk_index) in cast.iter().enumerate() {
                 if chunk_index > ChunkIndex::new(0) {
                     let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
-                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0i16, cast_member_num)) {
+                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0_i16, cast_member_num)) {
                         match riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version)) {
                             Ok(member) => println!("{}: {:#?}", cast_member_num, member),
                             Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),

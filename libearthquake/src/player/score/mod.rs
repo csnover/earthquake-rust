@@ -15,7 +15,7 @@ pub(super) use score_1494::Score1494;
 pub use score::Score;
 pub(super) use sprite::Sprite;
 pub(super) use sprite_bitmask::SpriteBitmask;
-pub(super) use stream::ScoreStream;
+pub(super) use stream::Stream;
 pub use tempo::Tempo;
 pub(super) use text_editor::TextEditor;
 pub(super) use transition::Transition;

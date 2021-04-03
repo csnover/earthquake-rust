@@ -8,7 +8,7 @@ use libearthquake::{
     name,
     version,
 };
-use libmactoolbox::intl::ScriptCode;
+use libmactoolbox::{intl::ScriptCode, types::MacString};
 use qt_core::{
     q_dir::Filter as DirFilter,
     AlignmentFlag,
@@ -608,7 +608,7 @@ impl Loader {
                     match &d.info {
                         FileType::Projector(info) => {
                             // TODO: Use unwrap_or_else like a proper code
-                            let name = info.name().map(|s| s.to_str_lossy());
+                            let name = info.name().map(MacString::to_str_lossy);
                             self.tabs.info.file_name.set_text(&qs(name.unwrap_or(std::borrow::Cow::Borrowed(&tr!(self.l, "file-info_unknown-file-name")))));
                             self.tabs.info.kind.set_text(qtr!(
                                 self.l,

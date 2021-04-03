@@ -4,7 +4,7 @@ use core::convert::TryInto;
 use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, restore_on_error};
 use libmactoolbox::quickdraw::{Point, Rect};
 use smart_default::SmartDefault;
-use super::{Fps, Frame, FrameNum, NUM_SPRITES, Palette, Score1494, ScoreStream as ScoreStream, Sprite, SpriteBitmask, Tempo, TextEditor, Transition, Version};
+use super::{Fps, Frame, FrameNum, NUM_SPRITES, Palette, Score1494, Stream, Sprite, SpriteBitmask, Tempo, TextEditor, Transition, Version};
 
 bitflags! {
     #[derive(Default)]
@@ -23,12 +23,13 @@ bitflags! {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, SmartDefault)]
 pub struct Score {
     #[default(ScoreHeaderV5::SIZE)]
     current_frame_vwsc_position: u32,
     next_frame_vwsc_position: u32,
-    vwsc: ScoreStream,
+    vwsc: Stream,
     score_header: Vec<u8>,
     #[default(ScoreHeaderV5::SIZE)]
     vwsc_frame_data_maybe_start_pos: u32,
@@ -232,7 +233,7 @@ impl BinRead for Score {
             let pos = input.pos()?;
 
             Ok(Self {
-                vwsc: ScoreStream::new(input, pos.try_into().unwrap(), own_size, version),
+                vwsc: Stream::new(input, pos.try_into().unwrap(), own_size, version),
                 ..Self::default()
             })
         })
