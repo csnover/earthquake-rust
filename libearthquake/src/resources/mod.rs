@@ -1,3 +1,5 @@
+//! Type definitions for serialized resource data.
+
 pub mod bitmap;
 pub mod cast;
 pub mod config;
@@ -59,7 +61,7 @@ impl ByteVecHeaderV5 {
 }
 
 /// A contiguous growable byte array.
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+#[derive(Clone, Debug, Deref, DerefMut)]
 pub struct ByteVec(Vec<u8>);
 
 impl BinRead for ByteVec {
@@ -122,9 +124,9 @@ impl ListHeader for ListHeaderV5 {
 }
 
 /// A growable list of homogeneous items with a generic header.
-#[derive(Clone, Debug, Default, Deref, DerefMut, Index, IndexMut)]
+#[derive(Clone, Debug, Default, Deref, DerefMut)]
 pub struct List<Header: ListHeader, T: BinRead>(
-    #[deref] #[deref_mut] #[index] #[index_mut]
+    #[deref] #[deref_mut]
     Vec<T>,
     PhantomData<Header>
 );

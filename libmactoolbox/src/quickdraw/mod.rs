@@ -102,6 +102,12 @@ impl std::fmt::Debug for Rect {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Region {
+    size: i16,
+    bounding_box: Rect,
+}
+
 newtype_num! {
     #[derive(BinRead)]
     pub struct PaletteIndex(u8);

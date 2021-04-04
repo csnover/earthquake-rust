@@ -3,7 +3,7 @@ use binrw::BinRead;
 use bstr::BStr;
 use crate::resources::{ByteVec, StdList};
 use libcommon::{Reader, SeekExt, restore_on_error};
-use derive_more::{Deref, DerefMut, Index, IndexMut};
+use derive_more::{Deref, DerefMut};
 use smart_default::SmartDefault;
 use std::{io::{Read, Seek}, rc::Rc};
 use super::riff::{ChunkIndex, Riff, Result as RiffResult};
@@ -117,10 +117,10 @@ impl BinRead for Dict {
 ///
 /// Starting in Director 6 (TODO: maybe 7? check this), the container was
 /// extended to also include binary Xtras.
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+#[derive(Clone, Debug, Deref, DerefMut)]
 pub struct RiffContainer<T: Reader> {
     riff: Rc<Riff<T>>,
-    #[deref] #[deref_mut] #[index] #[index_mut]
+    #[deref] #[deref_mut]
     file_list: StdList<ChunkFile>,
     file_dict: Dict,
 }

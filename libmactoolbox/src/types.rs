@@ -165,3 +165,6 @@ impl PartialEq<&str> for PString {
         self.0.as_bstr() == other
     }
 }
+
+pub type Tick = std::time::Instant;
+pub type TickDuration = std::time::Duration;

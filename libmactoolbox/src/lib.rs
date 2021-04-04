@@ -26,5 +26,7 @@ mod system;
 pub mod text_edit;
 pub mod types;
 pub mod vfs;
+#[cfg(feature = "windows")]
+pub mod windows;
 
 pub use system::System;

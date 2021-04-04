@@ -11,7 +11,7 @@ use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Rea
 use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResourceId, Source};
 
 /// A file reference number which corresponds to an open resource fork.
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Display, Eq, PartialEq)]
 pub struct RefNum(pub i16);
 
 // TODO: This should eventually be associated with the resource manager so it

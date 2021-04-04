@@ -1,9 +1,9 @@
 use binrw::derive_binread;
 use crate::types::PString;
-use derive_more::{Deref, DerefMut, Index, IndexMut, IntoIterator};
+use derive_more::{Deref, DerefMut, IntoIterator};
 
 #[derive_binread]
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut, IntoIterator)]
+#[derive(Clone, Debug, Deref, DerefMut, IntoIterator)]
 #[into_iterator(owned, ref, ref_mut)]
 pub struct StringList(
     #[br(temp)]
@@ -11,8 +11,6 @@ pub struct StringList(
 
     #[deref]
     #[deref_mut]
-    #[index]
-    #[index_mut]
     #[into_iterator]
     #[br(count = self_0)]
     Vec<PString>

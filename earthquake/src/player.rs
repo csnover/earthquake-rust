@@ -137,7 +137,7 @@ impl <'vfs> Player<'vfs> {
             some_tick_count_51145c: None,
             current_index: 0,
             paused: false,
-            root_movie: Movie,
+            root_movie: Movie::default(),
             root_score: Score::default(),
             stage_window: unsafe { Self::new_stage_window() },
             windows: Vec::new(),

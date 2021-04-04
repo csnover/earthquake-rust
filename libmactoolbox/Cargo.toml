@@ -32,10 +32,11 @@ tempfile = { version = "3.1", optional = true }
 thiserror = "1.0"
 
 [features]
-default = ["dialogs", "events", "intl", "quickdraw", "sys_info"]
+default = ["dialogs", "events", "intl", "quickdraw", "sys_info", "windows"]
 dialogs = ["quickdraw"]
 events = ["quickdraw"]
 intl = ["encoding"]
 quickdraw = ["cpp_core", "qt_core", "qt_gui", "qt_widgets"]
 sys_info = ["cpp_core", "qt_core"]
 vfs_zip = ["tempfile", "rc-zip"]
+windows = ["quickdraw"]

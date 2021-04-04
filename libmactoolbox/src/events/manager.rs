@@ -1,11 +1,11 @@
 use core::convert::TryInto;
-use crate::quickdraw::Point;
+use crate::{quickdraw::Point, types::Tick};
 use libcommon::bitflags::BitFlags;
 use qt_core::{KeyboardModifier, MouseButton};
 use qt_gui::{QCursor, QGuiApplication};
 use smart_default::SmartDefault;
 use std::{collections::VecDeque, time::{Duration, Instant}};
-use super::{Error, event::{Data as EventData, Kind as EventKind, Modifiers as EventModifiers, Record as EventRecord, Tick}};
+use super::{Error, event::{Data as EventData, Kind as EventKind, Modifiers as EventModifiers, Record as EventRecord}};
 
 #[derive(Debug, SmartDefault)]
 pub struct Manager {
@@ -128,7 +128,7 @@ impl Manager {
     /// `TickCount`
     #[must_use]
     pub fn tick_count(&self) -> Tick {
-        self.start + (Instant::now() - self.instance_start)
+        self.start + self.instance_start.elapsed()
     }
 
     fn modifiers(&self) -> EventModifiers {

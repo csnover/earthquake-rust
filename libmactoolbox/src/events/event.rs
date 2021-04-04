@@ -1,8 +1,6 @@
-use crate::{quickdraw::Point, resources::OsType};
+use crate::{quickdraw::Point, resources::OsType, types::Tick};
 use libcommon::{UnkPtr, bitflags};
 use std::rc::Weak;
-
-pub(super) type Tick = std::time::Instant;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {

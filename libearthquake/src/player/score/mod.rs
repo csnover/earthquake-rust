@@ -51,7 +51,7 @@ newtype_num! {
 // D5: 48
 // D6: 120
 // D7: 150
-const NUM_SPRITES: usize = 150;
+pub(super) const NUM_SPRITES: usize = 150;
 
 #[derive(BinRead, Clone, Copy, Debug, Display, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
 #[br(repr(i16))]

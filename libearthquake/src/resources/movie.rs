@@ -2,7 +2,7 @@ use binrw::BinRead;
 use libmactoolbox::types::PString;
 use core::convert::TryFrom;
 use crate::pvec;
-use derive_more::{Deref, DerefMut, Index, IndexMut};
+use derive_more::{Deref, DerefMut};
 use libcommon::restore_on_error;
 use super::{PVecOffsets, StdList, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
@@ -10,7 +10,7 @@ use smart_default::SmartDefault;
 pvec! {
     /// The list of cast libraries used by a movie.
     ///
-    /// OsType: `MCsL`
+    /// OsType: `'MCsL'`
     /// RE: `MovieCastList`
     #[derive(Debug)]
     pub struct CastList {
@@ -27,12 +27,6 @@ pvec! {
             #[br(args(entries_per_cast, offsets.clone()), count(count))]
             _  => members: CastListMembers,
         }
-    }
-}
-
-impl CastList {
-    pub fn iter(&self) -> impl Iterator<Item = &Cast> {
-        self.members.0.iter()
     }
 }
 
@@ -139,6 +133,8 @@ pub struct Cast {
 ///
 /// Internal cast members which are not in the score are included at the end of
 /// the list.
-#[derive(BinRead, Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+///
+/// `OsType`: `'Sord'`
+#[derive(BinRead, Clone, Debug, Deref, DerefMut)]
 #[br(big)]
 pub struct CastScoreOrder(StdList<MemberId>);

@@ -3,6 +3,7 @@
 
 pub mod movie;
 pub mod score;
+mod window;
 
 use anyhow::Result as AResult;
 use crate::detection::{detect, FileType};

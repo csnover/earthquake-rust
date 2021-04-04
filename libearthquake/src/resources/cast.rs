@@ -1,7 +1,7 @@
 use binrw::{BinRead, NullString};
 use libmactoolbox::types::PString;
 use crate::{collections::riff::ChunkIndex, pvec};
-use derive_more::{Deref, DerefMut, Display, Index, IndexMut};
+use derive_more::{Deref, DerefMut, Display};
 use libcommon::{SeekExt, TakeSeekExt, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -70,7 +70,7 @@ newtype_num! {
     pub struct MemberNum(pub i16);
 }
 
-#[derive(BinRead, Clone, Copy, Default, Display, Eq, PartialEq)]
+#[derive(BinRead, Clone, Copy, Default, Display, Eq, Ord, PartialEq, PartialOrd)]
 #[display(fmt = "MemberId({}, {})", "_0.0", "_1.0")]
 pub struct MemberId(LibNum, MemberNum);
 
@@ -115,7 +115,7 @@ impl From<MemberNum> for MemberId {
 // TODO: Rewrite this to use binrw and put it somewhere better with a
 // non-repetitive name
 #[allow(clippy::module_name_repetitions)]
-#[derive(Clone, Debug, Deref, DerefMut, Index, IndexMut)]
+#[derive(Clone, Debug, Deref, DerefMut)]
 pub struct CastMap(Vec<ChunkIndex>);
 
 impl BinRead for CastMap {
