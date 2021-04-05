@@ -146,7 +146,7 @@ impl ProjectorSettings {
 impl BinRead for ProjectorSettings {
     type Args = (Version, Platform);
 
-    fn read_options<R: std::io::Read + std::io::Seek>(
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(
         reader: &mut R,
         _: &binrw::ReadOptions,
         (version, platform): Self::Args,

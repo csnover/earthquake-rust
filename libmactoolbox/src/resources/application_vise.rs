@@ -1,7 +1,8 @@
 //! Type definitions for the Application VISE decompressor.
 
+use binrw::io::{Error, ErrorKind, Result};
 use byteorder::{ByteOrder, BigEndian};
-use std::{convert::{TryFrom, TryInto}, io::{Error, ErrorKind, Result}};
+use core::convert::{TryFrom, TryInto};
 
 /// A decompressor for the Application VISE runtime executable compression
 /// format.

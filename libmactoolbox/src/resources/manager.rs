@@ -1,7 +1,8 @@
-use binrw::BinRead;
+use binrw::{BinRead, io::Cursor};
+use core::convert::TryFrom;
 use crate::types::{MacString, PString};
 use libcommon::vfs::{VirtualFile, VirtualFileSystem};
-use std::{convert::TryFrom, io::Cursor, path::Path, rc::Rc};
+use std::{path::Path, rc::Rc};
 use super::{Error as ResourceError, File as ResourceFile, OsType, RefNum, Result as ResourceResult, ResourceId, Source as ResourceSource, kinds::StringList};
 
 pub struct Manager<'vfs> {

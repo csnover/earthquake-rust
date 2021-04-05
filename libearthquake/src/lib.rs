@@ -16,6 +16,7 @@
 mod macros;
 pub mod collections;
 pub mod detection;
+pub mod fonts;
 pub mod lingo;
 pub mod player;
 pub mod resources;

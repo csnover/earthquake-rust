@@ -115,7 +115,7 @@ impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
             return Ok(0);
         }
 
-        let max = core::cmp::min(buf.len(), limit);
+        let max = buf.len().min(limit);
         let n = inner.read(&mut buf[0..max])?;
         self.current_pos += u64::try_from(n).unwrap();
         Ok(n)

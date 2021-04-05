@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult, anyhow, bail, ensure};
-use binrw::BinRead;
+use binrw::{BinRead, io::{Cursor, Read, SeekFrom}};
 use bitflags::bitflags;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
@@ -10,7 +10,7 @@ use crate::{
 use derive_more::Display;
 use libcommon::SeekExt;
 use libmactoolbox::{resources::{File as ResourceFile, ResourceId, Source as ResourceSource, kinds::StringList as StringListResource}, intl::ScriptCode, types::{MacString, PString}};
-use std::{convert::TryInto, io::{Cursor, Read, SeekFrom}, rc::Rc};
+use std::{convert::TryInto, rc::Rc};
 use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone)]
@@ -472,8 +472,8 @@ fn internal_movie<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, offset: 
 }
 
 mod pe {
-    use binrw::{BinReaderExt, NullWideString};
-    use std::{convert::TryInto, io};
+    use binrw::{BinReaderExt, NullWideString, io};
+    use core::convert::TryInto;
     use super::{
         AResult,
         ByteOrder,

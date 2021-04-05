@@ -9,15 +9,16 @@ pub mod movie;
 pub mod script;
 pub mod shape;
 pub mod text;
+pub mod tile;
 pub mod transition;
 pub mod video;
 pub mod xtra;
 
-use binrw::{BinRead, derive_binread, io::{Read, Seek}};
+use binrw::{BinRead, derive_binread, io::{Read, Seek, self}};
 use bstr::BStr;
+use core::{convert::{TryFrom, TryInto}, marker::PhantomData};
 use derive_more::{Deref, DerefMut, Index, IndexMut};
 use libcommon::{SeekExt, TakeSeekExt, restore_on_error};
-use std::{cmp, convert::{TryFrom, TryInto}, marker::PhantomData};
 
 /// A reference counted object with a vtable.
 ///
@@ -77,7 +78,7 @@ impl BinRead for ByteVec {
                 .take(data_size)
                 .read_to_end(&mut data)?;
             if u64::try_from(bytes_read).unwrap() != data_size {
-                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             Ok(Self(data))
         })
@@ -226,16 +227,16 @@ impl PVecOffsets {
     /// If the range is out of bounds, it is automatically restricted.
     #[must_use]
     pub fn entry_range_size<Range: std::ops::RangeBounds<usize>>(&self, range: Range) -> u32 {
-        let max = cmp::min(self.len(), match range.end_bound() {
+        let max = match range.end_bound() {
             std::ops::Bound::Included(value) => value + 1,
             std::ops::Bound::Excluded(value) => *value,
             std::ops::Bound::Unbounded => usize::MAX,
-        });
-        let min = cmp::max(0, match range.start_bound() {
+        }.min(self.len());
+        let min = match range.start_bound() {
             std::ops::Bound::Included(value) => *value,
             std::ops::Bound::Excluded(value) => value + 1,
             std::ops::Bound::Unbounded => 0,
-        });
+        }.clamp(0, self.len());
         self.0[max] - self.0[min]
     }
 
@@ -272,7 +273,7 @@ impl PVecOffsets {
 #[macro_export]
 macro_rules! pvec {
     // Final entry rule.
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $(,)?
     } -> { $($output:tt)* }
     ) => {
@@ -281,7 +282,7 @@ macro_rules! pvec {
 
     // Skips any remaining entries that were not included in the struct.
     // `entry_num..`
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $entry_num:literal.. $($tail:tt)*
     } -> { $($output:tt)* }
     ) => {
@@ -295,11 +296,11 @@ macro_rules! pvec {
 
     // Skips a single entry without assigning it to anything.
     // `entry_num => _`
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $entry_num:literal => _ $($tail:tt)*
     } -> { $($output:tt)* }
     ) => {
-        $crate::pvec! { @entry $offsets {
+        $crate::pvec! { @entry $header_size $offsets {
             $entry_num..=$entry_num => _
             $($tail)*
         } -> { $($output)* } }
@@ -307,11 +308,11 @@ macro_rules! pvec {
 
     // Skips a range of entries without assigning them to anything.
     // `entry_range => _`
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $entry_range:pat => _ $(, $($tail:tt)*)?
     } -> { $($output:tt)* }
     ) => {
-        $crate::pvec! { @entry $offsets { $($($tail)*)? } -> {
+        $crate::pvec! { @entry $header_size $offsets { $($($tail)*)? } -> {
             $($output)*
             #[br(pad_before = i64::from($offsets.entry_range_size($entry_range)))]
         } }
@@ -319,7 +320,7 @@ macro_rules! pvec {
 
     // Delegates reading of entries to an inner type.
     // `#[attr] _ => entry_name: entry_type`
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $(#[$entry_meta:meta])*
         _ => $entry_ident:ident : $entry_ty:ty
         $(,)?
@@ -334,13 +335,13 @@ macro_rules! pvec {
 
     // Assigns an entry with the given entry number to a struct field.
     // `#[attr] entry_num => entry_name: entry_type`
-    (@entry $offsets:ident {
+    (@entry $header_size:ident $offsets:ident {
         $(#[$entry_meta:meta])*
         $entry_num:literal => $entry_ident:ident : $entry_ty:ty
         $(, $($tail:tt)*)?
     } -> { $($output:tt)* }
     ) => {
-        $crate::pvec! { @entry $offsets { $($($tail)*)? } -> {
+        $crate::pvec! { @entry $header_size $offsets { $($($tail)*)? } -> {
             $($output)*
             $(#[$entry_meta])*
             #[br(
@@ -368,13 +369,17 @@ macro_rules! pvec {
     (
         $(#[$meta:meta])*
         $vis:vis struct $ident:ident {
+            // Required, due to macro hygiene, for the caller to be able to
+            // access this fields, which is generated within the macro.
+            header_size = $header_size:ident;
+
             header {
                 $($(#[$field_meta:meta])* $field_ident:ident : $field_ty:ty),*
                 $(,)?
             }
 
             // Required, due to macro hygiene, for the caller to be able to
-            // access the `offsets` field, which is generated within the macro.
+            // access this fields, which is generated within the macro.
             offsets = $offsets:ident;
 
             entries {
@@ -382,9 +387,9 @@ macro_rules! pvec {
             }
         }
     ) => {
-        $crate::pvec! { @entry $offsets { $($tail)* } -> {
+        $crate::pvec! { @entry $header_size $offsets { $($tail)* } -> {
             $(#[$meta])* $vis struct $ident;
-            header_size: u32;
+            $header_size: u32;
             $($(#[$field_meta])* $field_ident: $field_ty;)*
             $offsets: $crate::resources::PVecOffsets;
         } }

@@ -2,11 +2,11 @@
 //!
 //! MacTypes.h
 
-use binrw::{BinRead, io};
+use binrw::{BinRead, io::{Read, self}};
 use bstr::{ByteSlice, ByteVec};
 use derive_more::{Deref, DerefMut, Display, From};
 use libcommon::restore_on_error;
-use std::{io::Read, rc::Rc};
+use std::rc::Rc;
 
 /// A string which may be stored in one of several forms depending upon its
 /// origin.

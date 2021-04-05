@@ -37,7 +37,7 @@ impl Stream {
         let mut bytes_to_read = self.input.read_be::<i16>().context("Can’t read compressed score frame size")?;
 
         if self.version < Version::V4 {
-            bytes_to_read = std::cmp::max(0, bytes_to_read - 2);
+            bytes_to_read = (bytes_to_read - 2).max(0);
         } else {
             // In D5 this check was >= 1 but obviously it needs to be at least 2
             // bytes to read a chunk size

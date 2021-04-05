@@ -3,10 +3,11 @@ pub mod projector;
 pub mod projector_settings;
 
 use anyhow::{anyhow, Context, Result as AResult};
+use binrw::io::SeekFrom;
 use crate::collections::riff;
 use derive_more::Display;
 use libcommon::{SeekExt, flatten_errors, vfs::{VirtualFile, VirtualFileSystem}};
-use std::{io::SeekFrom, path::Path};
+use std::path::Path;
 
 // 1. D4+Mac projector: resource fork w/ projector ostype + maybe riff in data fork
 // 2. D3Mac projector: resource fork w/ projector ostype
@@ -81,7 +82,7 @@ where
                 FileType::Movie(m)
             }), e)
         })
-        .map_err(|e| anyhow!("Not a Director for Mac file: {}", e))
+        .map_err(|e| anyhow!("Not a Director for Mac file: {:?}", e))
 }
 
 fn detect_riff<R: binrw::io::Read + binrw::io::Seek>(data_fork: &mut R) -> AResult<FileType> {

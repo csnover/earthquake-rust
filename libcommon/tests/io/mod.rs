@@ -2,9 +2,9 @@ mod shared_stream;
 
 #[test]
 fn take_seek() {
+    use binrw::io::{Cursor, Read, Seek, SeekFrom};
     use libcommon::TakeSeekExt;
-    use std::io::{Read, Seek, SeekFrom};
-    let mut cursor = std::io::Cursor::new(b"hello world");
+    let mut cursor = Cursor::new(b"hello world");
     {
         let mut buf = [0; 5];
         let mut take = cursor.by_ref().take_seek(5);

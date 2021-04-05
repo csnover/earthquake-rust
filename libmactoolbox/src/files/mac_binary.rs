@@ -168,11 +168,11 @@ fn align_power_of_two(n: u32, mut align: u32) -> u32 {
 mod tests {
     #![allow(clippy::wildcard_imports)]
     use super::*;
-    use std::io::Read;
+    use binrw::io::Read;
 
     #[test]
     fn validate() {
-        use std::io::Cursor;
+        use binrw::io::Cursor;
         const DATA: &'_ [u8] = include_bytes!("./test_data/mac_binary/test.bin");
         let data = Cursor::new(DATA);
         let bin = MacBinary::new(data).unwrap();

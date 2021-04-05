@@ -1,5 +1,5 @@
+use binrw::io::Cursor;
 use byteorder::{BigEndian, LittleEndian};
-use std::io::Cursor;
 use libmactoolbox::resources::{OsType, OsTypeReadExt, ResourceId};
 
 #[test]

@@ -1,4 +1,4 @@
-use core::{cmp, convert::TryFrom, fmt};
+use core::{convert::TryFrom, fmt};
 use binrw::io;
 use super::SeekExt;
 
@@ -20,7 +20,7 @@ impl <T> io::Read for TakeSeek<T> where T: io::Read + io::Seek {
             return Ok(0);
         }
 
-        let max = cmp::min(buf.len(), limit);
+        let max = buf.len().min(limit);
         let n = self.inner.read(&mut buf[0..max])?;
         self.pos += u64::try_from(n).unwrap();
         Ok(n)

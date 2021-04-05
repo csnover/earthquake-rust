@@ -5,7 +5,7 @@
 //! chunks at the start of the file are used for O(1) lookup of data by chunk
 //! index or [`ResourceID`].
 
-use binrw::{BinRead, Endian, io::{Read, Seek, SeekFrom}};
+use binrw::{BinRead, Endian, io::{Read, Seek, SeekFrom, self}};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
@@ -20,7 +20,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[non_exhaustive]
 pub enum Error {
     #[error("unknown i/o error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error("not a RIFF file")]
     NotRiff,
     #[error("not a Director RIFF")]
@@ -34,11 +34,11 @@ pub enum Error {
     #[error("bad data type for chunk index {0}; OSType is {1}")]
     BadDataType(ChunkIndex, OsType),
     #[error("i/o error seeking to index {0} (offset {1}): {2}")]
-    SeekFailure(ChunkIndex, u32, std::io::Error),
+    SeekFailure(ChunkIndex, u32, io::Error),
     #[error("i/o error seeking to mmap: {0}")]
-    MmapSeekFailure(std::io::Error),
+    MmapSeekFailure(io::Error),
     #[error("i/o error seeking to KEY*: {0}")]
-    KeysSeekFailure(std::io::Error),
+    KeysSeekFailure(io::Error),
     #[error("bad KEY* offset")]
     BadKeysOffset,
     #[error("bad mmap header size ({0})")]
@@ -52,11 +52,11 @@ pub enum Error {
     #[error("multiple {0} in {1}. Please send this file for analysis")]
     DuplicateResourceId(ResourceId, &'static str),
     #[error("i/o error skipping resource ID of index {0}: {1}")]
-    D3ResourceIdSkipIo(ChunkIndex, std::io::Error),
+    D3ResourceIdSkipIo(ChunkIndex, io::Error),
     #[error("i/o error reading resource name of index {0}: {1}")]
-    D3ResourceNameSizeReadIo(ChunkIndex, std::io::Error),
+    D3ResourceNameSizeReadIo(ChunkIndex, io::Error),
     #[error("i/o error skipping resource name of index {0}: {1}")]
-    D3ResourceNameSkipIo(ChunkIndex, std::io::Error),
+    D3ResourceNameSkipIo(ChunkIndex, io::Error),
     #[error("can’t load {0} chunk {1} at {2}: {3}")]
     ReadFailure(OsType, ChunkIndex, u32, binrw::Error),
 }

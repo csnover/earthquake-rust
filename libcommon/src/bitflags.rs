@@ -1,6 +1,6 @@
-use binrw::BinRead;
+use binrw::{BinRead, io::SeekFrom};
 use derive_more::{Deref, DerefMut};
-use std::{convert::TryInto, io::SeekFrom, marker::PhantomData};
+use std::{convert::TryInto, marker::PhantomData};
 
 #[doc(hidden)]
 pub mod __private {

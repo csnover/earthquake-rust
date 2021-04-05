@@ -1,7 +1,7 @@
 use anyhow::Result as AResult;
 use binrw::{BinRead, io::{Cursor, Read, Seek}};
 use core::convert::TryInto;
-use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkPtr, bitflags, restore_on_error};
+use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkHnd, bitflags, restore_on_error};
 use libmactoolbox::quickdraw::{Point, Rect};
 use smart_default::SmartDefault;
 use super::{Fps, Frame, FrameNum, NUM_SPRITES, Palette, Score1494, Stream, Sprite, SpriteBitmask, Tempo, TextEditor, Transition, Version};
@@ -63,7 +63,7 @@ pub struct Score {
     mouse_hover_event_sprites: SpriteBitmask,
     overlay_video_sprites: SpriteBitmask,
     composited_video_sprites: SpriteBitmask,
-    vwtk: UnkPtr,
+    vwtk: UnkHnd,
     puppet_transition: Transition,
     #[default([ <_>::default(); NUM_SPRITES ])]
     field_1494: [ Score1494; NUM_SPRITES ],

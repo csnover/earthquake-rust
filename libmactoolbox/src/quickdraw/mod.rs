@@ -13,9 +13,9 @@ use std::{
     rc::Rc,
 };
 
-type PixPatHandle = UnkHnd;
-type PixMapHandle = UnkHnd;
-type RgnHandle = UnkHnd;
+pub type PixPatHandle = UnkHnd;
+pub type PixMapHandle = UnkHnd;
+pub type RgnHandle = UnkHnd;
 type StyleField = u16;
 type Fixed = u32;
 

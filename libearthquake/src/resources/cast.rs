@@ -1,4 +1,4 @@
-use binrw::{BinRead, NullString};
+use binrw::{BinRead, NullString, io};
 use libmactoolbox::types::PString;
 use crate::{collections::riff::ChunkIndex, pvec};
 use derive_more::{Deref, DerefMut, Display};
@@ -112,8 +112,7 @@ impl From<MemberNum> for MemberId {
     }
 }
 
-// TODO: Rewrite this to use binrw and put it somewhere better with a
-// non-repetitive name
+// TODO: Put this somewhere better with a non-repetitive name
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deref, DerefMut)]
 pub struct CastMap(Vec<ChunkIndex>);
@@ -121,7 +120,7 @@ pub struct CastMap(Vec<ChunkIndex>);
 impl BinRead for CastMap {
     type Args = ();
 
-    fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(reader, |reader, _| {
             let mut options = *options;
             options.endian = binrw::Endian::Big;
@@ -134,17 +133,6 @@ impl BinRead for CastMap {
             }
             Ok(Self(data))
         })
-    }
-}
-
-bitflags! {
-    struct FileInfoFlags: u32 {
-        const REMAP_PALETTES       = 0x40;
-        const MOVIE_FIELD_47       = 0x100;
-        const UPDATE_MOVIE_ENABLED = 0x200;
-        const PRELOAD_EVENT_ABORT  = 0x400;
-        const MOVIE_FIELD_4D       = 0x1000;
-        const MOVIE_FIELD_4E       = 0x2000;
     }
 }
 
@@ -171,8 +159,13 @@ type StructC_4A2DC0 = Vec<u8>;
 type StructD_439630 = Vec<u8>;
 
 pvec! {
+    /// Cast member metadata.
+    ///
+    /// OsType: `'VWCI'`
     #[derive(Debug)]
     pub struct MemberInfo {
+        header_size = header_size;
+
         header {
             script_handle: u32,
             field_8: u32,
@@ -231,35 +224,37 @@ pub struct Member {
 impl BinRead for Member {
     type Args = (ChunkIndex, ConfigVersion);
 
-    fn read_options<R: std::io::Read + std::io::Seek>(input: &mut R, options: &binrw::ReadOptions, (index, version): Self::Args) -> binrw::BinResult<Self> {
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
+    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, (index, version): Self::Args) -> binrw::BinResult<Self> {
+        restore_on_error(input, |input, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        let meta = if version < ConfigVersion::V1201 {
-            MemberMetaV4::read_options(input, &options, ())?.into()
-        } else {
-            MemberMetaV5::read_options(input, &options, ())?
-        };
+            let meta = if version < ConfigVersion::V1201 {
+                MemberMetaV4::read_options(input, &options, ())?.into()
+            } else {
+                MemberMetaV5::read_options(input, &options, ())?
+            };
 
-        let info = if meta.info_size == 0 {
-            None
-        } else {
-            Some(MemberInfo::read_options(&mut input.take_seek(meta.info_size.into()), &options, ())?)
+            let info = if meta.info_size == 0 {
+                None
+            } else {
+                Some(MemberInfo::read_options(&mut input.take_seek(meta.info_size.into()), &options, ())?)
+                    // TODO: Figure out how to get this context back
+                    // .with_context(|| format!("Can’t load {} cast member info", kind))?;
+            };
+
+            let metadata = MemberMetadata::read_options(&mut input.take_seek(meta.meta_size.into()), &options, (meta, version))?;
                 // TODO: Figure out how to get this context back
-                // .with_context(|| format!("Can’t load {} cast member info", kind))?;
-        };
+                // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
 
-        let metadata = MemberMetadata::read_options(&mut input.take_seek(meta.meta_size.into()), &options, (meta, version))?;
-            // TODO: Figure out how to get this context back
-            // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
-
-        Ok(Self {
-            riff_index: index,
-            next_free: 0,
-            some_num_a: 0,
-            flags: MemberFlags::empty(),
-            info,
-            metadata,
+            Ok(Self {
+                riff_index: index,
+                next_free: 0,
+                some_num_a: 0,
+                flags: MemberFlags::empty(),
+                info,
+                metadata,
+            })
         })
     }
 }
@@ -369,33 +364,35 @@ pub enum MemberMetadata {
 impl BinRead for MemberMetadata {
     type Args = (MemberMetaV5, ConfigVersion);
 
-    fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
-        let mut options = *options;
-        options.endian = binrw::Endian::Big;
+    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        restore_on_error(input, |input, _| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
 
-        let (meta, version) = args;
-        let size = meta.meta_size;
+            let (meta, version) = args;
+            let size = meta.meta_size;
 
-        Ok(match meta.kind {
-            MemberKind::None => {
-                input.skip(size.into())?;
-                MemberMetadata::None
-            },
-            MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Button => MemberMetadata::Button(FieldMeta::read_options(input, &options, (size, ))?),
-            MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Field => MemberMetadata::Field(FieldMeta::read_options(input, &options, (size, ))?),
-            MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Ole => MemberMetadata::Ole(BitmapMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Palette => MemberMetadata::Palette,
-            MemberKind::Picture => MemberMetadata::Picture,
-            MemberKind::Script => MemberMetadata::Script(ScriptMeta::read_options(input, &options, (size, ))?),
-            MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::read_options(input, &options, ())?),
-            MemberKind::Sound => MemberMetadata::Sound,
-            MemberKind::Text => MemberMetadata::Text(TextMeta::read_options(input, &options, (version, ))?),
-            MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::read_options(input, &options, (size, version))?),
-            MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::read_options(input, &options, (size, ))?),
+            Ok(match meta.kind {
+                MemberKind::None => {
+                    input.skip(size.into())?;
+                    MemberMetadata::None
+                },
+                MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Button => MemberMetadata::Button(FieldMeta::read_options(input, &options, (size, ))?),
+                MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Field => MemberMetadata::Field(FieldMeta::read_options(input, &options, (size, ))?),
+                MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Ole => MemberMetadata::Ole(BitmapMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Palette => MemberMetadata::Palette,
+                MemberKind::Picture => MemberMetadata::Picture,
+                MemberKind::Script => MemberMetadata::Script(ScriptMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::read_options(input, &options, ())?),
+                MemberKind::Sound => MemberMetadata::Sound,
+                MemberKind::Text => MemberMetadata::Text(TextMeta::read_options(input, &options, (version, ))?),
+                MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::read_options(input, &options, (size, version))?),
+                MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::read_options(input, &options, (size, ))?),
+            })
         })
     }
 }

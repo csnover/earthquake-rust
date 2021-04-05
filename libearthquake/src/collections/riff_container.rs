@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result as AResult};
-use binrw::BinRead;
+use binrw::{BinRead, io::{Read, Seek}};
 use bstr::BStr;
 use crate::resources::{ByteVec, StdList};
 use libcommon::{Reader, SeekExt, restore_on_error};
 use derive_more::{Deref, DerefMut};
 use smart_default::SmartDefault;
-use std::{io::{Read, Seek}, rc::Rc};
+use std::rc::Rc;
 use super::riff::{ChunkIndex, Riff, Result as RiffResult};
 
 /// An index entry for a file embedded within a [`RiffContainer`].

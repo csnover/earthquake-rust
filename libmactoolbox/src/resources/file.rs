@@ -2,12 +2,12 @@
 //!
 //! [Mac Resource Files]: https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf#page=151
 
-use binrw::{BinRead, io};
+use binrw::{BinRead, io::{Cursor, Read, SeekFrom, self}};
 use byteorder::{ByteOrder, BigEndian};
 use crate::types::{MacString, PString};
 use derive_more::Display;
 use libcommon::{SeekExt, TakeSeekExt, bitflags::BitFlags, bitflags};
-use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, io::{Cursor, Read, SeekFrom}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
+use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
 use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResourceId, Source};
 
 /// A file reference number which corresponds to an open resource fork.

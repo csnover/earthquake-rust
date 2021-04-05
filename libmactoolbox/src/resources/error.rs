@@ -35,7 +35,7 @@ pub enum Error {
     #[error("bad map resource count ({0}) for OSType {1}")]
     BadMapResourceCount(i16, OsType),
     #[error("can’t decompress resource {0}: {1}")]
-    BadCompression(ResourceId, std::io::Error),
+    BadCompression(ResourceId, io::Error),
     #[error("file too small ({0} < {1})")]
     FileTooSmall(u64, u64),
     #[error("bad resource map")]

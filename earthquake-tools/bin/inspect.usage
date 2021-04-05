@@ -17,6 +17,8 @@ Commands:
 
     print-config: Print movie configuration
 
+    print-file-info: Print information about the file
+
     print-resource: Print data of specific resource(s)
         --id <os_type,res_id>: Resource to print
 

@@ -1,24 +1,13 @@
 mod actor;
 mod cast;
+mod symbol;
 
 pub(crate) use actor::Actor;
+pub(crate) use symbol::Symbol;
 use libmactoolbox::types::MacString;
 
-use libcommon::{UnkPtr, newtype_num};
+use libcommon::UnkHnd;
 use super::vm::OpCode;
-
-newtype_num! {
-    #[derive(Debug)]
-    pub struct Symbol(i16);
-}
-
-macro_rules! symbols {
-    ($($name:ident = $value:literal),* $(,)?) => {
-        impl Symbol {
-            $(pub const $name: Self = Self($value);)*
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct List(Vec<Variant>);
@@ -34,10 +23,10 @@ pub enum Variant {
     Null,
     String(MacString),
     Void,
-    XObject(UnkPtr),
+    XObject(UnkHnd),
     Integer(i32),
-    Picture(UnkPtr),
-    Object(UnkPtr),
+    Picture(UnkHnd),
+    Object(UnkHnd),
     Symbol(i16),
     // D3Mac used 80-bit floating point, but by the time it got to Windows it
     // was loading 64-bit doubles, so probably f64 is fine. Maybe don’t use

@@ -1,5 +1,5 @@
-use crate::{lingo::types::Actor, resources::{cast::{LibNum, MemberId}, movie::Cast}};
-use libcommon::{Unk16, Unk32, Unk8, UnkPtr, bitflags};
+use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId}, movie::Cast, tile::Tiles}};
+use libcommon::{Unk16, Unk32, Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::RefNum, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
@@ -66,8 +66,16 @@ struct Menu;
 struct MenuBar;
 #[derive(Debug, Default)]
 struct Movie14;
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct SpriteCursor;
+
+/// The amount of time that each frame of the movie should be displayed.
+///
+/// In the original code, durations are stored in milliseconds.
+///
+/// OsType: `'VWtc'`
+#[derive(Clone, Debug, Default)]
+struct Timecodes(Vec<std::time::Duration>);
 
 #[derive(Debug, SmartDefault)]
 pub struct Movie {
@@ -75,16 +83,16 @@ pub struct Movie {
     own_lib_num_maybe: LibNum,
     active_lib_num: LibNum,
     mac_res_id: i32,
-    font_map: UnkPtr, /* FXmp */
+    font_map: FontMap,
     /// Comes from Sord resource.
     score_order: Vec<MemberId>,
     frame_timing: Movie14,
     max_frame_num_maybe: i16,
     frame_label_indexes: Vec<(i16, i16)>,
     frame_labels: Vec<u8>,
-    tiles: UnkPtr, /* VWTL */
-    field_34: UnkPtr,
-    time_codes: UnkPtr, /* VWtc */
+    tiles: Tiles,
+    field_34: UnkHnd,
+    time_codes: Timecodes,
     #[default(1024)]
     last_used_mac_res_id: i32,
     some_res_file_ref_num: RefNum,
@@ -106,7 +114,7 @@ pub struct Movie {
     vwci_entry_7: i16,
     default_palette: MemberId,
     field_5a: Unk32,
-    file_info: UnkPtr, /* VWFI */
+    file_info: UnkHnd, /* VWFI */
     /// The maximum color depth of a resource in the movie?
     max_maybe_color_depth: i16,
     default_color_depth: i16,
@@ -118,7 +126,7 @@ pub struct Movie {
     lingo_paused_frame: PausedFrame,
     delayed_frame_num: FrameNum,
     delayed_until_tick: Option<Tick>,
-    field_86: UnkPtr,
+    field_86: UnkHnd,
     cast_member_hilites: BTreeSet<MemberId>,
     field_8e: Unk32,
     some_score: Option<Rc<Score>>,
@@ -166,7 +174,7 @@ pub struct Movie {
     vwtc_init_state: Unk16,
     bg_color_index: i16, /* TODO: type? this is the stage colour. */
     actors: Vec<Actor>,
-    per_frame_hook: Option<UnkPtr>,
+    per_frame_hook: Option<UnkHnd>,
     idle_handler_period: TickDuration,
     #[default(Tick::now())]
     idle_handler_next_tick: Tick,

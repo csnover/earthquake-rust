@@ -1,7 +1,6 @@
-use binrw::{BinRead, io};
+use binrw::{BinRead, io::{Read, self}};
 use bstr::BString;
 use libcommon::restore_on_error;
-use std::io::Read;
 
 /// A hybrid between a Pascal string and a C string.
 ///

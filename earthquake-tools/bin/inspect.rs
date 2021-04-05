@@ -29,7 +29,7 @@ use libearthquake::{collections::{
             Movie as MovieInfo,
         },
         Version,
-    }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::CastList}};
+    }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::{CastList, FileInfo}}};
 use libcommon::{Reader, SharedStream};
 use libmactoolbox::{resources::{OsType, File as ResourceFile, ResourceId, Source as ResourceSource}, vfs::HostFileSystem};
 use pico_args::Arguments;
@@ -42,6 +42,7 @@ enum Command {
     PrintCastMember(Vec<MemberId>),
     PrintCastMembers,
     PrintConfig,
+    PrintFileInfo,
     PrintResource(Vec<ResourceId>),
     PrintResources,
     PrintScore(i16, Option<(i16, i16)>, Option<Vec<String>>),
@@ -80,6 +81,10 @@ impl Options {
 
     fn print_config(&self) -> bool {
         matches!(self.command, Command::PrintConfig)
+    }
+
+    fn print_file_info(&self) -> bool {
+        matches!(self.command, Command::PrintFileInfo)
     }
 
     fn print_resource(&self) -> Option<&Vec<ResourceId>> {
@@ -183,6 +188,7 @@ fn parse_command(args: &mut Arguments) -> AResult<Command> {
             "print-cast-member" => Command::PrintCastMember(args.values_from_fn::<_, MemberId, _>("--id", parse_member_id)?),
             "print-cast-members" => Command::PrintCastMembers,
             "print-casts" => Command::PrintCasts,
+            "print-file-info" => Command::PrintFileInfo,
             "print-resource" => Command::PrintResource(args.values_from_fn::<_, ResourceId, _>("--id", parse_resource_id)?),
             "print-resources" => Command::PrintResources,
             "print-score" => Command::PrintScore(
@@ -347,6 +353,13 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         }
     }
 
+    if options.print_file_info() {
+        match riff.load::<FileInfo>(ResourceId::new(b"VWFI", 1024)) {
+            Ok(info) => println!("{:#?}", info),
+            Err(error) => eprintln!("Error reading file info: {}", error),
+        }
+    }
+
     if let Some(resources) = options.print_resource() {
         resources.iter().for_each(|&id| {
             print_riff_resource(riff, id);
@@ -455,6 +468,13 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
     if options.list() {
         for resource_id in rom.iter() {
             println!("{}", resource_id);
+        }
+    }
+
+    if options.print_file_info() {
+        match rom.load::<FileInfo>(ResourceId::new(b"VWFI", 1024)) {
+            Ok(info) => println!("{:#?}", info),
+            Err(error) => eprintln!("Error reading file info: {}", error),
         }
     }
 

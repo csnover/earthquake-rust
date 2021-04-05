@@ -1,9 +1,9 @@
 use crate::resources::cast::{MemberId, MemberKind};
-use libcommon::{Unk8, UnkPtr};
+use libcommon::{Unk8, UnkHnd};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Score1494 {
-    data: UnkPtr,
+    data: UnkHnd,
     id: MemberId,
     field_8: Unk8,
     field_9: Unk8,

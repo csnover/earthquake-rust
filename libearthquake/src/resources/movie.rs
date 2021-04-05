@@ -1,11 +1,67 @@
-use binrw::BinRead;
+use binrw::{BinRead, io};
 use libmactoolbox::types::PString;
 use core::convert::TryFrom;
 use crate::pvec;
 use derive_more::{Deref, DerefMut};
-use libcommon::restore_on_error;
+use libcommon::{Unk32, UnkHnd, bitflags, restore_on_error};
 use super::{PVecOffsets, StdList, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
+
+bitflags! {
+    struct FileInfoFlags: u32 {
+        const WINDOW_RELATED_MAYBE = 1;
+        const INIT_DEFAULT_MAYBE   = 0x20;
+        const REMAP_PALETTES       = 0x40;
+        const DIRECTOR_4_RELATED   = 0x80;
+        const MOVIE_FIELD_47       = 0x100;
+        const UPDATE_MOVIE_ENABLED = 0x200;
+        const PRELOAD_EVENT_ABORT  = 0x400;
+        const MOVIE_FIELD_4D       = 0x1000;
+        const MOVIE_FIELD_4E       = 0x2000;
+    }
+}
+
+pvec! {
+    /// Information about a movie file.
+    ///
+    /// OsType: `'VWFI'`
+    #[derive(Debug)]
+    pub struct FileInfo {
+        header_size = header_size;
+
+        header {
+            script_handle: UnkHnd,
+            // In Director 3 this was a bitmap for marking which kinds of events
+            // were received by movie script. Is it vestigial in D4+?
+            field_8: Unk32,
+            flags: FileInfoFlags,
+            #[br(if(header_size >= 20))]
+            script_context_num: u32,
+        }
+
+        offsets = offsets;
+
+        entries {
+            /// The movie script.
+            ///
+            /// Used only by D3. D4 and later store the movie script in
+            /// `'Lctx'`/`'Lscr'` chunks.
+            #[br(count(offsets.entry_size(0).unwrap_or(0)))]
+            0 => movie_script_text: Vec<u8>,
+            /// The name of the user who created the file.
+            1 => creator_name: PString,
+            /// The name of the user who last modified the file.
+            2 => modify_name: PString,
+            /// The original path of the file, excluding the filename.
+            3 => path: PString,
+            4 => flag_20_related: i16,
+            5 => entry_5: i16,
+            6 => entry_6: i16,
+            7 => entry_7: i16,
+            8..
+        }
+    }
+}
 
 pvec! {
     /// The list of cast libraries used by a movie.
@@ -14,6 +70,8 @@ pvec! {
     /// RE: `MovieCastList`
     #[derive(Debug)]
     pub struct CastList {
+        header_size = header_size;
+
         header {
             field_4: i16,
             count: i16,
@@ -36,7 +94,7 @@ pub struct CastListMembers(Vec<Cast>);
 impl BinRead for CastListMembers {
     type Args = (i16, PVecOffsets);
 
-    fn read_options<R: std::io::Read + std::io::Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, offsets): Self::Args) -> binrw::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, offsets): Self::Args) -> binrw::BinResult<Self> {
         if let Some(count) = options.count {
             restore_on_error(reader, |reader, _| {
                 let mut options = *options;
