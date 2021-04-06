@@ -14,11 +14,11 @@ pub mod transition;
 pub mod video;
 pub mod xtra;
 
-use binrw::{BinRead, derive_binread, io::{Read, Seek, self}};
+use binrw::{BinRead, derive_binread, io};
 use bstr::BStr;
-use core::{convert::{TryFrom, TryInto}, marker::PhantomData};
+use core::marker::PhantomData;
 use derive_more::{Deref, DerefMut, Index, IndexMut};
-use libcommon::{SeekExt, TakeSeekExt, restore_on_error};
+use libcommon::{io::prelude::*, prelude::*};
 
 /// A reference counted object with a vtable.
 ///
@@ -73,11 +73,11 @@ impl BinRead for ByteVec {
             let size = input.bytes_left()?;
             let header = ByteVecHeaderV5::read_options(input, options, (size, ))?;
             let data_size = u64::from(header.used) - u64::from(header.header_size);
-            let mut data = Vec::with_capacity(header.capacity.try_into().unwrap());
+            let mut data = Vec::with_capacity(header.capacity.unwrap_into());
             let bytes_read = input
                 .take(data_size)
                 .read_to_end(&mut data)?;
-            if u64::try_from(bytes_read).unwrap() != data_size {
+            if u64::unwrap_from(bytes_read) != data_size {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
             }
             Ok(Self(data))
@@ -164,7 +164,7 @@ impl <Header: ListHeader, T: BinRead> BinRead for List<Header, T> {
 
         let item_size = u64::from(header.item_size());
         let mut data = Vec::with_capacity(
-            usize::try_from(header.used()).unwrap() * core::mem::size_of::<T>()
+            usize::unwrap_from(header.used()) * core::mem::size_of::<T>()
         );
         for _ in 0..header.used() {
             data.push(T::read_options(&mut input.take_seek(item_size), options, args.clone())?);
@@ -460,17 +460,13 @@ where
     T::Error: std::error::Error + Send + Sync + 'static,
 {
     /// Gets the key used by the given index.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the key offset in the data is out of range for `usize`.
     #[must_use]
     pub fn key_by_index(&self, index: usize) -> Option<&BStr> {
         let keys = self.keys.as_ref()?;
         let offset = self.list.get(index)?.key_offset - usize::from(ByteVecHeaderV5::SIZE);
-        let size = usize::try_from(
-            u32::from_be_bytes(keys.get(offset..offset + 4)?.try_into().unwrap())
-        ).unwrap();
+        let size = usize::unwrap_from(
+            u32::from_be_bytes(keys.get(offset..offset + 4)?.unwrap_into())
+        );
         keys.get(offset + 4..offset + 4 + size).map(|b| b.into())
     }
 

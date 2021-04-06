@@ -4,10 +4,10 @@ use libmactoolbox::resources::{OsType, OsTypeReadExt, ResourceId};
 
 #[test]
 fn basic() {
-    println!("{:?}", ResourceId::new(b"HELO", 123));
-    let id = ResourceId::new(b"HELO", 123);
+    println!("{:?}", ResourceId::new(b"HELO", 123_i16));
+    let id = ResourceId::new(b"HELO", 123_i16);
     assert_eq!(id.os_type(), OsType::new(*b"HELO"));
-    assert_eq!(id.id(), 123);
+    assert_eq!(id.id(), 123_i16.into());
 }
 
 #[test]

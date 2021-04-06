@@ -1,3 +1,4 @@
+pub mod prelude;
 mod seek_ext;
 mod shared_stream;
 mod take_seek;

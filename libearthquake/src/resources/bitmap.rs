@@ -1,6 +1,5 @@
 use binrw::BinRead;
-use core::convert::TryInto;
-use libcommon::bitflags;
+use libcommon::{bitflags, prelude::*};
 use libmactoolbox::quickdraw::{Point, Rect};
 use super::cast::{MemberId, MemberNum};
 
@@ -39,7 +38,7 @@ impl From<PropertiesV3> for Properties {
             bounds: old.bounds,
             origin: old.origin,
             flags: <_>::default(),
-            color_depth: old.color_depth.try_into().unwrap(),
+            color_depth: old.color_depth.unwrap_into(),
             palette_id: old.palette_id.into(),
         }
     }

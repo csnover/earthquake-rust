@@ -1,7 +1,6 @@
 use binrw::{BinRead, io::Cursor};
-use core::convert::TryFrom;
 use crate::types::{MacString, PString};
-use libcommon::vfs::{VirtualFile, VirtualFileSystem};
+use libcommon::{prelude::*, vfs::{VirtualFile, VirtualFileSystem}};
 use std::{path::Path, rc::Rc};
 use super::{Error as ResourceError, File as ResourceFile, OsType, RefNum, ResNum, Result as ResourceResult, ResourceId, Source as ResourceSource, kinds::StringList};
 
@@ -104,7 +103,7 @@ impl <'vfs> Manager<'vfs> {
         self.get_resource::<StringList>(ResourceId::new(b"STR#", id), ())
             .unwrap_or(None)
             .and_then(|list| {
-                list.get(usize::try_from(index).unwrap()).cloned()
+                list.get(usize::unwrap_from(index)).cloned()
             })
     }
 

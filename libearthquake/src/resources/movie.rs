@@ -1,9 +1,8 @@
 use binrw::{BinRead, io};
-use libmactoolbox::{typed_resource, types::PString};
-use core::convert::TryFrom;
 use crate::pvec;
 use derive_more::{Deref, DerefMut};
-use libcommon::{UnkHnd, bitflags, restore_on_error};
+use libcommon::{prelude::*, bitflags, restore_on_error};
+use libmactoolbox::{typed_resource, types::PString};
 use super::{PVecOffsets, StdList, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
@@ -117,7 +116,7 @@ impl BinRead for CastListMembers {
                 options.endian = binrw::Endian::Big;
 
                 let mut data = Vec::with_capacity(count);
-                let entries_per_cast = usize::try_from(entries_per_cast).unwrap();
+                let entries_per_cast = usize::unwrap_from(entries_per_cast);
                 for index in 0..count {
                     // `+ 1` because whoever wrote this feature decided that
                     // 1-indexing was the way to go

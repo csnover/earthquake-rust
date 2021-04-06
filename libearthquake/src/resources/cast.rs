@@ -6,12 +6,12 @@
 //!
 //! D4+ use the `'CAS*'`
 
-use anyhow::{Context, Result as AResult, anyhow, bail};
+use anyhow::{Context, Result as AResult, anyhow};
 use binrw::{BinRead, NullString, io};
-use core::{convert::{TryFrom, TryInto}, fmt};
+use core::fmt;
 use crate::{collections::riff::{ChunkIndex, Riff}, pvec};
 use derive_more::{Deref, DerefMut, Display};
-use libcommon::{Reader, SeekExt, TakeSeekExt, Unk32, Unk8, UnkHnd, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
+use libcommon::{io::prelude::*, prelude::*, bitflags, bitflags::BitFlags, newtype_num};
 use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, typed_resource, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -30,7 +30,7 @@ impl Library {
         let base_resource_num = cast_num + i16::from(config.min_cast_num()).into();
         let mut data = Vec::with_capacity(map.len());
         for (i, (flags, properties)) in map.iter().enumerate() {
-            let resource_num = base_resource_num + i16::try_from(i).unwrap().into();
+            let resource_num = base_resource_num + i16::unwrap_from(i).into();
             let metadata = if source.contains(ResourceId::new(b"VWCI", resource_num)) {
                 let metadata = source.load_num::<MemberMetadata>(resource_num)
                     .with_context(|| anyhow!("error reading metadata for cast member {} (res num {})", i, resource_num))?;
@@ -62,7 +62,7 @@ impl Library {
         let version = config.version();
         for (i, &chunk_index) in map.iter().enumerate() {
             if chunk_index > ChunkIndex::new(0) {
-                let cast_member_num = min_cast_num + i16::try_from(i).unwrap().into();
+                let cast_member_num = min_cast_num + i16::unwrap_from(i).into();
                 let member = riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version))
                     .with_context(|| format!("error reading cast member {}", cast_member_num))?;
                 data.push((*member).clone());
@@ -223,7 +223,7 @@ impl BinRead for CastMap {
             options.endian = binrw::Endian::Big;
 
             let count = reader.bytes_left()? / 4;
-            let mut data = Vec::with_capacity(usize::try_from(count).unwrap());
+            let mut data = Vec::with_capacity(usize::unwrap_from(count));
             for _ in 0..count {
                 let value = ChunkIndex::read_options(reader, &options, ())?;
                 data.push(value);

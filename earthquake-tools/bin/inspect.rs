@@ -30,10 +30,10 @@ use libearthquake::{collections::{
         },
         Version,
     }, name, player::score::Frame, player::score::Score, resources::{cast::{Library, MemberId}, config::{Config, Version as ConfigVersion}, movie::{CastList, FileInfo}}};
-use libcommon::{Reader, SharedStream};
+use libcommon::{io::prelude::*, prelude::*};
 use libmactoolbox::{resources::{OsType, File as ResourceFile, ResourceId, Source as ResourceSource}, vfs::HostFileSystem};
 use pico_args::Arguments;
-use std::{convert::{TryFrom, TryInto}, env, io::SeekFrom, path::PathBuf, process::exit};
+use std::{env, path::PathBuf, process::exit};
 
 enum Command {
     Detect(bool),
@@ -203,9 +203,9 @@ fn parse_command(args: &mut Arguments) -> AResult<Command> {
     }
 }
 
-fn print_cast_library(cast: Library, min_cast_num: i16, options: &Options) {
+fn print_cast_library(cast: &Library, min_cast_num: i16, options: &Options) {
     for (i, member) in cast.iter().enumerate() {
-        let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
+        let cast_member_num = min_cast_num + i16::unwrap_from(i);
         if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0_i16, cast_member_num)) {
             println!("{}: {:#?}", cast_member_num, member);
         }
@@ -374,7 +374,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
 
         // TODO: Handle multiple internal casts
         match Library::from_riff(riff, 1024_i16) {
-            Ok(cast) => print_cast_library(cast, min_cast_num, options),
+            Ok(cast) => print_cast_library(&cast, min_cast_num, options),
             Err(error) => eprintln!("Error reading cast library: {:?}", error)
         }
     }
@@ -413,8 +413,8 @@ fn print_score(options: &Options, source: &impl ResourceSource) {
         match source.load_args::<Score>(ResourceId::new(b"VWSC", score_num), (config.version(), )) {
             Ok(score) => {
                 let (start, end) = frames.unwrap_or((0, i16::MAX));
-                for (i, frame) in (*score).clone().skip(start.try_into().unwrap()).take((end - start).try_into().unwrap()).enumerate() {
-                    let frame_num = i16::try_from(i).unwrap() + start + 1;
+                for (i, frame) in (*score).clone().skip(start.unwrap_into()).take((end - start).unwrap_into()).enumerate() {
+                    let frame_num = i16::unwrap_from(i) + start + 1;
                     match frame {
                         Ok(frame) => {
                             println!("Frame {}:", frame_num);
@@ -478,7 +478,7 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
         // TODO: Handle multiple internal casts
         let min_cast_num = rom.load_num::<Config>(1024_i16.into())?.min_cast_num().0;
         match Library::from_resource_source(&rom, 1024_i16) {
-            Ok(cast) => print_cast_library(cast, min_cast_num, options),
+            Ok(cast) => print_cast_library(&cast, min_cast_num, options),
             Err(error) => eprintln!("Error reading cast library: {:?}", error)
         }
     }

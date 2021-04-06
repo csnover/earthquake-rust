@@ -2,12 +2,13 @@
 //!
 //! [Mac Resource Files]: https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf#page=151
 
-use binrw::{BinRead, io::{Cursor, Read, SeekFrom, self}};
+use binrw::{BinRead, io::{Cursor, self}};
 use byteorder::{ByteOrder, BigEndian};
+use core::{any::Any, cell::RefCell, sync::atomic::{Ordering, AtomicI16}};
 use crate::types::{MacString, PString};
 use derive_more::Display;
-use libcommon::{SeekExt, TakeSeekExt, bitflags::BitFlags, bitflags};
-use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
+use libcommon::{io::prelude::*, prelude::*, bitflags::BitFlags, bitflags};
+use std::rc::{Weak, Rc};
 use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResNum, ResourceId, Source};
 
 /// A file reference number which corresponds to an open resource fork.
@@ -83,7 +84,7 @@ impl<T: io::Read + io::Seek> File<T> {
                     return false;
                 }
 
-                let start = usize::try_from(res.name_offset).unwrap();
+                let start = usize::unwrap_from(res.name_offset);
                 let end = start + usize::from(self.resource_map.names[start]);
                 *name.as_ref() == self.resource_map.names[start + 1..=end]
             }))
@@ -98,7 +99,7 @@ impl<T: io::Read + io::Seek> File<T> {
     pub fn id_of_index(&self, os_type: impl Into<OsType>, index: i16) -> Option<ResourceId> {
         let os_type = os_type.into();
         self.find_kind(os_type)
-            .and_then(|kind| kind.resources.get(usize::try_from(index).unwrap()))
+            .and_then(|kind| kind.resources.get(usize::unwrap_from(index)))
             .map(|res| ResourceId::new(os_type, res.id))
     }
 
@@ -222,7 +223,7 @@ impl <T: io::Read + io::Seek> Source for File<T> {
 
         let resource = Rc::new(if is_vise_compressed {
             let data = {
-                let mut compressed_data = Vec::with_capacity(size.try_into().unwrap());
+                let mut compressed_data = Vec::with_capacity(size.unwrap_into());
                 input.by_ref().take(size.into()).read_to_end(&mut compressed_data)?;
                 self.decompress(id, &compressed_data)?
             };

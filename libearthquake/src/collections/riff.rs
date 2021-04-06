@@ -5,14 +5,15 @@
 //! chunks at the start of the file are used for O(1) lookup of data by chunk
 //! index or [`ResourceID`].
 
-use binrw::{BinRead, Endian, io::{Read, Seek, SeekFrom, self}};
+use binrw::{BinRead, Endian, io};
 use bitflags::bitflags;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
+use core::{any::Any, cell::RefCell};
 use crate::detection::{movie::{DetectionInfo, Kind as MovieKind}, Version};
 use derive_more::{Constructor, Deref, DerefMut, Display};
-use libcommon::{Reader, SeekExt, SharedStream, TakeSeekExt, newtype_num};
+use libcommon::{io::prelude::*, prelude::*, newtype_num};
 use libmactoolbox::resources::{OsType, OsTypeReadExt, Error as ResourceError, ResourceId, Result as ResourceResult, Source as ResourceSource};
-use std::{any::Any, cell::RefCell, collections::HashMap, convert::{TryFrom, TryInto}, rc::{Rc, Weak}};
+use std::{collections::HashMap, rc::{Rc, Weak}};
 
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -95,13 +96,13 @@ impl<'a, T: Reader> Iter<'a, T> {
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.owner.memory_map.get(self.chunk_index).unwrap().size == 0
+        self.owner.memory_map[self.chunk_index].size == 0
     }
 
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
     pub fn len(&self) -> u32 {
-        self.owner.memory_map.get(self.chunk_index).unwrap().size
+        self.owner.memory_map[self.chunk_index].size
     }
 
     pub fn load<R: BinRead + 'static>(&self, args: R::Args) -> Result<Rc<R>> {
@@ -111,7 +112,7 @@ impl<'a, T: Reader> Iter<'a, T> {
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
     pub fn offset(&self) -> u32 {
-        self.owner.memory_map.get(self.chunk_index).unwrap().offset
+        self.owner.memory_map[self.chunk_index].offset
     }
 }
 
@@ -144,7 +145,7 @@ impl<T: Reader> Riff<T> {
         let kind = kind.into();
         for (index, item) in self.memory_map.iter().enumerate() {
             if item.os_type == kind {
-                return ChunkIndex::new(index.try_into().unwrap());
+                return ChunkIndex::unwrap_from(index);
             }
         }
         ChunkIndex::new(-1)
@@ -224,7 +225,7 @@ impl<T: Reader> Riff<T> {
 
     pub fn make_free(&mut self, index: ChunkIndex) {
         let next_free_index = self.memory_map.next_free_index;
-        let entry = self.memory_map.get_mut(index).unwrap();
+        let entry = &mut self.memory_map[index];
         entry.os_type = b"free".into();
         entry.size = 0;
         entry.offset = 0;
@@ -236,7 +237,7 @@ impl<T: Reader> Riff<T> {
 
     pub fn make_junk(&mut self, index: ChunkIndex) {
         let next_junk_index = self.memory_map.next_junk_index;
-        let entry = self.memory_map.get_mut(index).unwrap();
+        let entry = &mut self.memory_map[index];
         entry.os_type = b"junk".into();
         entry.flags = MemoryMapFlags::VALID;
         entry.field_e = 0;
@@ -291,7 +292,7 @@ impl<T: Reader> Riff<T> {
         bytes_to_read -= 4;
 
         let (mut memory_map_items, mut resource_map) = {
-            let num_entries = usize::try_from(bytes_to_read / ENTRY_SIZE - 1).unwrap();
+            let num_entries = usize::unwrap_from(bytes_to_read / ENTRY_SIZE - 1);
             (Vec::with_capacity(num_entries), HashMap::with_capacity(num_entries))
         };
 
@@ -301,10 +302,10 @@ impl<T: Reader> Riff<T> {
                 break;
             }
             let size = input.read_u32::<DE>()?;
-            let id = i16::try_from(input.read_i32::<DE>()?).unwrap();
+            let id = i16::unwrap_from(input.read_i32::<DE>()?);
             let offset = input.read_u32::<DE>()?;
 
-            let mmap_index = ChunkIndex(memory_map_items.len().try_into().unwrap());
+            let mmap_index = ChunkIndex::unwrap_from(memory_map_items.len());
             memory_map_items.push(MemoryMapItem {
                 os_type,
                 size,
@@ -363,7 +364,7 @@ impl<T: Reader> Riff<T> {
         let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
         input.skip((u32::from(header_size) - Self::MMAP_HEADER_SIZE).into())?;
 
-        let mut memory_map_items = Vec::with_capacity(num_entries.try_into().unwrap());
+        let mut memory_map_items = Vec::with_capacity(num_entries.unwrap_into());
 
         let mut resource_map_offset = None;
         for index in 0..num_entries {
@@ -372,7 +373,7 @@ impl<T: Reader> Riff<T> {
             let offset = input.read_u32::<DE>()?;
             let flags_bits = input.read_u16::<DE>()?;
             let flags = MemoryMapFlags::from_bits(flags_bits)
-                .ok_or_else(|| Error::BadMmapEntryFlags(ChunkIndex(i32::try_from(index).unwrap()), flags_bits))?;
+                .ok_or_else(|| Error::BadMmapEntryFlags(ChunkIndex::unwrap_from(index), flags_bits))?;
             let field_e = input.read_u16::<DE>()?;
             let next_free_index = ChunkIndex::new(input.read_i32::<DE>()?);
             input.skip((u32::from(entry_size) - Self::MMAP_ENTRY_SIZE).into())?;
@@ -427,11 +428,11 @@ impl<T: Reader> Riff<T> {
         let num_entries = input.read_u32::<DE>()?;
         input.skip((u32::from(header_size) - Self::KEYS_HEADER_SIZE).into())?;
 
-        let mut resource_map = HashMap::with_capacity(num_entries.try_into().unwrap());
+        let mut resource_map = HashMap::with_capacity(num_entries.unwrap_into());
 
         for _ in 0..num_entries {
             let riff_index = ChunkIndex::new(input.read_i32::<DE>()?);
-            let id = i16::try_from(input.read_i32::<DE>()?).unwrap();
+            let id = i16::unwrap_from(input.read_i32::<DE>()?);
             let os_type = input.read_os_type::<DE>()?;
 
             let res_id = ResourceId::new(os_type, id);
@@ -537,24 +538,20 @@ struct MemoryMap {
 
 impl MemoryMap {
     fn get(&self, index: ChunkIndex) -> Option<&MemoryMapItem> {
-        self.items.get(usize::try_from(index.0).unwrap())
-    }
-
-    fn get_mut(&mut self, index: ChunkIndex) -> Option<&mut MemoryMapItem> {
-        self.items.get_mut(usize::try_from(index.0).unwrap())
+        self.items.get(usize::unwrap_from(index))
     }
 }
 
 impl ::core::ops::Index<ChunkIndex> for MemoryMap {
     type Output = MemoryMapItem;
     fn index(&self, index: ChunkIndex) -> &Self::Output {
-        &self.items[usize::try_from(index.0).unwrap()]
+        &self.items[usize::unwrap_from(index)]
     }
 }
 
 impl ::core::ops::IndexMut<ChunkIndex> for MemoryMap {
     fn index_mut(&mut self, index: ChunkIndex) -> &mut Self::Output {
-        &mut self.items[usize::try_from(index.0).unwrap()]
+        &mut self.items[usize::unwrap_from(index)]
     }
 }
 

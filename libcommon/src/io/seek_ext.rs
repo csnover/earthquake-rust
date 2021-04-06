@@ -1,4 +1,4 @@
-use core::convert::TryInto;
+use crate::convert::UnwrapInto;
 use binrw::io;
 
 /// `SeekExt` provides convenience functions for working with seekable streams.
@@ -35,7 +35,7 @@ pub trait SeekExt: io::Seek {
 
     /// Skips ahead `pos` bytes.
     fn skip(&mut self, pos: u64) -> io::Result<u64> {
-        self.seek(io::SeekFrom::Current(pos.try_into().unwrap()))
+        self.seek(io::SeekFrom::Current(pos.unwrap_into()))
     }
 }
 impl<T: io::Seek + ?Sized> SeekExt for T {}

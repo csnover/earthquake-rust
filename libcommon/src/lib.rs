@@ -16,7 +16,9 @@
 pub mod bitflags;
 #[macro_use]
 mod newtype;
+pub mod convert;
 mod error;
+pub mod prelude;
 pub mod io;
 pub mod vfs;
 

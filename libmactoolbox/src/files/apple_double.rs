@@ -1,10 +1,9 @@
-use core::convert::TryInto;
-use binrw::{BinReaderExt, io::{Read, self as io}};
+use binrw::{BinReaderExt, io};
 use crate::types::MacString;
-use libcommon::{SeekExt, SharedStream};
+use libcommon::{io::prelude::*, prelude::*};
 
 #[derive(Debug)]
-pub struct AppleDouble<T: io::Read + io::Seek> {
+pub struct AppleDouble<T: Read + Seek> {
     name: Option<MacString>,
     // For AppleSingle these both point to the same thing,
     // For AppleDouble the data fork points to the data file which contains
@@ -50,7 +49,7 @@ pub enum Error {
     NameReadIo(io::Error),
 }
 
-impl<T: io::Read + io::Seek> AppleDouble<T> {
+impl<T: Read + Seek> AppleDouble<T> {
     pub fn new(data: T, double_data: Option<T>) -> Result<Self, Error> {
         const DOUBLE_MAGIC: u32 = 0x51607;
         const SINGLE_MAGIC: u32 = 0x51600;
@@ -122,7 +121,7 @@ impl<T: io::Read + io::Seek> AppleDouble<T> {
         }
 
         let name = if let Some(mut name_input) = name_input {
-            let mut name = Vec::with_capacity(name_input.len()?.try_into().unwrap());
+            let mut name = Vec::with_capacity(name_input.len()?.unwrap_into());
             name_input.read_to_end(&mut name).map_err(Error::NameReadIo)?;
             let mut name = MacString::Raw(name.into());
 

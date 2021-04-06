@@ -1,5 +1,6 @@
 use binrw::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom};
-use core::{cell::RefCell, convert::TryFrom};
+use core::cell::RefCell;
+use crate::convert::UnwrapFrom;
 use std::rc::Rc;
 use super::SeekExt;
 
@@ -18,7 +19,10 @@ impl<T> SharedStream<T> where T: Read + Seek {
     /// Panics if the inner stream has more than one strong reference.
     #[must_use]
     pub fn into_inner(self) -> T {
-        Rc::try_unwrap(self.inner).map_err(|_| "could not unwrap SharedStream Rc").unwrap().into_inner()
+        Rc::try_unwrap(self.inner)
+            .map_err(|_| "could not unwrap SharedStream Rc")
+            .unwrap()
+            .into_inner()
     }
 }
 
@@ -108,7 +112,7 @@ impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
             Err(err) => return Err(Error::new(ErrorKind::Other, err))
         };
         inner.seek(SeekFrom::Start(self.current_pos))?;
-        let limit = usize::try_from(self.end_pos.saturating_sub(self.current_pos)).unwrap();
+        let limit = usize::unwrap_from(self.end_pos.saturating_sub(self.current_pos));
 
         // Don't call into inner reader at all at EOF because it may still block
         if limit == 0 {
@@ -117,7 +121,7 @@ impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
 
         let max = buf.len().min(limit);
         let n = inner.read(&mut buf[0..max])?;
-        self.current_pos += u64::try_from(n).unwrap();
+        self.current_pos += u64::unwrap_from(n);
         Ok(n)
     }
 }
@@ -125,7 +129,7 @@ impl<T> Read for SharedStream<T> where T: Read + Seek + ?Sized {
 impl<T> Seek for SharedStream<T> where T: Read + Seek + ?Sized {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         let (base_pos, offset) = match pos {
-            SeekFrom::Start(n) => (self.start_pos, i64::try_from(n).unwrap()),
+            SeekFrom::Start(n) => (self.start_pos, i64::unwrap_from(n)),
             SeekFrom::End(n) => (self.end_pos, n),
             SeekFrom::Current(n) => (self.current_pos, n),
         };

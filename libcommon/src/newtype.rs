@@ -12,6 +12,7 @@
 
 #[macro_export]
 macro_rules! newtype_num {
+    // Convert from the other type infallibly into this type
     (@from $ident:ident, $($from_ty:ty)+) => {
         $(impl ::core::convert::From<$from_ty> for $ident {
             fn from(value: $from_ty) -> Self {
@@ -20,19 +21,34 @@ macro_rules! newtype_num {
         })+
     };
 
+    // Convert from this type infallibly into the other type
     (@into $ident:ident, $($into_ty:ty)+) => {
         $(impl ::core::convert::From<$ident> for $into_ty {
             fn from(value: $ident) -> Self {
-                <$into_ty>::from(value.0)
+                use $crate::convert::UnwrapFrom;
+                // This is using try_from + unwrap to support isize/usize; see
+                // https://github.com/rust-lang/rust/issues/70460
+                <$into_ty>::unwrap_from(value.0)
             }
         })+
     };
 
-    (@try_into $ident:ident, $ty:ty, $($try_ty:ty)+) => {
+    // Convert from the other type fallibly into this inner type
+    (@try_from $ident:ident, $inner_ty:ty, $($try_ty:ty)+) => {
         $(impl ::core::convert::TryFrom<$try_ty> for $ident {
-            type Error = <$ty as ::core::convert::TryFrom<$try_ty>>::Error;
+            type Error = <$inner_ty as ::core::convert::TryFrom<$try_ty>>::Error;
             fn try_from(value: $try_ty) -> ::core::result::Result<Self, Self::Error> {
                 Ok(Self(::core::convert::TryFrom::try_from(value)?))
+            }
+        })+
+    };
+
+    // Convert from this type fallibly into the other type
+    (@try_into $ident:ident, $inner_ty:ty, $($try_ty:ty)+) => {
+        $(impl ::core::convert::TryFrom<$ident> for $try_ty {
+            type Error = <$try_ty as ::core::convert::TryFrom<$inner_ty>>::Error;
+            fn try_from(value: $ident) -> ::core::result::Result<Self, Self::Error> {
+                ::core::convert::TryFrom::try_from(value.0)
             }
         })+
     };
@@ -63,53 +79,232 @@ macro_rules! newtype_num {
     (@impl $ident:ident, i8) => {
         $crate::newtype_num!(@from $ident, i8);
         $crate::newtype_num!(@into $ident, i8 i16 i32 i64 i128);
-        $crate::newtype_num!(@try_into $ident, i8, u8 i16 u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, i8, u8 i16 u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, i8, u8 u16 u32 u64 u128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, i8, isize usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, i8, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, i8, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, i8, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, i8, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, i8, usize);
     };
     (@impl $ident:ident, u8) => {
         $crate::newtype_num!(@from $ident, u8);
         $crate::newtype_num!(@into $ident, u8 i16 u16 i32 u32 i64 u64 i128 u128);
-        $crate::newtype_num!(@try_into $ident, u8, i8 i16 u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, u8, i8 i16 u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, u8, i8);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, u8, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, u8, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, u8, isize usize);
     };
     (@impl $ident:ident, i16) => {
         $crate::newtype_num!(@from $ident, i8 u8 i16);
         $crate::newtype_num!(@into $ident, i16 i32 i64 i128);
-        $crate::newtype_num!(@try_into $ident, i16, u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, i16, u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, i16, i8 u8 u16 u32 u64 u128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, i16, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, i16, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, i16, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, i16, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, i16, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, i16, usize);
     };
     (@impl $ident:ident, u16) => {
         $crate::newtype_num!(@from $ident, u8 u16);
-        $crate::newtype_num!(@into $ident, u16 u32 u64 u128);
-        $crate::newtype_num!(@try_into $ident, u16, i8 i16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@into $ident, u16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, u16, i8 i16 i32 u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, u16, i8 u8 i16);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@into $ident, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, u16, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, u16, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, u16, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, u16, isize usize);
     };
     (@impl $ident:ident, i32) => {
         $crate::newtype_num!(@from $ident, i8 u8 i16 u16 i32);
         $crate::newtype_num!(@into $ident, i32 i64 i128);
-        $crate::newtype_num!(@try_into $ident, i32, u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, i32, u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, i32, i8 u8 i16 u16 u32 u64 u128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, i32, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, i32, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, i32, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, i32, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, i32, usize);
     };
     (@impl $ident:ident, u32) => {
         $crate::newtype_num!(@from $ident, u8 u16 u32);
-        $crate::newtype_num!(@into $ident, u32 u64 i128 u128);
-        $crate::newtype_num!(@try_into $ident, u32, i8 i16 i32 i64 u64 i128 u128);
+        $crate::newtype_num!(@into $ident, u32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, u32, i8 i16 i32 i64 u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, u32, i8 u8 i16 u16 i32);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, u32, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, u32, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@into $ident, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, u32, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, u32, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, u32, isize usize);
     };
     (@impl $ident:ident, i64) => {
         $crate::newtype_num!(@from $ident, i8 u8 i16 u16 i32 u32 i64);
         $crate::newtype_num!(@into $ident, i64 i128);
-        $crate::newtype_num!(@try_into $ident, i64, u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, i64, u64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, i64, i8 u8 i16 u16 i32 u32 u64 u128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, i64, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, i64, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@from $ident, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, i64, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, i64, usize);
     };
     (@impl $ident:ident, u64) => {
         $crate::newtype_num!(@from $ident, u8 u16 u32 u64);
-        $crate::newtype_num!(@into $ident, u64 u128);
-        $crate::newtype_num!(@try_into $ident, u64, i8 i16 i32 i64 i128 u128);
+        $crate::newtype_num!(@into $ident, u64 i128 u128);
+        $crate::newtype_num!(@try_from $ident, u64, i8 i16 i32 i64 i128 u128);
+        $crate::newtype_num!(@try_into $ident, u64, i8 u8 i16 u16 i32 u32 i64);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, u64, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, u64, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, u64, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, u64, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@into $ident, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, u64, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, u64, isize);
     };
     (@impl $ident:ident, i128) => {
         $crate::newtype_num!(@from $ident, i8 u8 i16 u16 i32 u32 i64 u64 i128);
         $crate::newtype_num!(@into $ident, i128);
-        $crate::newtype_num!(@try_into $ident, i128, u128);
+        $crate::newtype_num!(@try_from $ident, i128, u128);
+        $crate::newtype_num!(@try_into $ident, i128, i8 u8 i16 u16 i32 u32 i64 u64 u128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, i128, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, i128, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@from $ident, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, i128, isize usize);
     };
     (@impl $ident:ident, u128) => {
         $crate::newtype_num!(@from $ident, u8 u16 u32 u64 u128);
         $crate::newtype_num!(@into $ident, u128);
-        $crate::newtype_num!(@try_into $ident, u128, i8 i16 i32 i64 i128);
+        $crate::newtype_num!(@try_from $ident, u128, i8 i16 i32 i64 i128);
+        $crate::newtype_num!(@try_into $ident, u128, i8 u8 i16 u16 i32 u32 i64 u64 i128);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_from $ident, u128, isize);
+        #[cfg(target_pointer_width = "16")]
+        $crate::newtype_num!(@try_into $ident, u128, isize usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_from $ident, u128, isize);
+        #[cfg(target_pointer_width = "32")]
+        $crate::newtype_num!(@try_into $ident, u128, isize usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@from $ident, usize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_from $ident, u128, isize);
+        #[cfg(target_pointer_width = "64")]
+        $crate::newtype_num!(@try_into $ident, u128, isize usize);
     };
+
     (@impl $ident:ident, isize) => {
         #[cfg(target_pointer_width = "16")]
         $crate::newtype_num!(@impl $ident, i16);

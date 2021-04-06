@@ -1,6 +1,5 @@
-use core::convert::TryInto;
 use crate::{quickdraw::Point, types::Tick};
-use libcommon::bitflags::BitFlags;
+use libcommon::{bitflags::BitFlags, prelude::*};
 use qt_core::{KeyboardModifier, MouseButton};
 use qt_gui::{QCursor, QGuiApplication};
 use smart_default::SmartDefault;
@@ -163,7 +162,7 @@ impl Manager {
     fn mouse_pos(&self) -> Point {
         unsafe {
             let p = QCursor::pos_0a();
-            Point { x: p.x().try_into().unwrap(), y: p.y().try_into().unwrap() }
+            Point { x: p.x().unwrap_into(), y: p.y().unwrap_into() }
         }
     }
 
@@ -171,14 +170,10 @@ impl Manager {
     /// clicks.
     ///
     /// `GetDblTime`
-    ///
-    /// # Panics
-    ///
-    /// Panics if the double click interval from the OS is invalid.
     #[must_use]
     pub fn get_double_time(&self) -> Duration {
         Duration::from_millis(unsafe {
             QGuiApplication::style_hints().mouse_double_click_interval()
-        }.try_into().unwrap())
+        }.unwrap_into())
     }
 }

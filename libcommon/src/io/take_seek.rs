@@ -1,5 +1,6 @@
-use core::{convert::TryFrom, fmt};
 use binrw::io;
+use core::fmt;
+use crate::convert::{UnwrapFrom, UnwrapInto};
 use super::SeekExt;
 
 // TODO: Lots of redundancy with SharedStream here, the only real difference is
@@ -13,7 +14,7 @@ pub struct TakeSeek<T: io::Read + io::Seek> {
 
 impl <T> io::Read for TakeSeek<T> where T: io::Read + io::Seek {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let limit = usize::try_from(self.end.saturating_sub(self.pos)).unwrap();
+        let limit = usize::unwrap_from(self.end.saturating_sub(self.pos));
 
         // Don't call into inner reader at all at EOF because it may still block
         if limit == 0 {
@@ -22,7 +23,7 @@ impl <T> io::Read for TakeSeek<T> where T: io::Read + io::Seek {
 
         let max = buf.len().min(limit);
         let n = self.inner.read(&mut buf[0..max])?;
-        self.pos += u64::try_from(n).unwrap();
+        self.pos += u64::unwrap_from(n);
         Ok(n)
     }
 }
@@ -39,9 +40,9 @@ impl <T> io::Seek for TakeSeek<T> where T: io::Read + io::Seek {
             io::SeekFrom::Current(n) => (self.pos, n),
         };
         let new_pos = if offset >= 0 {
-            base_pos.checked_add(<_>::try_from(offset).unwrap())
+            base_pos.checked_add(offset.unwrap_into())
         } else {
-            base_pos.checked_sub(<_>::try_from(offset.wrapping_neg()).unwrap())
+            base_pos.checked_sub(offset.wrapping_neg().unwrap_into())
         };
         match new_pos {
             Some(n) => {

@@ -1,6 +1,6 @@
 
 use cpp_core::{CppBox, NullPtr, Ptr, StaticUpcast};
-use libcommon::{ReasonsExt, vfs::VirtualFileSystem};
+use libcommon::{ReasonsExt, prelude::*, vfs::VirtualFileSystem};
 use crate::{qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libearthquake::{
@@ -59,7 +59,7 @@ use qt_widgets::{
     QVBoxLayout,
     QWidget,
 };
-use std::{cell::RefCell, convert::TryInto, env, path::Path, rc::Rc};
+use std::{cell::RefCell, env, path::Path, rc::Rc};
 use strum::VariantNames;
 
 struct FileWidget {
@@ -197,7 +197,7 @@ impl OptionsWidget {
         let charset = QComboBox::new_0a();
         charset.set_size_adjust_policy(SizeAdjustPolicy::AdjustToContentsOnFirstShow);
         for (value, &key) in ScriptCode::VARIANTS.iter().enumerate() {
-            charset.add_item_q_string_q_variant(qtr!(l, &format!("charset_{}", key)), &QVariant::from_int(value.try_into().unwrap()));
+            charset.add_item_q_string_q_variant(qtr!(l, &format!("charset_{}", key)), &QVariant::from_int(value.unwrap_into()));
         }
         parent.add_row_q_string_q_widget(qtr!(l, "charset_label"), &charset);
         charset

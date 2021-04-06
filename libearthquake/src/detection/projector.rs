@@ -1,5 +1,5 @@
 use anyhow::{Context, Result as AResult, anyhow, bail, ensure};
-use binrw::{BinRead, io::{Cursor, Read, SeekFrom}};
+use binrw::{BinRead, io::Cursor};
 use bitflags::bitflags;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
@@ -8,9 +8,9 @@ use crate::{
     panic_sample,
 };
 use derive_more::Display;
-use libcommon::SeekExt;
+use libcommon::{io::prelude::*, prelude::*};
 use libmactoolbox::{resources::{File as ResourceFile, ResourceId, Source as ResourceSource, kinds::StringList as StringListResource}, intl::ScriptCode, types::{MacString, PString}};
-use std::{convert::TryInto, rc::Rc};
+use std::rc::Rc;
 use super::{projector_settings::ProjectorSettings, Version};
 
 #[derive(Clone)]
@@ -209,7 +209,7 @@ where
     } else {
         let mut rom_data = rom.into_inner();
         rom_data.seek(SeekFrom::Start(resource_fork_offset)).context("Can’t rewind resource fork for system resource data")?;
-        let mut data = Vec::with_capacity(rom_data.bytes_left()?.try_into().unwrap());
+        let mut data = Vec::with_capacity(rom_data.bytes_left()?.unwrap_into());
         rom_data.read_to_end(&mut data).context("Can’t read system resource fork data")?;
         Some(data)
     };
@@ -451,12 +451,12 @@ fn get_projector_rsrc<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, offse
         },
     };
 
-    let mut system_resources = Vec::with_capacity(rsrc_size.try_into().unwrap());
+    let mut system_resources = Vec::with_capacity(rsrc_size.unwrap_into());
     input.seek(SeekFrom::Start(rsrc_offset.into()))
         .context("Can’t seek to PROJECTR.RSR")?;
     let actual = input.take(rsrc_size.into()).read_to_end(&mut system_resources)
         .context("Can’t read PROJECTR.RSR")?;
-    ensure!(actual == rsrc_size.try_into().unwrap(), "Expected {} bytes, read {} bytes", rsrc_size, actual);
+    ensure!(actual == rsrc_size.unwrap_into(), "Expected {} bytes, read {} bytes", rsrc_size, actual);
 
     Ok(Some(system_resources))
 }
@@ -473,7 +473,7 @@ fn internal_movie<R: binrw::io::Read + binrw::io::Seek>(reader: &mut R, offset: 
 
 mod pe {
     use binrw::{BinReaderExt, NullWideString, io};
-    use core::convert::TryInto;
+    use libcommon::prelude::*;
     use super::{
         AResult,
         ByteOrder,
@@ -523,7 +523,7 @@ mod pe {
 
         let key_padding_size = ((FIXED_HEADER_WORD_SIZE + key.len() + 1) & 1) * 2;
         if key_padding_size != 0 {
-            input.skip(key_padding_size.try_into().unwrap())?;
+            input.skip(key_padding_size.unwrap_into())?;
         }
 
         let is_string_table = key == "StringFileInfo" || (key.len() == 8 && &key[4..8] == "04b0");
@@ -554,7 +554,7 @@ mod pe {
         input.skip(12)?;
         let skip_entries = input.read_u16::<LittleEndian>()?;
         let num_entries = input.read_u16::<LittleEndian>()?;
-        input.skip((ENTRY_SIZE * usize::from(skip_entries)).try_into().unwrap())?;
+        input.skip((ENTRY_SIZE * usize::from(skip_entries)).unwrap_into())?;
         for _ in 0..num_entries {
             let mut entry = [ 0; ENTRY_SIZE ];
             input.read_exact(&mut entry)?;

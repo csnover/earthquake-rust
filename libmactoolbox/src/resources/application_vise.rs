@@ -2,7 +2,7 @@
 
 use binrw::io::{Error, ErrorKind, Result};
 use byteorder::{ByteOrder, BigEndian};
-use core::convert::{TryFrom, TryInto};
+use libcommon::prelude::*;
 
 /// A decompressor for the Application VISE runtime executable compression
 /// format.
@@ -25,12 +25,12 @@ impl ApplicationVise {
 
         Self::validate(data)?;
 
-        let decompressed_size = usize::try_from(BigEndian::read_u32(&data[8..])).unwrap();
+        let decompressed_size = usize::unwrap_from(BigEndian::read_u32(&data[8..]));
         let odd_sized_output = decompressed_size & 1 == 1;
         let mut local_data = &data[16..];
 
         let (mut op_stream, mut op_count) = {
-            let local_data_size = usize::try_from(consume_u32(&mut local_data)).unwrap();
+            let local_data_size = usize::unwrap_from(consume_u32(&mut local_data));
             (
                 &data[local_data_size..],
                 data.len() - local_data_size - if odd_sized_output { 2 } else { 1 }
@@ -41,7 +41,7 @@ impl ApplicationVise {
             let config = consume_u32(&mut local_data);
             if config & USE_SHARED_DICT == 0 {
                 // TODO: This branch is untested. Find a sample!
-                &data[config.try_into().unwrap()..]
+                &data[config.unwrap_into()..]
             } else {
                 let offset = usize::from(BigEndian::read_u16(&self.shared_data[(1 << (config & 3)) + 6..]));
                 &self.shared_data[offset..]

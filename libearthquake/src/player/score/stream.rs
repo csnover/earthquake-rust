@@ -1,7 +1,6 @@
 use anyhow::{Context, Result as AResult};
-use binrw::{BinRead, BinReaderExt, io::{Cursor, Read, Seek, SeekFrom}};
-use core::convert::TryFrom;
-use libcommon::SeekExt;
+use binrw::{BinRead, BinReaderExt, io::Cursor};
+use libcommon::{io::prelude::*, prelude::*};
 use smart_default::SmartDefault;
 use super::{Frame, SpriteBitmask, Version};
 
@@ -59,12 +58,12 @@ impl Stream {
                     break;
                 }
                 ensure_sample!(chunk_size & 1 == 0, "Chunk size {} is not a multiple of two", chunk_size);
-                let chunk_offset = usize::try_from(self.input.read_be::<i16>().context("Can’t read compressed score frame chunk offset")?).unwrap();
+                let chunk_offset = usize::unwrap_from(self.input.read_be::<i16>().context("Can’t read compressed score frame chunk offset")?);
                 bytes_to_read -= chunk_size + 4;
                 (chunk_size, chunk_offset)
             };
 
-            self.input.read_exact(&mut new_data[chunk_offset..chunk_offset + usize::try_from(chunk_size).unwrap()]).context("Can’t read frame chunk data")?;
+            self.input.read_exact(&mut new_data[chunk_offset..chunk_offset + usize::unwrap_from(chunk_size)]).context("Can’t read frame chunk data")?;
         }
 
         let cursor = &mut Cursor::new(&new_data);

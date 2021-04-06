@@ -2,9 +2,8 @@
 
 use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
-use core::convert::TryInto;
 use crate::{bail_sample, ensure_sample};
-use libcommon::{SeekExt, restore_on_error};
+use libcommon::{prelude::*, io::prelude::*};
 use super::{
     projector::{
         MacCPU,
@@ -152,7 +151,7 @@ impl BinRead for ProjectorSettings {
         (version, platform): Self::Args,
     ) -> binrw::BinResult<Self> {
         restore_on_error(reader, |reader, pos| {
-            let mut bits = Vec::with_capacity(reader.bytes_left()?.try_into().unwrap());
+            let mut bits = Vec::with_capacity(reader.bytes_left()?.unwrap_into());
             reader.read_to_end(&mut bits)?;
 
             match version {
@@ -279,7 +278,7 @@ impl D3Settings {
             full_screen:        false,
             loop_playback:      bits[1] & 1 != 0,
             use_external_files: bits[4] & 1 != 0,
-            num_movies:         u16::from_be_bytes((&bits[6..8]).try_into().unwrap()),
+            num_movies:         u16::from_be_bytes((&bits[6..8]).unwrap_into()),
             wait_for_click:     bits[5] & 1 == 0,
             accel_mode:         match bits[10] {
                 1 => AccelMode::FillMemory,
@@ -299,7 +298,7 @@ impl D3Settings {
             platform:           Platform::Win(WinVersion::Win3),
             loop_playback:      bits[3] & 1 != 0,
             use_external_files: bits[5] & 1 != 0,
-            num_movies:         u16::from_le_bytes((&bits[0..2]).try_into().unwrap()),
+            num_movies:         u16::from_le_bytes((&bits[0..2]).unwrap_into()),
             hide_desktop:       bits[5] & 4 != 0,
             wait_for_click:     false,
             accel_mode:         AccelMode::Chunk,

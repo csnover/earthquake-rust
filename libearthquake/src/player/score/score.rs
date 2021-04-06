@@ -1,7 +1,6 @@
 use anyhow::Result as AResult;
-use binrw::{BinRead, io::{Cursor, Read, Seek}};
-use core::convert::TryInto;
-use libcommon::{SeekExt, TakeSeekExt, Unk16, Unk32, Unk8, UnkHnd, bitflags, restore_on_error};
+use binrw::{BinRead, io::Cursor};
+use libcommon::{io::prelude::*, prelude::*, bitflags};
 use libmactoolbox::quickdraw::{Point, Rect};
 use smart_default::SmartDefault;
 use super::{Fps, Frame, FrameNum, NUM_SPRITES, Palette, Score1494, Stream, Sprite, SpriteBitmask, Tempo, TextEditor, Transition, Version};
@@ -208,14 +207,14 @@ impl BinRead for Score {
             options.endian = binrw::Endian::Big;
 
             let size = input.bytes_left()?;
-            options.count = Some(size.try_into().unwrap());
+            options.count = Some(size.unwrap_into());
             let data = Vec::read_options(&mut input.take_seek(size), &options, ())?;
             options.count = None;
 
             let mut input = Cursor::new(data);
 
             let (own_size, version) = if config_version.d4() || config_version.d5() {
-                let header = ScoreHeaderV5::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+                let header = ScoreHeaderV5::read_options(&mut input, &options, (size.unwrap_into(), ))?;
 
                 // Director normally reads through all of the frame deltas here in order
                 // to byte swap them into the platform’s native endianness, but since we
@@ -224,7 +223,7 @@ impl BinRead for Score {
 
                 (header.own_size, header.score_version)
             } else if config_version.d3() || config_version.d2() || config_version.d1() {
-                let header = ScoreHeaderV3::read_options(&mut input, &options, (size.try_into().unwrap(), ))?;
+                let header = ScoreHeaderV3::read_options(&mut input, &options, (size.unwrap_into(), ))?;
                 (header.own_size, Version::V3)
             } else {
                 todo!("Score config version {} parsing", config_version as i32);
@@ -233,7 +232,7 @@ impl BinRead for Score {
             let pos = input.pos()?;
 
             Ok(Self {
-                vwsc: Stream::new(input, pos.try_into().unwrap(), own_size, version),
+                vwsc: Stream::new(input, pos.unwrap_into(), own_size, version),
                 ..Self::default()
             })
         })

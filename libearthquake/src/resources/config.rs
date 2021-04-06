@@ -1,7 +1,6 @@
 use binrw::BinRead;
-use core::convert::TryInto;
 use crate::player::score::Tempo;
-use libcommon::{Unk16, Unk32, Unk8, bitflags, bitflags::BitFlags, newtype_num};
+use libcommon::{prelude::*, bitflags, bitflags::BitFlags, newtype_num};
 use libmactoolbox::{quickdraw::{PaletteIndex, Rect}, typed_resource};
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
@@ -135,7 +134,7 @@ pub struct Config {
     field_16: Unk16,
     field_18: Unk8,
     field_19: Unk8,
-    #[br(map = |c: i16| c.try_into().unwrap())]
+    #[br(map = |c: i16| c.unwrap_into())]
     #[br(if(version >= Version::V1025))]
     stage_color: PaletteIndex,
     #[br(if(version >= Version::V1025))]

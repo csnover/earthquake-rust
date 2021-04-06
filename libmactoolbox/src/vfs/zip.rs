@@ -1,7 +1,8 @@
-use binrw::io::{Error, ErrorKind};
-use libcommon::{SeekExt, SharedStream, vfs::{Result, VirtualFile, VirtualFileSystem}};
+use binrw::io::{Error, ErrorKind, self};
+use core::fmt;
+use libcommon::{io::prelude::*, prelude::*, vfs::{Result, VirtualFile, VirtualFileSystem}};
 use rc_zip::{Archive, EntryReader, ReadZip, EntryContents, StoredEntry};
-use std::{convert::TryFrom, fmt, fs::File, io::{Read, Seek, SeekFrom, self}, path::{Path, PathBuf}};
+use std::{fs::File, path::{Path, PathBuf}};
 use tempfile::SpooledTempFile;
 
 #[derive(Debug)]
@@ -123,7 +124,7 @@ impl Read for ZipFile<'_> {
         } else {
             self.buffer.pos()?
         };
-        self.fill_buffer_to(seeked_pos + u64::try_from(buf.len()).unwrap())?;
+        self.fill_buffer_to(seeked_pos + u64::unwrap_from(buf.len()))?;
         if self.seek.is_some() {
             self.buffer.seek(SeekFrom::Start(seeked_pos))?;
             self.seek = None;
