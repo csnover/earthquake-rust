@@ -1,9 +1,10 @@
 //! Type definitions for identifying resources.
 
-use binrw::io;
+use binrw::{BinRead, io};
 use byteorder::ByteOrder;
 use core::{char, fmt};
 use derive_more::Display;
+use libcommon::newtype_num;
 use super::Error;
 
 /// A data format identifier.
@@ -15,6 +16,14 @@ impl OsType {
     #[must_use]
     pub fn new(os_type: impl Into<[u8; 4]>) -> Self {
         Self(os_type.into())
+    }
+
+    /// Makes a new `OSType` from an array.
+    ///
+    /// This is a workaround to allow a generic constructor whilst also allowing
+    /// `OsType` to be statically constructed.
+    pub const fn from_raw(os_type: [u8; 4]) -> Self {
+        Self(os_type)
     }
 
     #[inline]
@@ -90,20 +99,25 @@ pub trait OsTypeReadExt: io::Read {
 
 impl<T: io::Read + ?Sized> OsTypeReadExt for T {}
 
+newtype_num! {
+    #[derive(BinRead, Debug, Hash)]
+    pub struct ResNum(i16);
+}
+
 /// A resource identifier.
 #[derive(Copy, Clone, Display, Hash, PartialEq, Eq)]
 #[display(fmt = "{}({})", _0, _1)]
-pub struct ResourceId(OsType, i16);
+pub struct ResourceId(OsType, ResNum);
 
 impl ResourceId {
     /// Makes a new resource identifier for the given data format and number.
-    pub fn new(os_type: impl Into<OsType>, id: i16) -> Self {
-        Self(os_type.into(), id)
+    pub fn new(os_type: impl Into<OsType>, id: impl Into<ResNum>) -> Self {
+        Self(os_type.into(), id.into())
     }
 
     /// Gets the resource number.
     #[must_use]
-    pub fn id(self) -> i16 {
+    pub fn id(self) -> ResNum {
         self.1
     }
 
@@ -111,18 +125,6 @@ impl ResourceId {
     #[must_use]
     pub fn os_type(self) -> OsType {
         self.0
-    }
-}
-
-impl From<(OsType, i16)> for ResourceId {
-    fn from(value: (OsType, i16)) -> Self {
-        Self(value.0, value.1)
-    }
-}
-
-impl From<(&[u8; 4], i16)> for ResourceId {
-    fn from(value: (&[u8; 4], i16)) -> Self {
-        Self(value.0.into(), value.1)
     }
 }
 

@@ -1,8 +1,8 @@
 use binrw::BinRead;
+use core::convert::TryInto;
 use crate::player::score::Tempo;
 use libcommon::{Unk16, Unk32, Unk8, bitflags, bitflags::BitFlags, newtype_num};
-use libmactoolbox::quickdraw::{PaletteIndex, Rect};
-use std::convert::TryInto;
+use libmactoolbox::{quickdraw::{PaletteIndex, Rect}, typed_resource};
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
 
@@ -115,6 +115,9 @@ pub enum PaletteId {
     Number(i32),
 }
 
+/// Movie configuration.
+///
+/// OsType: `'VWCF'` `'DRCF'`
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big)]
 pub struct Config {
@@ -143,7 +146,7 @@ pub struct Config {
     field_1f: Unk8,
     #[br(if(version >= Version::V1025))]
     field_20: Unk32,
-    #[br(if(version >= Version::V1025))]
+    #[br(if(version >= Version::V1025, version))]
     original_version: Version,
     #[br(if(version >= Version::V1025))]
     max_cast_color_depth: i16,
@@ -176,6 +179,7 @@ pub struct Config {
     #[br(if(version >= Version::V1115), args(version))]
     default_palette: PaletteId,
 }
+typed_resource!(Config => b"DRCF" b"VWCF");
 
 impl Config {
     #[must_use]

@@ -1,5 +1,5 @@
 use binrw::io;
-use super::{OsType, RefNum, ResourceId};
+use super::{OsType, RefNum, ResNum, ResourceId};
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -12,6 +12,8 @@ pub enum Error {
     BorrowMutFailed(#[from] core::cell::BorrowMutError),
     #[error("resource {0} not found")]
     NotFound(ResourceId),
+    #[error("resource number {1} not found in any {}", .0.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "))]
+    NotFoundNum(&'static [OsType], ResNum),
     #[error("resource {0} uses unsupported compression")]
     UnsupportedCompression(ResourceId),
     #[error("bad data type for resource {0}")]
@@ -69,7 +71,7 @@ impl From<binrw::Error> for Error {
             binrw::Error::Custom { err, .. } => {
                 *err.downcast().expect("unexpected error type")
             },
-            _ => panic!("unexpected error type"),
+            _ => panic!("unexpected error type: {}", error),
         }
     }
 }

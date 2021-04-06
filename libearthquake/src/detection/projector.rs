@@ -136,13 +136,13 @@ where
     let resource_fork_offset = resource_fork.pos().context("Can’t read resource fork position")?;
     let rom = ResourceFile::new(resource_fork)?;
 
-    let version = if rom.contains(ResourceId::new(b"PJ97", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
+    let version = if rom.contains(ResourceId::new(b"PJ97", 0_i16)) && rom.contains(ResourceId::new(b"PJst", 0_i16)) {
         Version::D6
-    } else if rom.contains(ResourceId::new(b"PJ95", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
+    } else if rom.contains(ResourceId::new(b"PJ95", 0_i16)) && rom.contains(ResourceId::new(b"PJst", 0_i16)) {
         Version::D5
-    } else if rom.contains(ResourceId::new(b"PJ93", 0)) && rom.contains(ResourceId::new(b"PJst", 0)) {
+    } else if rom.contains(ResourceId::new(b"PJ93", 0_i16)) && rom.contains(ResourceId::new(b"PJst", 0_i16)) {
         Version::D4
-    } else if rom.contains(ResourceId::new(b"VWst", 0)) {
+    } else if rom.contains(ResourceId::new(b"VWst", 0_i16)) {
         Version::D3
     } else {
         bail!("No Mac projector settings resource");
@@ -150,14 +150,14 @@ where
 
     let config = {
         let os_type = if version == Version::D3 { b"VWst" } else { b"PJst" };
-        let resource_id = ResourceId::new(os_type, 0);
+        let resource_id = ResourceId::new(os_type, 0_i16);
         rom.load_args::<ProjectorSettings>(resource_id, (version, Platform::Mac(MacCPU::ANY)))?
     };
 
     let movie = match version {
         Version::D3 => {
             if config.use_external_files() {
-                let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0))
+                let movies = rom.load::<StringListResource>(ResourceId::new(b"STR#", 0_i16))
                     .context("Missing external file list")?;
                 let mut movies = Rc::try_unwrap(movies)
                     .map_err(|_| anyhow!("Could not take ownership of movie list"))?;

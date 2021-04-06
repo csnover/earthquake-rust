@@ -44,19 +44,19 @@ bitflags! {
 
 #[derive(BinRead, Clone, Copy)]
 #[br(big, import(size: u32), pre_assert(size == 12))]
-pub struct Meta {
+pub struct Properties {
     bounds: Rect,
     flags: Flags,
 }
 
-impl Meta {
+impl Properties {
     #[must_use]
     pub fn frame_rate(&self) -> u8 {
         ((self.flags.bits() & Flags::FRAME_RATE.bits()) >> 24) as u8
     }
 }
 
-impl std::fmt::Debug for Meta {
+impl std::fmt::Debug for Properties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())
             .field("bounds", &self.bounds)

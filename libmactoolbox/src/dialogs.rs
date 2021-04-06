@@ -4,13 +4,13 @@
 
 use binrw::BinRead;
 use bitstream_io::{BigEndian, BitReader};
-use crate::quickdraw::Rect;
+use crate::{quickdraw::Rect, resources::ResNum};
 use libcommon::{SeekExt, restore_on_error};
 
 #[derive(Clone, Copy, Debug)]
 struct Alert {
     bounds_rect: Rect,
-    ditl_id: i16,
+    ditl_id: ResNum,
     stages: [AlertStage; 4],
     auto_position: Option<u16>,
 }
@@ -31,7 +31,7 @@ impl BinRead for Alert {
             options.endian = binrw::Endian::Big;
 
             let bounds_rect = Rect::read_options(input, &options, ())?;
-            let ditl_id = i16::read_options(input, &options, ())?;
+            let ditl_id = ResNum::read_options(input, &options, ())?;
             let mut stages = [AlertStage::default(); 4];
 
             {

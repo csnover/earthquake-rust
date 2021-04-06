@@ -27,7 +27,7 @@ pub enum Frame {
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(version: ConfigVersion))]
 #[br(pre_assert(version >= ConfigVersion::V1217, "TODO: text member kind for < V1217"))]
-pub struct Meta {
+pub struct Properties {
     bounds: Rect,
     rect_2: Rect,
     // TODO: Fallibly assert

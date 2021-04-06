@@ -1,4 +1,5 @@
 use binrw::BinRead;
+use libmactoolbox::typed_resource;
 
 /// An extended font map.
 ///
@@ -30,3 +31,4 @@ use binrw::BinRead;
 /// OsType: `'FXmp'`
 #[derive(BinRead, Clone, Debug, Default)]
 pub struct Map(Vec<u8>);
+typed_resource!(Map => b"FXmp");

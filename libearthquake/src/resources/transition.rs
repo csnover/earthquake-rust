@@ -3,7 +3,7 @@ use libcommon::{bitflags, bitflags::BitFlags};
 use num_derive::FromPrimitive;
 use super::{
     config::Version as ConfigVersion,
-    xtra::Meta as XtraMeta,
+    xtra::Properties as XtraProps,
 };
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
@@ -93,7 +93,7 @@ pub struct Milliseconds(pub i16);
 // files which would follow this code path to see what data is actually stored
 // there.
 #[br(pre_assert(size >= 6 && version >= ConfigVersion::V1214))]
-pub struct Meta {
+pub struct Properties {
     legacy_duration: QuarterSeconds,
     #[br(assert(chunk_size > 0 && chunk_size <= 128))]
     chunk_size: u8,
@@ -101,5 +101,5 @@ pub struct Meta {
     flags: Flags,
     duration: Milliseconds,
     #[br(args(size - 6), if(!flags.contains(Flags::STANDARD)))]
-    xtra: Option<XtraMeta>,
+    xtra: Option<XtraProps>,
 }

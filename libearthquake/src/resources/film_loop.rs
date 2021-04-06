@@ -22,7 +22,7 @@ bitflags! {
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 14))]
-pub struct Meta {
+pub struct Properties {
     bounds: Rect,
     flags: Flags,
     field_14: Unk16,

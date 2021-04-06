@@ -1,11 +1,23 @@
 use binrw::{BinRead, io};
-use libmactoolbox::types::PString;
+use libmactoolbox::{typed_resource, types::PString};
 use core::convert::TryFrom;
 use crate::pvec;
 use derive_more::{Deref, DerefMut};
-use libcommon::{Unk32, UnkHnd, bitflags, restore_on_error};
+use libcommon::{UnkHnd, bitflags, restore_on_error};
 use super::{PVecOffsets, StdList, cast::{MemberId, MemberNum}};
 use smart_default::SmartDefault;
+
+bitflags! {
+    /// The kinds of event handlers registered in the movie script.
+    struct EventHandlers: u32 {
+        const MOUSE_UP    = 1;
+        const MOUSE_DOWN  = 2;
+        const IDLE        = 4;
+        const START_MOVIE = 8;
+        const STOP_MOVIE  = 0x10;
+        const STEP_MOVIE  = 0x20;
+    }
+}
 
 bitflags! {
     struct FileInfoFlags: u32 {
@@ -31,9 +43,11 @@ pvec! {
 
         header {
             script_handle: UnkHnd,
-            // In Director 3 this was a bitmap for marking which kinds of events
-            // were received by movie script. Is it vestigial in D4+?
-            field_8: Unk32,
+            /// The kinds of event handlers in the movie script.
+            ///
+            /// Not used by D4+, which store the movie script in
+            /// `'Lctx'`/`'Lscr'` chunks.
+            event_handlers: EventHandlers,
             flags: FileInfoFlags,
             #[br(if(header_size >= 20))]
             script_context_num: u32,
@@ -44,7 +58,7 @@ pvec! {
         entries {
             /// The movie script.
             ///
-            /// Used only by D3. D4 and later store the movie script in
+            /// Not used by D4+, which store the movie script in
             /// `'Lctx'`/`'Lscr'` chunks.
             #[br(count(offsets.entry_size(0).unwrap_or(0)))]
             0 => movie_script_text: Vec<u8>,
@@ -62,6 +76,7 @@ pvec! {
         }
     }
 }
+typed_resource!(FileInfo => b"VWFI");
 
 pvec! {
     /// The list of cast libraries used by a movie.
@@ -87,6 +102,7 @@ pvec! {
         }
     }
 }
+typed_resource!(CastList => b"MCsL");
 
 #[derive(Debug)]
 pub struct CastListMembers(Vec<Cast>);

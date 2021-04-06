@@ -8,7 +8,7 @@ use crate::types::{MacString, PString};
 use derive_more::Display;
 use libcommon::{SeekExt, TakeSeekExt, bitflags::BitFlags, bitflags};
 use std::{any::Any, cell::RefCell, convert::{TryFrom, TryInto}, rc::{Weak, Rc}, sync::atomic::{Ordering, AtomicI16}};
-use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResourceId, Source};
+use super::{ApplicationVise, Error as ResourceError, OsType, Result, ResNum, ResourceId, Source};
 
 /// A file reference number which corresponds to an open resource fork.
 #[derive(Clone, Copy, Debug, Default, Display, Eq, PartialEq)]
@@ -180,6 +180,9 @@ impl <T: io::Read + io::Seek> Source for File<T> {
     }
 
     fn load_args<R: BinRead + 'static>(&self, id: ResourceId, args: R::Args) -> Result<Rc<R>> {
+        let mut options = binrw::ReadOptions::default();
+        options.endian = binrw::Endian::Big;
+
         let entry = self.find_item(id).ok_or(ResourceError::NotFound(id))?;
 
         if entry.flags.contains(ResourceFlags::COMPRESSED) {
@@ -195,7 +198,7 @@ impl <T: io::Read + io::Seek> Source for File<T> {
         input.seek(SeekFrom::Start(entry.data_offset.into()))
             .map_err(|error| ResourceError::SeekFailure(id, error))?;
 
-        let size = u32::read(input.by_ref())
+        let size = u32::read_options(input.by_ref(), &options, ())
             .map_err(|error| ResourceError::ReadSizeFailure(id, match error {
                 binrw::Error::Io(error) => error,
                 _ => unreachable!("primitive reads cannot fail except by i/o error")
@@ -217,19 +220,16 @@ impl <T: io::Read + io::Seek> Source for File<T> {
             ApplicationVise::is_compressed(&sig)
         };
 
-        let mut options = binrw::ReadOptions::default();
-        options.endian = binrw::Endian::Big;
-
         let resource = Rc::new(if is_vise_compressed {
             let data = {
                 let mut compressed_data = Vec::with_capacity(size.try_into().unwrap());
                 input.by_ref().take(size.into()).read_to_end(&mut compressed_data)?;
                 self.decompress(id, &compressed_data)?
             };
-            R::read_options(&mut Cursor::new(data), &options, args)?
+            R::read_options(&mut Cursor::new(data), &options, args)
         } else {
-            R::read_options(&mut input.by_ref().take_seek(size.into()), &options, args)?
-        });
+            R::read_options(&mut input.by_ref().take_seek(size.into()), &options, args)
+        }.map_err(|error| ResourceError::ResourceReadFailure(id, error))?);
 
         *entry.data.borrow_mut() = Some(Rc::downgrade(&(Rc::clone(&resource) as _)));
         Ok(resource)
@@ -317,7 +317,7 @@ fn parse_u24<R: io::Read + io::Seek>(reader: &mut R, _: &binrw::ReadOptions, _: 
 #[derive(BinRead, Debug)]
 #[br(big, import(data_offset: u32))]
 struct ResourceItem {
-    id: i16,
+    id: ResNum,
     name_offset: i16,
     flags: ResourceFlags,
     #[br(map = |offset: u32| offset + data_offset, parse_with = parse_u24)]

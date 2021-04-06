@@ -19,7 +19,7 @@ pub enum LineDirection {
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big)]
-pub struct Meta {
+pub struct Properties {
     kind: Kind,
     bounds: Rect,
     pattern: i16,

@@ -1,7 +1,7 @@
 use binrw::{BinRead, io};
 use derive_more::{Deref, DerefMut};
 use libcommon::{SeekExt, restore_on_error};
-use libmactoolbox::quickdraw::{PixPatHandle, Rect};
+use libmactoolbox::{quickdraw::{PixPatHandle, Rect}, typed_resource};
 use super::cast::{MemberId, MemberNum};
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
@@ -49,6 +49,7 @@ pub struct TilesV5([ TileV5; 8 ]);
 /// OsType: `'VWTL'`
 #[derive(Clone, Copy, Debug, Default, Deref, DerefMut)]
 pub struct Tiles(TilesV5);
+typed_resource!(Tiles => b"VWTL");
 
 impl Tiles {
     const SIZE_V3: u64 = TileV3::SIZE * 8;

@@ -11,9 +11,10 @@ pub enum Alignment {
     Center,
 }
 
-#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
 #[br(repr(u8))]
 pub enum Frame {
+    #[default]
     Fit = 0,
     Scroll,
     Fixed,
@@ -38,16 +39,22 @@ pub enum ButtonKind {
     Radio,
 }
 
+// TODO: D3Mac does extra stuff on loading for versions < 1026:
+// frame -> 0, flags -> 0, scroll_top -> 0, height -> scroll_height
 #[derive(BinRead, Clone, Copy, Debug)]
-#[br(big, import(size: u32))]
-pub struct Meta {
+#[br(big, import(size: u32), pre_assert(size == 0x18 || size == 0x1c || size == 0x1e))]
+pub struct Properties {
+    #[br(if(size != 0x18))]
     #[br(map = |p: u8| Pixels::from(p))]
     border_size: Pixels,
     /// Space between the field viewport and the border.
+    #[br(if(size != 0x18))]
     #[br(map = |p: u8| Pixels::from(p))]
     margin_size: Pixels,
+    #[br(if(size != 0x18))]
     #[br(map = |p: u8| Pixels::from(p))]
     box_shadow_size: Pixels,
+    #[br(if(size != 0x18))]
     frame: Frame,
     alignment: Alignment,
     back_color: RgbColor,

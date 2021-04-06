@@ -1,7 +1,8 @@
 use binrw::BinRead;
+use core::convert::TryInto;
 use libcommon::bitflags;
 use libmactoolbox::quickdraw::{Point, Rect};
-use super::cast::MemberId;
+use super::cast::{MemberId, MemberNum};
 
 bitflags! {
     // TODO: These are tested when painting colour bitmaps, but there does not
@@ -20,8 +21,33 @@ bitflags! {
 }
 
 #[derive(BinRead, Clone, Copy)]
+#[br(big, import(size: u32), pre_assert(size == 26))]
+pub struct PropertiesV3 {
+    #[br(assert(row_bytes & 0x7fff < 0x4000))]
+    row_bytes: i16,
+    bounds: Rect,
+    field_e: Rect,
+    origin: Point,
+    color_depth: i16,
+    palette_id: MemberNum,
+}
+
+impl From<PropertiesV3> for Properties {
+    fn from(old: PropertiesV3) -> Self {
+        Self {
+            row_bytes: old.row_bytes,
+            bounds: old.bounds,
+            origin: old.origin,
+            flags: <_>::default(),
+            color_depth: old.color_depth.try_into().unwrap(),
+            palette_id: old.palette_id.into(),
+        }
+    }
+}
+
+#[derive(BinRead, Clone, Copy)]
 #[br(big, import(size: u32), pre_assert(size == 22 || size == 28))]
-pub struct Meta {
+pub struct Properties {
     #[br(assert(row_bytes & 0x7fff < 0x4000))]
     row_bytes: i16,
     bounds: Rect,
@@ -35,7 +61,7 @@ pub struct Meta {
     palette_id: MemberId,
 }
 
-impl std::fmt::Debug for Meta {
+impl std::fmt::Debug for Properties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())
             .field("row_bytes", &self.row_bytes())
@@ -49,7 +75,7 @@ impl std::fmt::Debug for Meta {
     }
 }
 
-impl Meta {
+impl Properties {
     #[must_use]
     pub fn is_pixmap(&self) -> bool {
         self.row_bytes < 0

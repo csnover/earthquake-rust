@@ -1,6 +1,6 @@
 use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId}, movie::Cast, tile::Tiles}};
 use libcommon::{Unk16, Unk32, Unk8, UnkHnd, UnkPtr, bitflags};
-use libmactoolbox::{quickdraw::{Point, Rect}, resources::RefNum, types::{Tick, TickDuration}};
+use libmactoolbox::{quickdraw::{Point, Rect}, resources::RefNum, typed_resource, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
 use super::{score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Score, SpriteBitmask}, window::Window};
@@ -76,6 +76,7 @@ struct SpriteCursor;
 /// OsType: `'VWtc'`
 #[derive(Clone, Debug, Default)]
 struct Timecodes(Vec<std::time::Duration>);
+typed_resource!(Timecodes => b"VWtc");
 
 #[derive(Debug, SmartDefault)]
 pub struct Movie {

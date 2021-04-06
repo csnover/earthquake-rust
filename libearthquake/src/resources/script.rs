@@ -12,7 +12,7 @@ enum Kind {
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 0 || size == 2))]
-pub struct Meta {
+pub struct Properties {
     #[br(if(size == 2))]
     kind: Kind,
 }

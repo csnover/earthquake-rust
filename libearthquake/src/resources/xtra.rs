@@ -2,7 +2,7 @@ use binrw::BinRead;
 
 #[derive(BinRead, Clone, Debug)]
 #[br(big, import(size: u32))]
-pub struct Meta {
+pub struct Properties {
     // TODO: Load function should receive the global symbol table and be
     // converted to a symbol number instead of storing the name
     #[br(assert(size >= name_size + 4))]

@@ -1,64 +1,152 @@
+//! Type definitions for cast management.
+//!
+//! Two types of cast management exist in Director depending upon version.
+//!
+//! Director 3 and earlier held cast .
+//!
+//! D4+ use the `'CAS*'`
+
+use anyhow::{Context, Result as AResult, anyhow, bail};
 use binrw::{BinRead, NullString, io};
-use libmactoolbox::types::PString;
-use crate::{collections::riff::ChunkIndex, pvec};
+use core::{convert::{TryFrom, TryInto}, fmt};
+use crate::{collections::riff::{ChunkIndex, Riff}, pvec};
 use derive_more::{Deref, DerefMut, Display};
-use libcommon::{SeekExt, TakeSeekExt, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
+use libcommon::{Reader, SeekExt, TakeSeekExt, Unk32, Unk8, UnkHnd, bitflags, bitflags::BitFlags, newtype_num, restore_on_error};
+use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, typed_resource, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
-use std::{convert::TryFrom, fmt};
-use super::{bitmap::Meta as BitmapMeta, config::Version as ConfigVersion, field::Meta as FieldMeta, film_loop::Meta as FilmLoopMeta, script::Meta as ScriptMeta, shape::Meta as ShapeMeta, text::Meta as TextMeta, transition::Meta as TransitionMeta, video::Meta as VideoMeta, xtra::Meta as XtraMeta};
+use super::{bitmap::{Properties as BitmapProps, PropertiesV3 as BitmapPropsV3}, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
 
-// CAS* - list of ChunkIndex to CASt resources
-// CASt - (flags, VWCI size, VWCR size) + VWCI resource + VWCR data
-// VWCR - ()
+/// A cast library.
+#[derive(Clone, Debug, Deref, DerefMut)]
+pub struct Library(Vec<Member>);
 
-// #[derive(Debug)]
-// struct VideoWorksCastRegistry(Vec<MemberMetadata>);
-// impl Resource for VideoWorksCastRegistry {
-//     type Data = ();
-//     fn load<T: Reader>(input: &mut ByteOrdered<T, Endianness>, _: u32, _: Self::Data) -> AResult<Self> where Self: Sized {
-//         let mut data = Vec::new();
-//         while !input.is_empty()? {
-//             let size = input.read_u8().context("Can’t read cast registry member size")?;
-//             if size == 0 {
-//                 data.push(MemberMetadata::None);
-//             } else {
-//                 let kind = input.read_u8().context("Can’t read cast member kind")?;
-//                 let kind = MemberKind::from_u8(kind)
-//                     .with_context(|| format!("Invalid cast member kind {}", kind))?;
-//                 data.push(match kind {
-//                     MemberKind::None => unreachable!(),
-//                     MemberKind::Bitmap => todo!(),
-//                     MemberKind::FilmLoop => todo!(),
-//                     MemberKind::Field => field_load_metadata(&mut input)?,
-//                     MemberKind::Palette => todo!(),
-//                     MemberKind::Picture => todo!(),
-//                     MemberKind::Sound => todo!(),
-//                     MemberKind::Button => todo!(),
-//                     MemberKind::Shape => todo!(),
-//                     MemberKind::Movie => todo!(),
-//                     MemberKind::DigitalVideo => todo!(),
-//                     // These kinds only appear in Director 4, which uses the
-//                     // newer CAS* library format
-//                     MemberKind::Script
-//                     | MemberKind::Text
-//                     | MemberKind::OLE
-//                     | MemberKind::Transition
-//                     | MemberKind::Xtra => unreachable!()
-//                 })
-//             }
-//         }
+impl Library {
+    pub fn from_resource_source(source: &impl ResourceSource, cast_num: impl Into<ResNum>) -> AResult<Self> {
+        let cast_num = cast_num.into();
+        let config = source.load_num::<Config>(cast_num)?;
+        let map = source.load_num::<CastRegistry>(cast_num)?;
+        let base_resource_num = cast_num + i16::from(config.min_cast_num()).into();
+        let mut data = Vec::with_capacity(map.len());
+        for (i, (flags, properties)) in map.iter().enumerate() {
+            let resource_num = base_resource_num + i16::try_from(i).unwrap().into();
+            let metadata = if source.contains(ResourceId::new(b"VWCI", resource_num)) {
+                let metadata = source.load_num::<MemberMetadata>(resource_num)
+                    .with_context(|| anyhow!("error reading metadata for cast member {} (res num {})", i, resource_num))?;
+                Some((*metadata).clone())
+            } else {
+                None
+            };
+            data.push(Member {
+                // TODO: This needs to be an Either, and this needs to get
+                // the resource_num
+                riff_index: 0.into(),
+                next_free: 0,
+                some_num_a: 0,
+                // TODO: These flags are not compatible with the D3 flags.
+                flags: MemberFlags::empty(),
+                metadata,
+                properties: properties.clone(),
+            });
+        }
+        Ok(Self(data))
+    }
 
-//         Ok(VideoWorksCastRegistry(data))
-//     }
-// }
+    pub fn from_riff(riff: &Riff<impl Reader>, cast_num: impl Into<ResNum>) -> AResult<Self> {
+        let cast_num = cast_num.into();
+        let config = riff.load_num::<Config>(cast_num)?;
+        let map = riff.load_num::<CastMap>(cast_num)?;
+        let mut data = Vec::with_capacity(map.len());
+        let min_cast_num = config.min_cast_num();
+        let version = config.version();
+        for (i, &chunk_index) in map.iter().enumerate() {
+            if chunk_index > ChunkIndex::new(0) {
+                let cast_member_num = min_cast_num + i16::try_from(i).unwrap().into();
+                let member = riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version))
+                    .with_context(|| format!("error reading cast member {}", cast_member_num))?;
+                data.push((*member).clone());
+            }
+        }
+        Ok(Self(data))
+    }
+}
 
-// impl VideoWorksCastRegistry {
-//     pub fn into_inner(self) -> Vec<MemberMetadata> {
-//         self.0
-//     }
-// }
+/// The Director 3 cast registry.
+///
+/// OsType: `'VWCR'`
+#[derive(Debug, Deref, DerefMut)]
+pub struct CastRegistry(Vec<(Unk8, MemberProperties)>);
+typed_resource!(CastRegistry => b"VWCR");
+
+impl BinRead for CastRegistry {
+    type Args = ();
+
+    fn read_options<R: io::Read + io::Seek>(
+        input: &mut R,
+        options: &binrw::ReadOptions,
+        args: Self::Args,
+    ) -> binrw::BinResult<Self> {
+        restore_on_error(input, |input, _| {
+            use binrw::BinReaderExt;
+            let mut data = Vec::new();
+            while input.bytes_left()? != 0 {
+                // The size of the record data, excluding the size byte
+                let mut size = u32::from(input.read_be::<u8>()?);
+                // TODO: .context("Can’t read cast registry member size")?;
+                if size == 0 {
+                    data.push((Unk8::from(0), MemberProperties::None));
+                } else {
+                    let kind = input.read_be::<u8>()?;
+                    // TODO: .context("Can’t read cast member kind")?;
+                    let kind = MemberKind::from_u8(kind)
+                        .ok_or_else(|| binrw::Error::Custom {
+                            pos: input.pos().unwrap() - 1,
+                            err: Box::new(FromPrimitiveError("cast member kind", kind))
+                        })?;
+
+                    let flags = match kind {
+                        MemberKind::Bitmap
+                        | MemberKind::Button
+                        | MemberKind::DigitalVideo
+                        | MemberKind::Field
+                        | MemberKind::FilmLoop
+                        | MemberKind::Movie
+                        | MemberKind::Shape => {
+                            // `- 2` for the kind and the flags
+                            size -= 2;
+                            Unk8::read_options(input, &options, ())?
+                        },
+                        _ => Unk8::from(0),
+                    };
+
+                    data.push((flags, match kind {
+                        MemberKind::None => unreachable!(),
+                        MemberKind::Bitmap => MemberProperties::Bitmap(BitmapPropsV3::read_options(input, &options, (size, ))?.into()),
+                        MemberKind::Button => MemberProperties::Button(FieldProps::read_options(input, &options, (size, ))?),
+                        MemberKind::DigitalVideo => MemberProperties::DigitalVideo(VideoProps::read_options(input, &options, (size, ))?),
+                        MemberKind::Field => MemberProperties::Field(FieldProps::read_options(input, &options, (size, ))?),
+                        MemberKind::FilmLoop => MemberProperties::FilmLoop(FilmLoopProps::read_options(input, &options, (size, ))?),
+                        MemberKind::Movie => MemberProperties::Movie(FilmLoopProps::read_options(input, &options, (size, ))?),
+                        MemberKind::Palette => MemberProperties::Palette,
+                        MemberKind::Picture => MemberProperties::Picture,
+                        MemberKind::Shape => MemberProperties::Shape(ShapeProps::read_options(input, &options, ())?),
+                        MemberKind::Sound => MemberProperties::Sound,
+                        // These kinds only appear in Director 4, which uses the
+                        // newer CAS* library format
+                        MemberKind::Script
+                        | MemberKind::Text
+                        | MemberKind::Ole
+                        | MemberKind::Transition
+                        | MemberKind::Xtra => unreachable!()
+                    }))
+                }
+            }
+
+            Ok(Self(data))
+        })
+    }
+}
 
 newtype_num! {
     #[derive(BinRead, Debug)]
@@ -113,9 +201,18 @@ impl From<MemberNum> for MemberId {
 }
 
 // TODO: Put this somewhere better with a non-repetitive name
+/// A map of cast member numbers to RIFF chunk indexes.
+///
+/// Each item in the list corresponds to a cast member starting from the
+/// lowest populated cast member slot (which is recorded separately in
+/// [`Config::min_cast_member`]). Empty cast member slots have a chunk index
+/// of 0.
+///
+/// OsType: `'CAS*'`
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deref, DerefMut)]
 pub struct CastMap(Vec<ChunkIndex>);
+typed_resource!(CastMap => b"CAS*");
 
 impl BinRead for CastMap {
     type Args = ();
@@ -138,7 +235,6 @@ impl BinRead for CastMap {
 
 bitflags! {
     struct MemberInfoFlags: u32 {
-        const NONE          = 0;
         const EXTERNAL_FILE = 1;
         const PURGE_NEVER   = 4;
         const PURGE_LAST    = 8;
@@ -161,55 +257,82 @@ type StructD_439630 = Vec<u8>;
 pvec! {
     /// Cast member metadata.
     ///
-    /// OsType: `'VWCI'`
-    #[derive(Debug)]
-    pub struct MemberInfo {
+    /// OsType: `'Cinf'` `'VWCI'`
+    #[derive(Clone, Debug)]
+    pub struct MemberMetadata {
         header_size = header_size;
 
         header {
-            script_handle: u32,
-            field_8: u32,
+            script_handle: UnkHnd,
+            field_8: Unk32,
             flags: MemberInfoFlags,
-            script_context_num: u32,
+            #[br(if(header_size >= 20))]
+            script_context_num: i32,
         }
 
         offsets = offsets;
 
         entries {
+            /// Cast member script text.
+            ///
+            /// Used only by D3. D4 and later store the cast member script in
+            /// `'Lctx'`/`'Lscr'` chunks.
             #[br(count = offsets.entry_size(0).unwrap_or(0))]
             0 => script_text: Vec<u8>,
+
+            /// The name of the cast member.
             1 => name: PString,
+
+            /// For an external cast member, the original file path.
             2 => file_path: PString,
+
+            /// For an external cast member, the original filename.
             3 => file_name: PString,
+
             4 => _,
+
             #[br(count = offsets.entry_size(5).unwrap_or(0))]
             5 => entry_5: Struct14h,
+
             #[br(count = offsets.entry_size(6).unwrap_or(0))]
             6 => entry_6: STXTSub,
+
             #[br(count = offsets.entry_size(7).unwrap_or(0))]
             7 => entry_7: Struct14h,
+
             #[br(count = offsets.entry_size(8).unwrap_or(0))]
             8 => entry_8: Struct14h,
+
             // xtra-related
             #[br(count = offsets.entry_size(9).unwrap_or(0))]
+
             9 => entry_9: Struct9_4A2DE0,
+
             10 => xtra_name: NullString,
+
             // script related
             #[br(count = offsets.entry_size(11).unwrap_or(0))]
             11 => entry_11: StructB_4A2E00,
+
             // xtra-related
             #[br(count = offsets.entry_size(12).unwrap_or(0))]
             12 => entry_12: StructC_4A2DC0,
+
             #[br(count = offsets.entry_size(13).unwrap_or(0))]
             13 => entry_13: StructD_439630,
+
             // for some reason there is a video-related entry in slot 14, but
             // it seems to not ever be referenced in projector code.
             14..
         }
     }
 }
+typed_resource!(MemberMetadata => b"Cinf" b"VWCI");
 
-#[derive(Debug)]
+/// A cast member.
+///
+/// OsType: `'CASt'`
+#[derive(Clone, Debug)]
 pub struct Member {
     // TODO: This needs to be an Either; for Director 3 it is an i16 resource
     // number, for Director 4+ it is also sometimes a RIFF chunk index maybe?
@@ -217,9 +340,10 @@ pub struct Member {
     next_free: i16,
     some_num_a: i16,
     flags: MemberFlags,
-    info: Option<MemberInfo>,
-    metadata: MemberMetadata,
+    metadata: Option<MemberMetadata>,
+    properties: MemberProperties,
 }
+typed_resource!(Member => b"CASt");
 
 impl BinRead for Member {
     type Args = (ChunkIndex, ConfigVersion);
@@ -229,21 +353,21 @@ impl BinRead for Member {
             let mut options = *options;
             options.endian = binrw::Endian::Big;
 
-            let meta = if version < ConfigVersion::V1201 {
-                MemberMetaV4::read_options(input, &options, ())?.into()
+            let header = if version < ConfigVersion::V1201 {
+                MemberHeaderV4::read_options(input, &options, ())?.into()
             } else {
-                MemberMetaV5::read_options(input, &options, ())?
+                MemberHeaderV5::read_options(input, &options, ())?
             };
 
-            let info = if meta.info_size == 0 {
+            let info = if header.metadata_size == 0 {
                 None
             } else {
-                Some(MemberInfo::read_options(&mut input.take_seek(meta.info_size.into()), &options, ())?)
+                Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
                     // TODO: Figure out how to get this context back
                     // .with_context(|| format!("Can’t load {} cast member info", kind))?;
             };
 
-            let metadata = MemberMetadata::read_options(&mut input.take_seek(meta.meta_size.into()), &options, (meta, version))?;
+            let metadata = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header, version))?;
                 // TODO: Figure out how to get this context back
                 // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
 
@@ -252,8 +376,8 @@ impl BinRead for Member {
                 next_free: 0,
                 some_num_a: 0,
                 flags: MemberFlags::empty(),
-                info,
-                metadata,
+                metadata: info,
+                properties: metadata,
             })
         })
     }
@@ -275,47 +399,44 @@ impl <T: core::fmt::Display, U: core::fmt::LowerHex> core::fmt::Debug for FromPr
 // TODO: This is incorrect guesswork.
 #[derive(BinRead, Copy, Clone, Debug)]
 #[br(big)]
-struct MemberMetaV4 {
+struct MemberHeaderV4 {
     _unknown: u16,
-    // VWCR
-    meta_size: u16,
-    // VWCI
-    info_size: u16,
-    #[br(try_map = |kind: u8| MemberKind::from_u8(kind).ok_or_else(|| anyhow::anyhow!("wow")))]
+    properties_size: u16,
+    metadata_size: u16,
+    #[br(try_map = |kind: u8| MemberKind::from_u8(kind).ok_or(FromPrimitiveError("cast member kind", kind)))]
     kind: MemberKind,
 }
 
 #[derive(BinRead, Copy, Clone, Debug)]
 #[br(big)]
-pub struct MemberMetaV5 {
+pub struct MemberHeaderV5 {
     #[br(try_map = |kind: u32| MemberKind::from_u32(kind).ok_or(FromPrimitiveError("cast member kind", kind)))]
     kind: MemberKind,
-    // VWCI
-    info_size: u32,
-    // VWCR
-    meta_size: u32,
+    metadata_size: u32,
+    properties_size: u32,
 }
 
-impl From<MemberMetaV4> for MemberMetaV5 {
-    fn from(other: MemberMetaV4) -> Self {
+impl From<MemberHeaderV4> for MemberHeaderV5 {
+    fn from(other: MemberHeaderV4) -> Self {
         Self {
             kind: other.kind,
-            meta_size: other.meta_size.into(),
-            info_size: other.info_size.into(),
+            properties_size: other.properties_size.into(),
+            metadata_size: other.metadata_size.into(),
         }
     }
 }
 
 bitflags! {
     struct MemberFlags: u16 {
-        const FLAG_4   = 4;
-        const FLAG_8   = 8;
-        const FLAG_10  = 0x10;
-        const FLAG_40  = 0x40;
-        const FLAG_80  = 0x80;
-        const FLAG_100 = 0x100;
-        const FLAG_200 = 0x200;
-        const FLAG_800 = 0x800;
+        const DIRTY_MAYBE          = 1;
+        const DATA_MODIFIED        = 4;
+        const PROPERTIES_MODIFIED  = 8;
+        const LOCKED               = 0x10;
+        const FILE_NOT_FOUND_MAYBE = 0x40;
+        const FLAG_80              = 0x80;
+        const NOT_PURGEABLE        = 0x100;
+        const LINKED_FILE_MAYBE    = 0x200;
+        const DATA_IN_MEMORY       = 0x800;
     }
 }
 
@@ -341,28 +462,28 @@ pub enum MemberKind {
 }
 
 #[derive(Clone, Debug)]
-pub enum MemberMetadata {
+pub enum MemberProperties {
     None,
-    Bitmap(BitmapMeta),
-    FilmLoop(FilmLoopMeta),
-    Field(FieldMeta),
+    Bitmap(BitmapProps),
+    FilmLoop(FilmLoopProps),
+    Field(FieldProps),
     Palette,
     Picture,
     Sound,
-    Button(FieldMeta),
-    Shape(ShapeMeta),
-    Movie(FilmLoopMeta),
-    DigitalVideo(VideoMeta),
-    Script(ScriptMeta),
+    Button(FieldProps),
+    Shape(ShapeProps),
+    Movie(FilmLoopProps),
+    DigitalVideo(VideoProps),
+    Script(ScriptProps),
     // This uses Microsoft RTF, whereas the Field type uses Mac Styled Text
-    Text(TextMeta),
-    Ole(BitmapMeta),
-    Transition(TransitionMeta),
-    Xtra(XtraMeta),
+    Text(TextProps),
+    Ole(BitmapProps),
+    Transition(TransitionProps),
+    Xtra(XtraProps),
 }
 
-impl BinRead for MemberMetadata {
-    type Args = (MemberMetaV5, ConfigVersion);
+impl BinRead for MemberProperties {
+    type Args = (MemberHeaderV5, ConfigVersion);
 
     fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
@@ -370,28 +491,28 @@ impl BinRead for MemberMetadata {
             options.endian = binrw::Endian::Big;
 
             let (meta, version) = args;
-            let size = meta.meta_size;
+            let size = meta.properties_size;
 
             Ok(match meta.kind {
                 MemberKind::None => {
                     input.skip(size.into())?;
-                    MemberMetadata::None
+                    MemberProperties::None
                 },
-                MemberKind::Bitmap => MemberMetadata::Bitmap(BitmapMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Button => MemberMetadata::Button(FieldMeta::read_options(input, &options, (size, ))?),
-                MemberKind::DigitalVideo => MemberMetadata::DigitalVideo(VideoMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Field => MemberMetadata::Field(FieldMeta::read_options(input, &options, (size, ))?),
-                MemberKind::FilmLoop => MemberMetadata::FilmLoop(FilmLoopMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Movie => MemberMetadata::Movie(FilmLoopMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Ole => MemberMetadata::Ole(BitmapMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Palette => MemberMetadata::Palette,
-                MemberKind::Picture => MemberMetadata::Picture,
-                MemberKind::Script => MemberMetadata::Script(ScriptMeta::read_options(input, &options, (size, ))?),
-                MemberKind::Shape => MemberMetadata::Shape(ShapeMeta::read_options(input, &options, ())?),
-                MemberKind::Sound => MemberMetadata::Sound,
-                MemberKind::Text => MemberMetadata::Text(TextMeta::read_options(input, &options, (version, ))?),
-                MemberKind::Transition => MemberMetadata::Transition(TransitionMeta::read_options(input, &options, (size, version))?),
-                MemberKind::Xtra => MemberMetadata::Xtra(XtraMeta::read_options(input, &options, (size, ))?),
+                MemberKind::Bitmap => MemberProperties::Bitmap(BitmapProps::read_options(input, &options, (size, ))?),
+                MemberKind::Button => MemberProperties::Button(FieldProps::read_options(input, &options, (size, ))?),
+                MemberKind::DigitalVideo => MemberProperties::DigitalVideo(VideoProps::read_options(input, &options, (size, ))?),
+                MemberKind::Field => MemberProperties::Field(FieldProps::read_options(input, &options, (size, ))?),
+                MemberKind::FilmLoop => MemberProperties::FilmLoop(FilmLoopProps::read_options(input, &options, (size, ))?),
+                MemberKind::Movie => MemberProperties::Movie(FilmLoopProps::read_options(input, &options, (size, ))?),
+                MemberKind::Ole => MemberProperties::Ole(BitmapProps::read_options(input, &options, (size, ))?),
+                MemberKind::Palette => MemberProperties::Palette,
+                MemberKind::Picture => MemberProperties::Picture,
+                MemberKind::Script => MemberProperties::Script(ScriptProps::read_options(input, &options, (size, ))?),
+                MemberKind::Shape => MemberProperties::Shape(ShapeProps::read_options(input, &options, ())?),
+                MemberKind::Sound => MemberProperties::Sound,
+                MemberKind::Text => MemberProperties::Text(TextProps::read_options(input, &options, (version, ))?),
+                MemberKind::Transition => MemberProperties::Transition(TransitionProps::read_options(input, &options, (size, version))?),
+                MemberKind::Xtra => MemberProperties::Xtra(XtraProps::read_options(input, &options, (size, ))?),
             })
         })
     }

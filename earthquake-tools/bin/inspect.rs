@@ -14,7 +14,7 @@
 
 use anyhow::{bail, Context, Result as AResult};
 use libearthquake::{collections::{
-        riff::{ChunkIndex, Riff},
+        riff::Riff,
         riff_container::{ChunkFileKind, RiffContainer},
     }, detection::{
         detect,
@@ -29,7 +29,7 @@ use libearthquake::{collections::{
             Movie as MovieInfo,
         },
         Version,
-    }, name, player::score::Frame, player::score::Score, resources::{cast::{CastMap, Member, MemberId}, config::{Config, Version as ConfigVersion}, movie::{CastList, FileInfo}}};
+    }, name, player::score::Frame, player::score::Score, resources::{cast::{Library, MemberId}, config::{Config, Version as ConfigVersion}, movie::{CastList, FileInfo}}};
 use libcommon::{Reader, SharedStream};
 use libmactoolbox::{resources::{OsType, File as ResourceFile, ResourceId, Source as ResourceSource}, vfs::HostFileSystem};
 use pico_args::Arguments;
@@ -203,6 +203,15 @@ fn parse_command(args: &mut Arguments) -> AResult<Command> {
     }
 }
 
+fn print_cast_library(cast: Library, min_cast_num: i16, options: &Options) {
+    for (i, member) in cast.iter().enumerate() {
+        let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
+        if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0_i16, cast_member_num)) {
+            println!("{}: {:#?}", cast_member_num, member);
+        }
+    }
+}
+
 fn print_frame(frame: &Frame, fields: &[String]) -> bool {
     let mut print_sprites = false;
     for field in fields.iter() {
@@ -315,16 +324,8 @@ fn inspect_riff(stream: &mut impl Reader, options: &Options) -> AResult<()> {
 }
 
 fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult<()> {
-    let config_id = if riff.contains((b"VWCF", 1024)) {
-        Some(ResourceId::new(b"VWCF", 1024))
-    } else if riff.contains((b"DRCF", 1024)) {
-        Some(ResourceId::new(b"DRCF", 1024))
-    } else {
-        None
-    };
-
-    let (version, min_cast_num) = if let Some(config_id) = config_id {
-        let config = riff.load::<Config>(config_id)?;
+    let (version, min_cast_num) = {
+        let config = riff.load_num::<Config>(1024_i16.into())?;
         if !config.valid() {
             eprintln!("Configuration checksum failure!");
         }
@@ -332,9 +333,6 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
             println!("{:#?}", config);
         }
         (config.version(), config.min_cast_num().0)
-    } else {
-        eprintln!("No config chunk!");
-        (ConfigVersion::Unknown, 0)
     };
 
     if options.print_casts() {
@@ -354,7 +352,7 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
     }
 
     if options.print_file_info() {
-        match riff.load::<FileInfo>(ResourceId::new(b"VWFI", 1024)) {
+        match riff.load_num::<FileInfo>(1024_i16.into()) {
             Ok(info) => println!("{:#?}", info),
             Err(error) => eprintln!("Error reading file info: {}", error),
         }
@@ -375,20 +373,9 @@ fn inspect_riff_contents(riff: &Riff<impl Reader>, options: &Options) -> AResult
         }
 
         // TODO: Handle multiple internal casts
-        if let Ok(cast) = riff.load::<CastMap>(ResourceId::new(b"CAS*", 1024)) {
-            for (i, &chunk_index) in cast.iter().enumerate() {
-                if chunk_index > ChunkIndex::new(0) {
-                    let cast_member_num = min_cast_num + i16::try_from(i).unwrap();
-                    if options.print_cast_members() || options.print_cast_member().unwrap().contains(&MemberId::new(0_i16, cast_member_num)) {
-                        match riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version)) {
-                            Ok(member) => println!("{}: {:#?}", cast_member_num, member),
-                            Err(err) => println!("Failed to inspect cast member {}: {:#}", cast_member_num, err),
-                        }
-                    }
-                }
-            }
-        } else {
-            eprintln!("No cast library!");
+        match Library::from_riff(riff, 1024_i16) {
+            Ok(cast) => print_cast_library(cast, min_cast_num, options),
+            Err(error) => eprintln!("Error reading cast library: {:?}", error)
         }
     }
 
@@ -472,7 +459,8 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
     }
 
     if options.print_file_info() {
-        match rom.load::<FileInfo>(ResourceId::new(b"VWFI", 1024)) {
+        // TODO: Handle multiple internal movies
+        match rom.load::<FileInfo>(ResourceId::new(b"VWFI", 1024_i16)) {
             Ok(info) => println!("{:#?}", info),
             Err(error) => eprintln!("Error reading file info: {}", error),
         }
@@ -487,7 +475,12 @@ fn read_embedded_movie(num_movies: u16, stream: impl Reader, options: &Options) 
             print_mac_resource(&rom, id);
         }
     } else if options.print_cast_member().is_some() || options.print_cast_members() {
-        todo!("D3 cast member inspection");
+        // TODO: Handle multiple internal casts
+        let min_cast_num = rom.load_num::<Config>(1024_i16.into())?.min_cast_num().0;
+        match Library::from_resource_source(&rom, 1024_i16) {
+            Ok(cast) => print_cast_library(cast, min_cast_num, options),
+            Err(error) => eprintln!("Error reading cast library: {:?}", error)
+        }
     }
 
     print_score(options, &rom);

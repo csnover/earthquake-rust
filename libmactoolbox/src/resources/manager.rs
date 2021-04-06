@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 use crate::types::{MacString, PString};
 use libcommon::vfs::{VirtualFile, VirtualFileSystem};
 use std::{path::Path, rc::Rc};
-use super::{Error as ResourceError, File as ResourceFile, OsType, RefNum, Result as ResourceResult, ResourceId, Source as ResourceSource, kinds::StringList};
+use super::{Error as ResourceError, File as ResourceFile, OsType, RefNum, ResNum, Result as ResourceResult, ResourceId, Source as ResourceSource, kinds::StringList};
 
 pub struct Manager<'vfs> {
     fs: Rc<dyn VirtualFileSystem + 'vfs>,
@@ -100,7 +100,7 @@ impl <'vfs> Manager<'vfs> {
     /// # Panics
     ///
     /// Panics if the index is negative.
-    pub fn get_indexed_string(&self, id: i16, index: i16) -> Option<PString> {
+    pub fn get_indexed_string(&self, id: impl Into<ResNum>, index: i16) -> Option<PString> {
         self.get_resource::<StringList>(ResourceId::new(b"STR#", id), ())
             .unwrap_or(None)
             .and_then(|list| {

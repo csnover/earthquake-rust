@@ -51,7 +51,7 @@ pub enum Kind {
 pub fn detect_mac<T: binrw::io::Read + binrw::io::Seek>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = ResourceFile::new(reader)?;
 
-    if rom.contains(ResourceId::new(b"EMPO", 256)) {
+    if rom.contains(ResourceId::new(b"EMPO", 256_i16)) {
         Ok(DetectionInfo {
             data_endianness: Endian::Big,
             os_type_endianness: Endian::Big,
