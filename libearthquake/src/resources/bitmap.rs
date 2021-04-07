@@ -28,12 +28,21 @@ pub struct Properties {
     // There was a rect here, but it is unused
     #[br(pad_before(8))]
     origin: Point,
-    #[br(if(size == 28))]
+    #[br(if(size >= 28))]
     flags: Flags,
-    #[br(if(size == 28))]
+    #[br(if(size >= 26), parse_with = parse_color_depth, args(size))]
+    #[br(assert(matches!(color_depth, 0 | 1 | 2 | 4 | 8 | 16 | 24 | 32), "bad bitmap color depth {}", color_depth))]
     color_depth: u8,
     #[br(if(size >= 26), parse_with = parse_id, args(size))]
     palette_id: MemberId,
+}
+
+fn parse_color_depth<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (size, ): (u32, )) -> binrw::BinResult<u8> {
+    if size == 26 {
+        Ok(i16::read_options(input, options, ())?.unwrap_into())
+    } else {
+        u8::read_options(input, options, ())
+    }
 }
 
 fn parse_id<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (size, ): (u32, )) -> binrw::BinResult<MemberId> {

@@ -42,19 +42,19 @@ pub enum ButtonKind {
 // TODO: D3Mac does extra stuff on loading for versions < 1026:
 // frame -> 0, flags -> 0, scroll_top -> 0, height -> scroll_height
 #[derive(BinRead, Clone, Copy, Debug)]
-#[br(big, import(size: u32), pre_assert(size == 0x18 || size == 0x1c || size == 0x1e))]
+#[br(big, import(size: u32), pre_assert(size == 24 || size == 28 || size == 30, "unexpected field properties size {}", size))]
 pub struct Properties {
-    #[br(if(size != 0x18))]
+    #[br(if(size >= 28))]
     #[br(map = |p: u8| Pixels::from(p))]
     border_size: Pixels,
     /// Space between the field viewport and the border.
-    #[br(if(size != 0x18))]
+    #[br(if(size >= 28))]
     #[br(map = |p: u8| Pixels::from(p))]
     margin_size: Pixels,
-    #[br(if(size != 0x18))]
+    #[br(if(size >= 28))]
     #[br(map = |p: u8| Pixels::from(p))]
     box_shadow_size: Pixels,
-    #[br(if(size != 0x18))]
+    #[br(if(size >= 28))]
     frame: Frame,
     alignment: Alignment,
     back_color: RgbColor,
@@ -62,7 +62,6 @@ pub struct Properties {
     /// The viewport of the field, excluding decorations.
     bounds: Rect,
     /// The height of the field, excluding decorations.
-    #[br(assert(height == bounds.height()))]
     height: Pixels,
     #[br(map = |p: u8| Pixels::from(p))]
     text_shadow_size: Pixels,
@@ -70,6 +69,6 @@ pub struct Properties {
     /// The total height of content, which may be larger than the viewport
     /// if the field is scrollable.
     scroll_height: Pixels,
-    #[br(if(size == 0x1e))]
+    #[br(if(size == 30))]
     button_kind: ButtonKind,
 }

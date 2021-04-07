@@ -32,7 +32,7 @@ impl Library {
     pub fn from_resource_source(source: &impl ResourceSource, cast_num: impl Into<ResNum>) -> AResult<Self> {
         let cast_num = cast_num.into();
         let config = source.load_num::<Config>(cast_num)?;
-        let map = source.load_num::<CastRegistry>(cast_num)?;
+        let map = source.load_num_args::<CastRegistry>(cast_num, (config.version(), ))?;
         let base_resource_num = cast_num + i16::from(config.min_cast_num()).into();
         let mut data = Vec::with_capacity(map.len());
         // TODO: These flags do not seem to be compatible with the D4+ flags.
@@ -93,16 +93,16 @@ impl Library {
 ///
 /// OsType: `'VWCR'`
 #[derive(Debug, Deref, DerefMut)]
-pub struct CastRegistry(Vec<(Unk8, MemberProperties)>);
+struct CastRegistry(Vec<(LegacyMemberFlags, MemberProperties)>);
 typed_resource!(CastRegistry => b"VWCR");
 
 impl BinRead for CastRegistry {
-    type Args = ();
+    type Args = (ConfigVersion, );
 
     fn read_options<R: io::Read + io::Seek>(
         input: &mut R,
         options: &binrw::ReadOptions,
-        _: Self::Args,
+        (version, ): Self::Args,
     ) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
             use binrw::BinReaderExt;
@@ -112,7 +112,7 @@ impl BinRead for CastRegistry {
                 let mut size = u32::from(input.read_be::<u8>()?);
                 // TODO: .context("Can’t read cast registry member size")?;
                 if size == 0 {
-                    data.push((Unk8::from(0), MemberProperties::None));
+                    data.push((LegacyMemberFlags::empty(), MemberProperties::None));
                 } else {
                     let kind = input.read_be::<u8>()?;
                     // TODO: .context("Can’t read cast member kind")?;
@@ -122,43 +122,15 @@ impl BinRead for CastRegistry {
                             err: Box::new(FromPrimitiveError("cast member kind", kind))
                         })?;
 
-                    let flags = match kind {
-                        MemberKind::Bitmap
-                        | MemberKind::Button
-                        | MemberKind::DigitalVideo
-                        | MemberKind::Field
-                        | MemberKind::FilmLoop
-                        | MemberKind::Movie
-                        | MemberKind::Shape => {
-                            // `- 2` for the kind and the flags
-                            size -= 2;
-                            Unk8::read_options(input, &options, ())?
-                        },
-                        _ => Unk8::from(0),
+                    let flags = if kind.has_extra_flags() {
+                        // `- 2` for the kind and the flags
+                        size -= 2;
+                        LegacyMemberFlags::read_options(input, &options, ())?
+                    } else {
+                        LegacyMemberFlags::empty()
                     };
 
-                    data.push((flags, match kind {
-                        MemberKind::Bitmap => MemberProperties::Bitmap(BitmapProps::read_options(input, &options, (size, ))?),
-                        MemberKind::Button => MemberProperties::Button(FieldProps::read_options(input, &options, (size, ))?),
-                        MemberKind::DigitalVideo => MemberProperties::DigitalVideo(VideoProps::read_options(input, &options, (size, ))?),
-                        MemberKind::Field => MemberProperties::Field(FieldProps::read_options(input, &options, (size, ))?),
-                        MemberKind::FilmLoop => MemberProperties::FilmLoop(FilmLoopProps::read_options(input, &options, (size, ))?),
-                        MemberKind::Movie => MemberProperties::Movie(FilmLoopProps::read_options(input, &options, (size, ))?),
-                        MemberKind::Palette => MemberProperties::Palette,
-                        MemberKind::Picture => MemberProperties::Picture,
-                        MemberKind::Shape => MemberProperties::Shape(ShapeProps::read_options(input, &options, ())?),
-                        MemberKind::Sound => MemberProperties::Sound,
-                        // This is impossible because a none-kind is determined
-                        // by having a size 0
-                        MemberKind::None
-                        // These kinds only appear in Director 4, which uses the
-                        // newer CAS* library format
-                        | MemberKind::Script
-                        | MemberKind::Text
-                        | MemberKind::Ole
-                        | MemberKind::Transition
-                        | MemberKind::Xtra => unreachable!()
-                    }))
+                    data.push((flags, MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (kind, size, version))?))
                 }
             }
 
@@ -255,6 +227,7 @@ impl BinRead for CastMap {
 bitflags! {
     struct MemberInfoFlags: u32 {
         const EXTERNAL_FILE = 1;
+        const FLAG_2        = 2;
         const PURGE_NEVER   = 4;
         const PURGE_LAST    = 8;
         const PURGE_NEXT    = Self::PURGE_NEVER.bits | Self::PURGE_LAST.bits;
@@ -348,6 +321,19 @@ pvec! {
 }
 typed_resource!(MemberMetadata => b"Cinf" b"VWCI");
 
+bitflags! {
+    struct LegacyMemberFlags: u8 {
+        const FLAG_1  = 1;
+        const FLAG_2  = 2;
+        const FLAG_4  = 4;
+        const FLAG_8  = 8;
+        const FLAG_10 = 0x10;
+        const FLAG_20 = 0x20;
+        const FLAG_40 = 0x40;
+        const FLAG_80 = 0x80;
+    }
+}
+
 /// A cast member.
 ///
 /// OsType: `'CASt'`
@@ -365,36 +351,49 @@ typed_resource!(Member => b"CASt");
 impl BinRead for Member {
     type Args = (ChunkIndex, ConfigVersion);
 
-    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, (index, version): Self::Args) -> binrw::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, (chunk_index, version): Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
             let mut options = *options;
             options.endian = binrw::Endian::Big;
 
-            let header = if version < ConfigVersion::V1201 {
-                MemberHeaderV4::read_options(input, &options, ())?.into()
+            let properties;
+            let metadata;
+            if version < ConfigVersion::V1201 {
+                let header = MemberHeaderV4::read_options(input, &options, ())?;
+                let mut size = header.registry_size - 1;
+                let flags = if header.kind.has_extra_flags() {
+                    size -= 1;
+                    LegacyMemberFlags::read_options(input, &options, ())?
+                } else {
+                    LegacyMemberFlags::empty()
+                };
+                properties = MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (header.kind, size.into(), version))?;
+                metadata = if header.metadata_size == 0 {
+                    None
+                } else {
+                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
+                        // TODO: Figure out how to get this context back
+                        // .with_context(|| format!("Can’t load {} cast member info", kind))?;
+                };
             } else {
-                MemberHeaderV5::read_options(input, &options, ())?
+                let header = MemberHeaderV5::read_options(input, &options, ())?;
+                metadata = if header.metadata_size == 0 {
+                    None
+                } else {
+                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
+                        // TODO: Figure out how to get this context back
+                        // .with_context(|| format!("Can’t load {} cast member info", kind))?;
+                };
+                properties = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header.kind, header.properties_size, version))?;
             };
-
-            let info = if header.metadata_size == 0 {
-                None
-            } else {
-                Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
-                    // TODO: Figure out how to get this context back
-                    // .with_context(|| format!("Can’t load {} cast member info", kind))?;
-            };
-
-            let metadata = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header, version))?;
-                // TODO: Figure out how to get this context back
-                // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
 
             Ok(Self {
-                load_id: LoadId::Riff(index),
+                load_id: LoadId::Riff(chunk_index),
                 next_free: 0,
                 some_num_a: 0,
                 flags: MemberFlags::empty(),
-                metadata: info,
-                properties: metadata,
+                metadata,
+                properties,
             })
         })
     }
@@ -413,13 +412,12 @@ impl <T: core::fmt::Display, U: core::fmt::LowerHex> core::fmt::Debug for FromPr
     }
 }
 
-// TODO: This is incorrect guesswork.
+// TODO: This is guesswork, but probably correct.
 #[derive(BinRead, Copy, Clone, Debug)]
 #[br(big)]
 struct MemberHeaderV4 {
-    _unknown: u16,
-    properties_size: u16,
-    metadata_size: u16,
+    registry_size: u16,
+    metadata_size: u32,
     #[br(try_map = |kind: u8| MemberKind::from_u8(kind).ok_or(FromPrimitiveError("cast member kind", kind)))]
     kind: MemberKind,
 }
@@ -431,16 +429,6 @@ pub struct MemberHeaderV5 {
     kind: MemberKind,
     metadata_size: u32,
     properties_size: u32,
-}
-
-impl From<MemberHeaderV4> for MemberHeaderV5 {
-    fn from(other: MemberHeaderV4) -> Self {
-        Self {
-            kind: other.kind,
-            properties_size: other.properties_size.into(),
-            metadata_size: other.metadata_size.into(),
-        }
-    }
 }
 
 bitflags! {
@@ -478,6 +466,22 @@ pub enum MemberKind {
     Xtra,
 }
 
+impl MemberKind {
+    /// In D4-, there is an extra flags-like byte for certain kinds of members.
+    fn has_extra_flags(self) -> bool {
+        matches!(self,
+            MemberKind::Bitmap
+            | MemberKind::Button
+            | MemberKind::DigitalVideo
+            | MemberKind::Field
+            | MemberKind::FilmLoop
+            | MemberKind::Movie
+            | MemberKind::Shape
+            | MemberKind::Script
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum MemberProperties {
     None,
@@ -500,17 +504,14 @@ pub enum MemberProperties {
 }
 
 impl BinRead for MemberProperties {
-    type Args = (MemberHeaderV5, ConfigVersion);
+    type Args = (MemberKind, u32, ConfigVersion);
 
-    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+    fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, (kind, size, version): Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
             let mut options = *options;
             options.endian = binrw::Endian::Big;
 
-            let (meta, version) = args;
-            let size = meta.properties_size;
-
-            Ok(match meta.kind {
+            Ok(match kind {
                 MemberKind::None => {
                     input.skip(size.into())?;
                     MemberProperties::None
