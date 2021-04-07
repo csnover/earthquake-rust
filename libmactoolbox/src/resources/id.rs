@@ -22,6 +22,7 @@ impl OsType {
     ///
     /// This is a workaround to allow a generic constructor whilst also allowing
     /// `OsType` to be statically constructed.
+    #[must_use]
     pub const fn from_raw(os_type: [u8; 4]) -> Self {
         Self(os_type)
     }
@@ -107,9 +108,9 @@ newtype_num! {
 /// A resource identifier.
 #[derive(Copy, Clone, Display, Hash, PartialEq, Eq)]
 #[display(fmt = "{}({})", _0, _1)]
-pub struct ResourceId(OsType, ResNum);
+pub struct Id(OsType, ResNum);
 
-impl ResourceId {
+impl Id {
     /// Makes a new resource identifier for the given data format and number.
     pub fn new(os_type: impl Into<OsType>, id: impl Into<ResNum>) -> Self {
         Self(os_type.into(), id.into())
@@ -128,7 +129,7 @@ impl ResourceId {
     }
 }
 
-impl fmt::Debug for ResourceId {
+impl fmt::Debug for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ResourceId({}({}))", self.0, self.1)
     }

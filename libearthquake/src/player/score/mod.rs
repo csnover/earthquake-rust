@@ -1,6 +1,7 @@
 mod frame;
 mod palette;
 mod score_1494;
+#[allow(clippy::module_inception)]
 mod score;
 mod sprite_bitmask;
 mod sprite;

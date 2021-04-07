@@ -33,13 +33,17 @@ impl Manager {
     }
 
     /// `GetKeys`
-    pub fn keys(&self, _map: &[u8]) {
+    #[allow(clippy::unused_self)]
+    #[allow(dead_code)]
+    fn keys(&self, _map: &[u8]) {
         todo!("keyboard state")
     }
 
     /// `GetMouse`
     #[must_use]
-    pub fn mouse(&self) -> Point {
+    #[allow(clippy::unused_self)]
+    #[allow(dead_code)]
+    fn mouse(&self) -> Point {
         // TODO: Supposed to be mouse position within grafport.
         todo!("mouse position")
     }
@@ -100,7 +104,6 @@ impl Manager {
         };
 
         if let Some(event) = event {
-            println!("{:?}", event);
             self.queue.push_back(event);
             Ok(())
         } else {
@@ -130,6 +133,7 @@ impl Manager {
         self.start + self.instance_start.elapsed()
     }
 
+    #[allow(clippy::unused_self)]
     fn modifiers(&self) -> EventModifiers {
         let os_modifiers = unsafe { QGuiApplication::keyboard_modifiers() };
 
@@ -159,6 +163,7 @@ impl Manager {
         modifiers
     }
 
+    #[allow(clippy::unused_self)]
     fn mouse_pos(&self) -> Point {
         unsafe {
             let p = QCursor::pos_0a();
@@ -170,6 +175,7 @@ impl Manager {
     /// clicks.
     ///
     /// `GetDblTime`
+    #[allow(clippy::unused_self)]
     #[must_use]
     pub fn get_double_time(&self) -> Duration {
         Duration::from_millis(unsafe {

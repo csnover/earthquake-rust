@@ -121,7 +121,6 @@ impl BinRead for CastRegistry {
                     };
 
                     data.push((flags, match kind {
-                        MemberKind::None => unreachable!(),
                         MemberKind::Bitmap => MemberProperties::Bitmap(BitmapPropsV3::read_options(input, &options, (size, ))?.into()),
                         MemberKind::Button => MemberProperties::Button(FieldProps::read_options(input, &options, (size, ))?),
                         MemberKind::DigitalVideo => MemberProperties::DigitalVideo(VideoProps::read_options(input, &options, (size, ))?),
@@ -132,9 +131,12 @@ impl BinRead for CastRegistry {
                         MemberKind::Picture => MemberProperties::Picture,
                         MemberKind::Shape => MemberProperties::Shape(ShapeProps::read_options(input, &options, ())?),
                         MemberKind::Sound => MemberProperties::Sound,
+                        // This is impossible because a none-kind is determined
+                        // by having a size 0
+                        MemberKind::None
                         // These kinds only appear in Director 4, which uses the
                         // newer CAS* library format
-                        MemberKind::Script
+                        | MemberKind::Script
                         | MemberKind::Text
                         | MemberKind::Ole
                         | MemberKind::Transition
@@ -246,11 +248,11 @@ bitflags! {
 type Struct14h = Vec<u8>;
 type STXTSub = Vec<u8>;
 #[allow(non_camel_case_types)]
-type Struct9_4A2DE0 = Vec<u8>;
+type Struct9_4a2de0 = Vec<u8>;
 #[allow(non_camel_case_types)]
-type StructB_4A2E00 = Vec<u8>;
+type StructB_4a2e00 = Vec<u8>;
 #[allow(non_camel_case_types)]
-type StructC_4A2DC0 = Vec<u8>;
+type StructC_4a2dc0 = Vec<u8>;
 #[allow(non_camel_case_types)]
 type StructD_439630 = Vec<u8>;
 
@@ -306,17 +308,17 @@ pvec! {
             // xtra-related
             #[br(count = offsets.entry_size(9).unwrap_or(0))]
 
-            9 => entry_9: Struct9_4A2DE0,
+            9 => entry_9: Struct9_4a2de0,
 
             10 => xtra_name: NullString,
 
             // script related
             #[br(count = offsets.entry_size(11).unwrap_or(0))]
-            11 => entry_11: StructB_4A2E00,
+            11 => entry_11: StructB_4a2e00,
 
             // xtra-related
             #[br(count = offsets.entry_size(12).unwrap_or(0))]
-            12 => entry_12: StructC_4A2DC0,
+            12 => entry_12: StructC_4a2dc0,
 
             #[br(count = offsets.entry_size(13).unwrap_or(0))]
             13 => entry_13: StructD_439630,

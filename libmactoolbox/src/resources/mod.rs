@@ -9,7 +9,7 @@ mod source;
 
 pub use error::Error;
 pub use file::{File, RefNum};
-pub use id::{OsType, OsTypeReadExt, ResNum, ResourceId};
+pub use id::{OsType, OsTypeReadExt, Id as ResourceId, ResNum};
 pub use manager::Manager;
 pub use source::{Source, TypedResource};
 use application_vise::ApplicationVise;

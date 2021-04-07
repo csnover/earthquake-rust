@@ -1,5 +1,6 @@
 doc-valid-idents = [
     "KiB", "MiB", "GiB", "TiB", "PiB", "EiB",
     "iOS", "macOS", "Mac2Win",
-    "D3Mac", "D3Win", "D4Mac", "D4Win", "D5Mac", "D5Win"
+    "D3Mac", "D3Win", "D4Mac", "D4Win", "D5Mac", "D5Win",
+    "OsType"
 ]

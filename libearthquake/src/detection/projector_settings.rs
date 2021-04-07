@@ -1,5 +1,3 @@
-#![allow(clippy::struct_excessive_bools)]
-
 use anyhow::{Context, Result as AResult};
 use binrw::BinRead;
 use crate::{bail_sample, ensure_sample};
@@ -290,6 +288,8 @@ impl D3Settings {
         })
     }
 
+    // https://github.com/rust-lang/rust-clippy/issues/6613
+    #[allow(clippy::unnecessary_wraps)]
     fn from_bits_win(bits: &[u8]) -> AResult<Self> {
         Ok(Self {
             resize_stage:       false,
