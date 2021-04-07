@@ -38,6 +38,9 @@ pub enum Error {}
 
 struct TellHandle;
 
+// Allow unused variables for the sake of API documentation.
+// https://github.com/rust-lang/rust/issues/26487
+#[allow(unused_variables)]
 trait VmObject {
     /// Returns the symbol for the kind of the object.
     fn symbol(&self) -> Symbol;

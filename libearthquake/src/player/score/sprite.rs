@@ -16,8 +16,10 @@ pub enum Kind {
     Rect,
     RoundRect,
     Oval,
-    LineTLToBR,
-    LineBLToTR,
+    /// A line drawn from the top-left to the bottom-right.
+    LineDown,
+    /// A line drawn from the bottom-right to the top-left.
+    LineUp,
     Field,
     Button,
     CheckBox,

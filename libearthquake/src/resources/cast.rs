@@ -85,7 +85,7 @@ impl BinRead for CastRegistry {
     fn read_options<R: io::Read + io::Seek>(
         input: &mut R,
         options: &binrw::ReadOptions,
-        args: Self::Args,
+        _: Self::Args,
     ) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
             use binrw::BinReaderExt;
@@ -246,7 +246,7 @@ bitflags! {
 }
 
 type Struct14h = Vec<u8>;
-type STXTSub = Vec<u8>;
+type StxtSub = Vec<u8>;
 #[allow(non_camel_case_types)]
 type Struct9_4a2de0 = Vec<u8>;
 #[allow(non_camel_case_types)]
@@ -297,7 +297,7 @@ pvec! {
             5 => entry_5: Struct14h,
 
             #[br(count = offsets.entry_size(6).unwrap_or(0))]
-            6 => entry_6: STXTSub,
+            6 => entry_6: StxtSub,
 
             #[br(count = offsets.entry_size(7).unwrap_or(0))]
             7 => entry_7: Struct14h,
