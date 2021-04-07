@@ -1,5 +1,5 @@
 use binrw::BinRead;
-use libcommon::{bitflags, prelude::*};
+use libcommon::{bitflags, io::prelude::*, prelude::*};
 use libmactoolbox::quickdraw::{Point, Rect};
 use super::cast::{MemberId, MemberNum};
 
@@ -20,44 +20,28 @@ bitflags! {
 }
 
 #[derive(BinRead, Clone, Copy)]
-#[br(big, import(size: u32), pre_assert(size == 26))]
-pub struct PropertiesV3 {
-    #[br(assert(row_bytes & 0x7fff < 0x4000))]
-    row_bytes: i16,
-    bounds: Rect,
-    field_e: Rect,
-    origin: Point,
-    color_depth: i16,
-    palette_id: MemberNum,
-}
-
-impl From<PropertiesV3> for Properties {
-    fn from(old: PropertiesV3) -> Self {
-        Self {
-            row_bytes: old.row_bytes,
-            bounds: old.bounds,
-            origin: old.origin,
-            flags: <_>::default(),
-            color_depth: old.color_depth.unwrap_into(),
-            palette_id: old.palette_id.into(),
-        }
-    }
-}
-
-#[derive(BinRead, Clone, Copy)]
-#[br(big, import(size: u32), pre_assert(size == 22 || size == 28))]
+#[br(big, import(size: u32), pre_assert(size == 22 || size == 26 || size == 28, "bad bitmap properties size ({})", size))]
 pub struct Properties {
     #[br(assert(row_bytes & 0x7fff < 0x4000))]
     row_bytes: i16,
     bounds: Rect,
+    // There was a rect here, but it is unused
     #[br(pad_before(8))]
     origin: Point,
     #[br(if(size == 28))]
     flags: Flags,
     #[br(if(size == 28))]
     color_depth: u8,
-    #[br(if(size == 28))]
+    #[br(if(size >= 26), parse_with = parse_id, args(size))]
     palette_id: MemberId,
+}
+
+fn parse_id<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (size, ): (u32, )) -> binrw::BinResult<MemberId> {
+    if size == 26 {
+        Ok(MemberNum::read_options(input, options, ())?.into())
+    } else {
+        MemberId::read_options(input, options, ())
+    }
 }
 
 impl std::fmt::Debug for Properties {

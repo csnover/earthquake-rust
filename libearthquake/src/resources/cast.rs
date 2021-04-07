@@ -16,7 +16,13 @@ use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, t
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
-use super::{bitmap::{Properties as BitmapProps, PropertiesV3 as BitmapPropsV3}, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
+use super::{bitmap::{Properties as BitmapProps}, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
+
+#[derive(Clone, Copy, Debug)]
+enum LoadId {
+    Resource(ResNum),
+    Riff(ChunkIndex),
+}
 
 /// A cast library.
 #[derive(Clone, Debug, Deref, DerefMut)]
@@ -29,8 +35,13 @@ impl Library {
         let map = source.load_num::<CastRegistry>(cast_num)?;
         let base_resource_num = cast_num + i16::from(config.min_cast_num()).into();
         let mut data = Vec::with_capacity(map.len());
+        // TODO: These flags do not seem to be compatible with the D4+ flags.
+        // It is unclear what they describe as there does not seem to be
+        // any discernible pattern. Even empty cast members sometimes have
+        // flags.
         for (i, (flags, properties)) in map.iter().enumerate() {
             let resource_num = base_resource_num + i16::unwrap_from(i).into();
+
             let metadata = if source.contains(ResourceId::new(b"VWCI", resource_num)) {
                 let metadata = source.load_num::<MemberMetadata>(resource_num)
                     .with_context(|| anyhow!("error reading metadata for cast member {} (res num {})", i, resource_num))?;
@@ -38,13 +49,19 @@ impl Library {
             } else {
                 None
             };
+
+            let load_id = LoadId::Resource(
+                if matches!(properties, MemberProperties::None) {
+                    ResNum::from(-1_i16)
+                } else {
+                    resource_num
+                }
+            );
+
             data.push(Member {
-                // TODO: This needs to be an Either, and this needs to get
-                // the resource_num
-                riff_index: 0.into(),
+                load_id,
                 next_free: 0,
                 some_num_a: 0,
-                // TODO: These flags are not compatible with the D3 flags.
                 flags: MemberFlags::empty(),
                 metadata,
                 properties: properties.clone(),
@@ -121,7 +138,7 @@ impl BinRead for CastRegistry {
                     };
 
                     data.push((flags, match kind {
-                        MemberKind::Bitmap => MemberProperties::Bitmap(BitmapPropsV3::read_options(input, &options, (size, ))?.into()),
+                        MemberKind::Bitmap => MemberProperties::Bitmap(BitmapProps::read_options(input, &options, (size, ))?),
                         MemberKind::Button => MemberProperties::Button(FieldProps::read_options(input, &options, (size, ))?),
                         MemberKind::DigitalVideo => MemberProperties::DigitalVideo(VideoProps::read_options(input, &options, (size, ))?),
                         MemberKind::Field => MemberProperties::Field(FieldProps::read_options(input, &options, (size, ))?),
@@ -336,9 +353,7 @@ typed_resource!(MemberMetadata => b"Cinf" b"VWCI");
 /// OsType: `'CASt'`
 #[derive(Clone, Debug)]
 pub struct Member {
-    // TODO: This needs to be an Either; for Director 3 it is an i16 resource
-    // number, for Director 4+ it is also sometimes a RIFF chunk index maybe?
-    riff_index: ChunkIndex,
+    load_id: LoadId,
     next_free: i16,
     some_num_a: i16,
     flags: MemberFlags,
@@ -374,7 +389,7 @@ impl BinRead for Member {
                 // .with_context(|| format!("Can’t load {} cast member metadata", meta.kind))?;
 
             Ok(Self {
-                riff_index: index,
+                load_id: LoadId::Riff(index),
                 next_free: 0,
                 some_num_a: 0,
                 flags: MemberFlags::empty(),
