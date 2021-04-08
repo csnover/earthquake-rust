@@ -50,47 +50,14 @@ pub enum Version {
     // D5
     V1215 = 1215,
     V1217 = 1217,
+
+    // D6
     V1222 = 1222,
     V1223,
+
     V1406 = 1406,
+
     V5692 = 5692, // protected
-}
-
-impl Version {
-    #[must_use]
-    pub fn d1(self) -> bool {
-        matches!(self, Self::V1023 | Self::V1024)
-    }
-
-    #[must_use]
-    pub fn d2(self) -> bool {
-        matches!(self, Self::V1024)
-    }
-
-    #[must_use]
-    pub fn d3(self) -> bool {
-        matches!(self, Self::V1024 | Self::V1025 | Self::V1028 | Self::V1029)
-    }
-
-    #[must_use]
-    pub fn d4(self) -> bool {
-        matches!(self, Self::V1113 | Self::V1114 | Self::V1115 | Self::V1116 | Self::V1117)
-    }
-
-    #[must_use]
-    pub fn d5(self) -> bool {
-        matches!(self, Self::V1201 | Self::V1214 | Self::V1215 | Self::V1217)
-    }
-
-    #[must_use]
-    pub fn d6(self) -> bool {
-        matches!(self, Self::V1222 | Self::V1223)
-    }
-
-    #[must_use]
-    pub fn d7(self) -> bool {
-        matches!(self, Self::V1406)
-    }
 }
 
 bitflags! {

@@ -12,7 +12,7 @@ pub enum Error {
     BorrowMutFailed(#[from] core::cell::BorrowMutError),
     #[error("resource {0} not found")]
     NotFound(ResourceId),
-    #[error("resource number {1} not found in any {}", .0.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "))]
+    #[error("resource number {1} not found for {}", .0.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "))]
     NotFoundNum(&'static [OsType], ResNum),
     #[error("resource {0} uses unsupported compression")]
     UnsupportedCompression(ResourceId),

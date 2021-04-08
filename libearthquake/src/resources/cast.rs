@@ -74,21 +74,25 @@ impl Library {
     pub fn from_riff(riff: &Riff<impl Reader>, cast_num: impl Into<ResNum>) -> AResult<Self> {
         let cast_num = cast_num.into();
         let config = riff.load_num::<Config>(cast_num)?;
-        let map = riff.load_num::<CastMap>(cast_num)?;
-        let mut data = Vec::with_capacity(map.len());
-        let min_cast_num = config.min_cast_num();
-        let version = config.version();
-        for (i, &chunk_index) in map.iter().enumerate() {
-            if chunk_index > ChunkIndex::new(0) {
-                let cast_member_num = min_cast_num + i16::unwrap_from(i).into();
-                let member = riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version))
-                    .with_context(|| format!("error reading cast member {}", cast_member_num))?;
-                data.push((*member).clone());
-            } else {
-                data.push(Member::default());
+        if config.version() < ConfigVersion::V1113 {
+            Self::from_resource_source(riff, cast_num)
+        } else {
+            let map = riff.load_num::<CastMap>(cast_num)?;
+            let mut data = Vec::with_capacity(map.len());
+            let min_cast_num = config.min_cast_num();
+            let version = config.version();
+            for (i, &chunk_index) in map.iter().enumerate() {
+                if chunk_index > ChunkIndex::new(0) {
+                    let cast_member_num = min_cast_num + i16::unwrap_from(i).into();
+                    let member = riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version))
+                        .with_context(|| format!("error reading cast member {}", cast_member_num))?;
+                    data.push((*member).clone());
+                } else {
+                    data.push(Member::default());
+                }
             }
+            Ok(Self(data))
         }
-        Ok(Self(data))
     }
 }
 

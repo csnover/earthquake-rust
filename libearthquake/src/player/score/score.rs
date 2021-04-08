@@ -1,5 +1,6 @@
 use anyhow::Result as AResult;
 use binrw::{BinRead, io::Cursor};
+use crate::resources::config::Version as ConfigVersion;
 use libcommon::{io::prelude::*, prelude::*, bitflags};
 use libmactoolbox::quickdraw::{Point, Rect};
 use smart_default::SmartDefault;
@@ -213,7 +214,10 @@ impl BinRead for Score {
 
             let mut input = Cursor::new(data);
 
-            let (own_size, version) = if config_version.d4() || config_version.d5() {
+            let (own_size, version) = if config_version < ConfigVersion::V1113 {
+                let header = ScoreHeaderV3::read_options(&mut input, &options, (size.unwrap_into(), ))?;
+                (header.own_size, Version::V3)
+            } else if config_version < ConfigVersion::V1222 {
                 let header = ScoreHeaderV5::read_options(&mut input, &options, (size.unwrap_into(), ))?;
 
                 // Director normally reads through all of the frame deltas here in order
@@ -222,9 +226,6 @@ impl BinRead for Score {
                 // when the frames are read later
 
                 (header.own_size, header.score_version)
-            } else if config_version.d3() || config_version.d2() || config_version.d1() {
-                let header = ScoreHeaderV3::read_options(&mut input, &options, (size.unwrap_into(), ))?;
-                (header.own_size, Version::V3)
             } else {
                 todo!("Score config version {} parsing", config_version as i32);
             };
