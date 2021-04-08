@@ -1,5 +1,5 @@
 use binrw::{BinRead, io};
-use crate::pvec;
+use crate::{pvec, util::RawString};
 use derive_more::{Deref, DerefMut};
 use libcommon::{prelude::*, bitflags, restore_on_error};
 use libmactoolbox::{typed_resource, types::PString};
@@ -60,7 +60,7 @@ pvec! {
             /// Not used by D4+, which store the movie script in
             /// `'Lctx'`/`'Lscr'` chunks.
             #[br(count(offsets.entry_size(0).unwrap_or(0)))]
-            0 => movie_script_text: Vec<u8>,
+            0 => movie_script_text: RawString,
             /// The name of the user who created the file.
             1 => creator_name: PString,
             /// The name of the user who last modified the file.

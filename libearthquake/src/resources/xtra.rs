@@ -1,4 +1,5 @@
 use binrw::BinRead;
+use crate::util::RawString;
 
 #[derive(BinRead, Clone, Debug)]
 #[br(big, import(size: u32))]
@@ -8,7 +9,7 @@ pub struct Properties {
     #[br(assert(size >= name_size + 4))]
     name_size: u32,
     #[br(count = name_size)]
-    symbol_name: Vec<u8>,
+    symbol_name: RawString,
     // TODO: The rest.
     #[br(assert(size >= data_size + name_size + 8))]
     data_size: u32,

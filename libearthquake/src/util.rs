@@ -1,6 +1,25 @@
 use binrw::{BinRead, io::{Read, self}};
-use bstr::BString;
+use bstr::ByteSlice;
+use derive_more::{Deref, DerefMut};
 use libcommon::restore_on_error;
+
+/// A raw string.
+///
+/// Identical to a `Vec<u8>` except with string-like output formatting.
+#[derive(BinRead, Clone, Deref, DerefMut)]
+pub struct RawString(Vec<u8>);
+
+impl core::fmt::Debug for RawString {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.as_bstr().fmt(f)
+    }
+}
+
+impl core::fmt::Display for RawString {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.as_bstr().fmt(f)
+    }
+}
 
 /// A hybrid between a Pascal string and a C string.
 ///
@@ -17,18 +36,31 @@ use libcommon::restore_on_error;
 /// 2. Win32 uses null-terminated strings, so ensuring all strings are already
 ///    null-terminated makes it trivial to pass them in.
 ///
-/// This implementation just uses a [`BString`](bstr::BString) for simplicity,
-/// since while we’re writing code from the 90s, we don’t have to write it like
-/// it’s still the 90s.
+/// This implementation just uses a [`Vec`] for simplicity, since while we’re
+/// writing code from the 90s, we don’t have to write it like it’s still the
+/// 90s.
 ///
 /// Unfortunately, it is necessary for this implementation to exist
 /// [redundantly](libmactoolbox::types::PString), since Mac resources never
 /// expected to need to null-terminate 255-byte-long strings.
-pub struct WinPString(BString);
+#[derive(Clone, Deref, DerefMut)]
+pub struct WinPString(Vec<u8>);
 
 impl WinPString {
     /// The maximum possible length of a string stored in this type.
-    const MAX: u16 = 261;
+    const MAX_SIZE: usize = 261;
+}
+
+impl core::fmt::Debug for WinPString {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.as_bstr().fmt(f)
+    }
+}
+
+impl core::fmt::Display for WinPString {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.as_bstr().fmt(f)
+    }
 }
 
 impl BinRead for WinPString {
@@ -37,7 +69,7 @@ impl BinRead for WinPString {
     fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(reader, |reader, _| {
             let size = u8::read_options(reader, options, args)?;
-            let mut data = Vec::with_capacity(Self::MAX.into());
+            let mut data = Vec::with_capacity(Self::MAX_SIZE);
 
             if reader.take(size.into()).read_to_end(&mut data)? != size.into() {
                 return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());

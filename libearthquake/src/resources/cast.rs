@@ -9,14 +9,14 @@
 use anyhow::{Context, Result as AResult, anyhow};
 use binrw::{BinRead, NullString, io};
 use core::fmt;
-use crate::{collections::riff::{ChunkIndex, Riff}, pvec};
+use crate::{collections::riff::{ChunkIndex, Riff}, pvec, util::RawString};
 use derive_more::{Deref, DerefMut, Display};
 use libcommon::{io::prelude::*, prelude::*, bitflags, bitflags::BitFlags, newtype_num};
 use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, typed_resource, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
-use super::{bitmap::{Properties as BitmapProps}, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
+use super::{bitmap::Properties as BitmapProps, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
 
 #[derive(Clone, Copy, Debug, SmartDefault)]
 enum LoadId {
@@ -285,7 +285,7 @@ pvec! {
             /// Used only by D3. D4 and later store the cast member script in
             /// `'Lctx'`/`'Lscr'` chunks.
             #[br(count = offsets.entry_size(0).unwrap_or(0))]
-            0 => script_text: Vec<u8>,
+            0 => script_text: RawString,
 
             /// The name of the cast member.
             1 => name: PString,
