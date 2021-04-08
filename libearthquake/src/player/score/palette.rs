@@ -68,7 +68,7 @@ impl BinRead for Palette {
 #[br(big)]
 pub struct PaletteV5 {
     id: MemberId,
-    #[br(map = |num: i8| Fps(num.into()))]
+    #[br(map = |num: i8| num.into())]
     rate: Fps,
     flags: PaletteFlags,
     cycle_start_color: SignedPaletteIndex,
@@ -88,7 +88,7 @@ pub(super) struct PaletteV4 {
     cycle_start_color: SignedPaletteIndex,
     cycle_end_color: SignedPaletteIndex,
     flags: PaletteFlags,
-    #[br(map = |num: i8| Fps(num.into()))]
+    #[br(map = |num: i8| num.into())]
     rate: Fps,
     num_frames: i16,
     num_cycles: i16,

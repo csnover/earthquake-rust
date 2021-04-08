@@ -44,15 +44,12 @@ pub enum ButtonKind {
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 24 || size == 28 || size == 30, "unexpected field properties size {}", size))]
 pub struct Properties {
-    #[br(if(size >= 28))]
-    #[br(map = |p: u8| Pixels::from(p))]
+    #[br(if(size >= 28), map = |p: u8| p.into())]
     border_size: Pixels,
     /// Space between the field viewport and the border.
-    #[br(if(size >= 28))]
-    #[br(map = |p: u8| Pixels::from(p))]
+    #[br(if(size >= 28), map = |p: u8| p.into())]
     margin_size: Pixels,
-    #[br(if(size >= 28))]
-    #[br(map = |p: u8| Pixels::from(p))]
+    #[br(if(size >= 28), map = |p: u8| p.into())]
     box_shadow_size: Pixels,
     #[br(if(size >= 28))]
     frame: Frame,
@@ -63,7 +60,7 @@ pub struct Properties {
     bounds: Rect,
     /// The height of the field, excluding decorations.
     height: Pixels,
-    #[br(map = |p: u8| Pixels::from(p))]
+    #[br(map = |p: u8| p.into())]
     text_shadow_size: Pixels,
     flags: Flags,
     /// The total height of content, which may be larger than the viewport
