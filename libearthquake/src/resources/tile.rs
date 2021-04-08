@@ -2,58 +2,28 @@ use binrw::{BinRead, io};
 use derive_more::{Deref, DerefMut};
 use libcommon::{SeekExt, restore_on_error};
 use libmactoolbox::{quickdraw::{PixPatHandle, Rect}, typed_resource};
-use super::cast::{MemberId, MemberNum};
+use super::cast::MemberId;
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
-#[br(big)]
-struct TileV3 {
+#[br(big, import(is_v5: bool))]
+pub struct Tile {
     #[br(default, pad_after = 4)]
     pix_pat: Option<PixPatHandle>,
-    id: MemberNum,
-    rect: Rect,
-}
-
-impl TileV3 {
-    const SIZE: u64 = 14;
-}
-
-impl From<TileV3> for TileV5 {
-    fn from(old: TileV3) -> Self {
-        Self {
-            pix_pat: old.pix_pat,
-            id: old.id.into(),
-            rect: old.rect,
-        }
-    }
-}
-
-#[derive(BinRead, Clone, Copy, Debug, Default)]
-#[br(big)]
-pub struct TileV5 {
-    #[br(default, pad_after = 4)]
-    pix_pat: Option<PixPatHandle>,
+    #[br(args(is_v5), parse_with = MemberId::parse_num)]
     id: MemberId,
     rect: Rect,
 }
-
-impl TileV5 {
-    const SIZE: u64 = 16;
-}
-
-#[derive(BinRead, Clone, Copy, Debug, Default, Deref, DerefMut)]
-#[br(big)]
-pub struct TilesV5([ TileV5; 8 ]);
 
 /// A set of tiles used for drawing patterns.
 ///
 /// OsType: `'VWTL'`
 #[derive(Clone, Copy, Debug, Default, Deref, DerefMut)]
-pub struct Tiles(TilesV5);
+pub struct Tiles([ Tile; 8 ]);
 typed_resource!(Tiles => b"VWTL");
 
 impl Tiles {
-    const SIZE_V3: u64 = TileV3::SIZE * 8;
-    const SIZE_V5: u64 = TileV5::SIZE * 8;
+    const SIZE_V3: u64 = 14 * 8;
+    const SIZE_V5: u64 = 16 * 8;
 }
 
 impl BinRead for Tiles {
@@ -76,12 +46,9 @@ impl BinRead for Tiles {
             }
 
             let mut tiles = Self::default();
+            let is_v5 = size == Self::SIZE_V5;
             for tile in tiles.iter_mut() {
-                if size == Self::SIZE_V3 {
-                    *tile = TileV3::read(reader)?.into();
-                } else {
-                    *tile = TileV5::read(reader)?;
-                }
+                *tile = Tile::read_args(reader, (is_v5, ))?;
             }
             Ok(tiles)
         })

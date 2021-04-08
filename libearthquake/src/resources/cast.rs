@@ -163,10 +163,18 @@ impl fmt::Debug for MemberId {
 }
 
 impl MemberId {
-    pub const SIZE: u32 = 4;
-
     pub fn new(lib_num: impl Into<LibNum>, member_num: impl Into<MemberNum>) -> Self {
         Self(lib_num.into(), member_num.into())
+    }
+
+    /// A parser which will parse either a `MemberNum` or `MemberId` according
+    /// to the given argument.
+    pub fn parse_num<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (is_id, ): (bool, )) -> binrw::BinResult<MemberId> {
+        if is_id {
+            Self::read_options(input, options, ())
+        } else {
+            Ok(MemberNum::read_options(input, options, ())?.into())
+        }
     }
 
     #[must_use]

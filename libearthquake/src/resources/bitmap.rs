@@ -1,7 +1,7 @@
 use binrw::BinRead;
 use libcommon::{bitflags, io::prelude::*, prelude::*};
 use libmactoolbox::quickdraw::{Point, Rect};
-use super::cast::{MemberId, MemberNum};
+use super::cast::MemberId;
 
 bitflags! {
     // TODO: These are tested when painting colour bitmaps, but there does not
@@ -33,7 +33,7 @@ pub struct Properties {
     #[br(if(size >= 26), parse_with = parse_color_depth, args(size))]
     #[br(assert(matches!(color_depth, 0 | 1 | 2 | 4 | 8 | 16 | 24 | 32), "bad bitmap color depth {}", color_depth))]
     color_depth: u8,
-    #[br(if(size >= 26), parse_with = parse_id, args(size))]
+    #[br(if(size >= 26), parse_with = MemberId::parse_num, args(size >= 28))]
     palette_id: MemberId,
 }
 
@@ -42,14 +42,6 @@ fn parse_color_depth<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions
         Ok(i16::read_options(input, options, ())?.unwrap_into())
     } else {
         u8::read_options(input, options, ())
-    }
-}
-
-fn parse_id<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (size, ): (u32, )) -> binrw::BinResult<MemberId> {
-    if size == 26 {
-        Ok(MemberNum::read_options(input, options, ())?.into())
-    } else {
-        MemberId::read_options(input, options, ())
     }
 }
 
