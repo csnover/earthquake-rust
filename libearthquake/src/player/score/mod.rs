@@ -32,7 +32,7 @@ newtype_num! {
 }
 
 newtype_num! {
-    #[derive(Debug)]
+    #[derive(BinRead, Debug)]
     pub struct FrameNum(pub i16);
 }
 
