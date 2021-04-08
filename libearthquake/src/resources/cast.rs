@@ -18,9 +18,10 @@ use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
 use super::{bitmap::{Properties as BitmapProps}, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, SmartDefault)]
 enum LoadId {
     Resource(ResNum),
+    #[default]
     Riff(ChunkIndex),
 }
 
@@ -83,6 +84,8 @@ impl Library {
                 let member = riff.load_chunk_args::<Member>(chunk_index, (chunk_index, version))
                     .with_context(|| format!("error reading cast member {}", cast_member_num))?;
                 data.push((*member).clone());
+            } else {
+                data.push(Member::default());
             }
         }
         Ok(Self(data))
@@ -227,7 +230,7 @@ impl BinRead for CastMap {
 bitflags! {
     struct MemberInfoFlags: u32 {
         const EXTERNAL_FILE = 1;
-        const FLAG_2        = 2;
+        const AUTO_HILITE   = 2;
         const PURGE_NEVER   = 4;
         const PURGE_LAST    = 8;
         const PURGE_NEXT    = Self::PURGE_NEVER.bits | Self::PURGE_LAST.bits;
@@ -337,7 +340,7 @@ bitflags! {
 /// A cast member.
 ///
 /// OsType: `'CASt'`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Member {
     load_id: LoadId,
     next_free: i16,
@@ -432,6 +435,7 @@ pub struct MemberHeaderV5 {
 }
 
 bitflags! {
+    #[derive(Default)]
     struct MemberFlags: u16 {
         const DIRTY_MAYBE          = 1;
         const DATA_MODIFIED        = 4;
@@ -482,8 +486,9 @@ impl MemberKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SmartDefault)]
 pub enum MemberProperties {
+    #[default]
     None,
     Bitmap(BitmapProps),
     FilmLoop(FilmLoopProps),
