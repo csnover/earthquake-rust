@@ -10,7 +10,7 @@ license = "Apache-2.0"
 edition = "2018"
 
 [dependencies]
-binrw = "0.2"
+binrw = { git = "https://github.com/csnover/binrw", branch = "earthquake" }
 bitstream-io = "0.8"
 bstr = "0.2"
 byteorder = "1.3"

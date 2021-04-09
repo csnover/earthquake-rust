@@ -12,7 +12,7 @@ build = "../build.rs"
 
 [dependencies]
 anyhow = "1.0"
-binrw = "0.2"
+binrw = { git = "https://github.com/csnover/binrw", branch = "earthquake" }
 bitflags = "1.2"
 bstr = "0.2"
 byteorder = "1.3"
