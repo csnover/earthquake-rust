@@ -85,7 +85,7 @@ impl BinRead for WinPString {
                 }
             }
 
-            Ok(Self(data.into()))
+            Ok(Self(data))
         })
     }
 }

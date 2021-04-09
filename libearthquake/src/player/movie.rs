@@ -1,5 +1,5 @@
 use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
-use binrw::{BinRead, derive_binread};
+use binrw::derive_binread;
 use libcommon::{Unk16, Unk32, Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
@@ -139,12 +139,12 @@ pub struct Movie {
     /// The last generated base resource number for a cast library.
     ///
     /// This is normally an i32.
-    #[default(1024)]
+    #[default(1024_i16.into())]
     last_used_mac_res_id: ResNum,
 
     /// This value is always -1 on at least Windows because the function that
     /// would normally open the file is nulled out.
-    #[default(-1)]
+    #[default(RefNum(-1))]
     some_res_file_ref_num: RefNum,
 
     is_loaded: bool,
@@ -188,7 +188,7 @@ pub struct Movie {
     vwci_entry_7: i16,
 
     // TODO: Do not use magic numbers.
-    #[default(MemberId::new(0, -101))]
+    #[default(MemberId::new(0_i16, -101_i16))]
     default_palette: MemberId,
 
     field_5a: Unk32,
