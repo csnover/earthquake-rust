@@ -1,6 +1,6 @@
 use binrw::BinRead;
 use crate::player::score::Tempo;
-use libcommon::{prelude::*, bitflags, bitflags::BitFlags, newtype_num};
+use libcommon::{bitflags, bitflags::BitFlags, newtype_num, io::prelude::*, prelude::*};
 use libmactoolbox::{quickdraw::{PaletteIndex, Rect}, typed_resource};
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
@@ -72,15 +72,6 @@ bitflags! {
     }
 }
 
-#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
-#[br(big, import(version: Version))]
-pub enum PaletteId {
-    #[br(pre_assert(version >= Version::V1201))]
-    Cast(MemberId),
-    #[default]
-    Number(i32),
-}
-
 /// Movie configuration.
 ///
 /// OsType: `'VWCF'` `'DRCF'`
@@ -142,8 +133,8 @@ pub struct Config {
     field_46: Unk16,
     #[br(if(version >= Version::V1115))]
     max_cast_resource_num: u32,
-    #[br(if(version >= Version::V1115), args(version))]
-    default_palette: PaletteId,
+    #[br(if(version >= Version::V1115), args(version), parse_with = parse_palette)]
+    default_palette: MemberId,
 }
 typed_resource!(Config => b"DRCF" b"VWCF");
 
@@ -231,4 +222,21 @@ impl Config {
         }
         (state, ((state >> 14) as i16).abs())
     }
+}
+
+fn parse_palette<R: Read + Seek>(reader: &mut R, options: &binrw::ReadOptions, (version, ): (Version, )) -> binrw::BinResult<MemberId> {
+    restore_on_error(reader, |reader, pos| {
+        if version >= Version::V1201 {
+            MemberId::read_options(reader, options, ())
+        } else {
+            let num = i32::read_options(reader, options, ())?;
+            let num = i16::try_from(num).map_err(|_| {
+                binrw::error::Error::AssertFail {
+                    pos,
+                    message: format!("default palette {} is out of range", num)
+                }
+            })?;
+            Ok(MemberId::new(-1_i16, num))
+        }
+    })
 }

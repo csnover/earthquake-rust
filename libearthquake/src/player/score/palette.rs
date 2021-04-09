@@ -43,6 +43,20 @@ impl From<SignedPaletteIndex> for PaletteIndex {
 #[from(forward)]
 pub struct Palette(PaletteV5);
 
+impl Palette {
+    pub const SYSTEM_MAC: MemberId = MemberId::from_raw(-1, -1);
+    pub const RAINBOW: MemberId = MemberId::from_raw(-1, -2);
+    pub const GRAYSCALE: MemberId = MemberId::from_raw(-1, -3);
+    pub const PASTELS: MemberId = MemberId::from_raw(-1, -4);
+    pub const VIVID: MemberId = MemberId::from_raw(-1, -5);
+    pub const NTSC: MemberId = MemberId::from_raw(-1, -6);
+    pub const METALLIC: MemberId = MemberId::from_raw(-1, -7);
+    pub const VGA: MemberId = MemberId::from_raw(-1, -8);
+    pub const SYSTEM_WIN_DIR_4: MemberId = MemberId::from_raw(-1, -101);
+    pub const SYSTEM_WIN: MemberId = MemberId::from_raw(-1, -102);
+    pub const NOTHING: MemberId = MemberId::from_raw(-1, -200);
+}
+
 impl BinRead for Palette {
     type Args = (Version, );
 

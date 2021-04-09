@@ -173,6 +173,15 @@ impl MemberId {
         Self(lib_num.into(), member_num.into())
     }
 
+    /// Makes a new `MemberId` from two i16s.
+    ///
+    /// This is a workaround to allow a generic constructor whilst also allowing
+    /// `OsType` to be statically constructed.
+    #[must_use]
+    pub const fn from_raw(lib_num: i16, member_num: i16) -> Self {
+        Self(LibNum(lib_num), MemberNum(member_num))
+    }
+
     /// A parser which will parse either a `MemberNum` or `MemberId` according
     /// to the given argument.
     pub fn parse_num<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (is_id, ): (bool, )) -> binrw::BinResult<MemberId> {

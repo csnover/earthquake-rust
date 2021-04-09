@@ -4,7 +4,7 @@ use libcommon::{Unk16, Unk32, Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
-use super::{score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Score, SpriteBitmask}, window::Window};
+use super::{score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Palette, Score, SpriteBitmask}, window::Window};
 
 bitflags! {
     #[derive(Default)]
@@ -188,7 +188,7 @@ pub struct Movie {
     vwci_entry_7: i16,
 
     // TODO: Do not use magic numbers.
-    #[default(MemberId::new(0_i16, -101_i16))]
+    #[default(Palette::SYSTEM_WIN_DIR_4)]
     default_palette: MemberId,
 
     field_5a: Unk32,
