@@ -41,9 +41,6 @@ impl BinRead for ChunkFile {
 
     fn read_options<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, _: Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, pos| {
-            let mut options = *options;
-            options.endian = binrw::Endian::Big;
-
             let size = input.bytes_left()?;
             if !(4..=8).contains(&size) {
                 return Err(binrw::Error::AssertFail {
