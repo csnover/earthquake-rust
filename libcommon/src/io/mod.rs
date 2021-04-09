@@ -11,7 +11,9 @@ use binrw::io;
 pub trait Reader: io::Read + io::Seek + core::fmt::Debug {}
 impl <T: io::Read + io::Seek + core::fmt::Debug> Reader for T {}
 
-// TODO: Should be generic for all manual read_options implementations
+// TODO: Should be generic for all manual read_options implementations, and
+// should allow the inner function to return any kind of error and attach the
+// position to the inner error if needed
 pub fn restore_on_error<R: io::Read + io::Seek, F: Fn(&mut R, u64) -> binrw::BinResult<T>, T>(reader: &mut R, f: F) -> binrw::BinResult<T> {
     let pos = reader.pos()?;
     f(reader, pos).or_else(|err| {
