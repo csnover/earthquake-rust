@@ -6,7 +6,7 @@
 //!
 //! D4+ use the `'CAS*'`
 
-use anyhow::{Context, Result as AResult, anyhow};
+use anyhow::{Result as AResult, anyhow};
 use binrw::{BinRead, NullString, io};
 use core::fmt;
 use crate::{collections::riff::{ChunkIndex, Riff}, pvec, util::RawString};
@@ -31,6 +31,7 @@ pub struct Library(Vec<Member>);
 
 impl Library {
     pub fn from_resource_source(source: &impl ResourceSource, cast_num: impl Into<ResNum>) -> AResult<Self> {
+        use anyhow::Context;
         let cast_num = cast_num.into();
         let config = source.load_num::<Config>(cast_num)?;
         let map = source.load_num_args::<CastRegistry>(cast_num, (config.version(), ))?;
@@ -72,6 +73,7 @@ impl Library {
     }
 
     pub fn from_riff(riff: &Riff<impl Reader>, cast_num: impl Into<ResNum>) -> AResult<Self> {
+        use anyhow::Context;
         let cast_num = cast_num.into();
         let config = riff.load_num::<Config>(cast_num)?;
         if config.version() < ConfigVersion::V1113 {
@@ -112,17 +114,17 @@ impl BinRead for CastRegistry {
         (version, ): Self::Args,
     ) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
-            use binrw::BinReaderExt;
+            use binrw::{BinReaderExt, error::Context};
             let mut data = Vec::new();
             while input.bytes_left()? != 0 {
                 // The size of the record data, excluding the size byte
-                let mut size = u32::from(input.read_be::<u8>()?);
-                // TODO: .context("Can’t read cast registry member size")?;
+                let mut size = u32::from(input.read_be::<u8>()
+                    .context(|| "Can’t read cast registry member size")?);
                 if size == 0 {
                     data.push((LegacyMemberFlags::empty(), MemberProperties::None));
                 } else {
-                    let kind = input.read_be::<u8>()?;
-                    // TODO: .context("Can’t read cast member kind")?;
+                    let kind = input.read_be::<u8>()
+                        .context(|| "Can’t read cast member kind")?;
                     let kind = MemberKind::from_u8(kind)
                         .ok_or_else(|| binrw::Error::Custom {
                             pos: input.pos().unwrap() - 1,
@@ -368,6 +370,7 @@ impl BinRead for Member {
 
     fn read_options<R: io::Read + io::Seek>(input: &mut R, options: &binrw::ReadOptions, (chunk_index, version): Self::Args) -> binrw::BinResult<Self> {
         restore_on_error(input, |input, _| {
+            use binrw::error::Context;
             let mut options = *options;
             options.endian = binrw::Endian::Big;
 
@@ -382,24 +385,24 @@ impl BinRead for Member {
                 } else {
                     LegacyMemberFlags::empty()
                 };
-                properties = MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (header.kind, size.into(), version))?;
+                properties = MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (header.kind, size.into(), version))
+                    .context(|| format!("error reading {} cast member properties", header.kind))?;
                 metadata = if header.metadata_size == 0 {
                     None
                 } else {
-                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
-                        // TODO: Figure out how to get this context back
-                        // .with_context(|| format!("Can’t load {} cast member info", kind))?;
+                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())
+                        .context(|| format!("error reading {} cast member metadata", header.kind))?)
                 };
             } else {
                 let header = MemberHeaderV5::read_options(input, &options, ())?;
                 metadata = if header.metadata_size == 0 {
                     None
                 } else {
-                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())?)
-                        // TODO: Figure out how to get this context back
-                        // .with_context(|| format!("Can’t load {} cast member info", kind))?;
+                    Some(MemberMetadata::read_options(&mut input.take_seek(header.metadata_size.into()), &options, ())
+                        .context(|| format!("error reading {} cast member metadata", header.kind))?)
                 };
-                properties = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header.kind, header.properties_size, version))?;
+                properties = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header.kind, header.properties_size, version))
+                    .context(|| format!("error reading {} cast member properties", header.kind))?;
             };
 
             Ok(Self {

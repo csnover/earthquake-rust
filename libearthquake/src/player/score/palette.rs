@@ -1,4 +1,4 @@
-use binrw::{BinRead, io::{Read, Seek}};
+use binrw::{BinRead, error::Context, io::{Read, Seek}};
 use crate::resources::cast::{MemberId, MemberNum};
 use derive_more::{Deref, DerefMut, From};
 use libcommon::{Unk8, bitflags, newtype_num, restore_on_error};
@@ -57,9 +57,7 @@ impl BinRead for Palette {
                 PaletteV5::read_options(input, &options, ()).map(Self::from)
             } else {
                 PaletteV4::read_options(input, &options, (version, )).map(Self::from)
-            }
-            // TODO: reintroduce context
-            // .context("Can’t read score palette")
+            }.context(|| "Can’t read score palette")
         })
     }
 }

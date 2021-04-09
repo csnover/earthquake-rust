@@ -1,4 +1,4 @@
-use binrw::{BinRead, io::{Read, Seek}};
+use binrw::{BinRead, error::Context, io::{Read, Seek}};
 use crate::resources::cast::{MemberId, MemberNum};
 use libmactoolbox::quickdraw::{Pen, Point};
 use derive_more::{Deref, DerefMut, From};
@@ -299,9 +299,7 @@ impl BinRead for Sprite {
                     pos: input.pos()?,
                     message: format!("Unknown score version {}", version),
                 })
-            }
-            // TODO: Reintroduce context
-            // .context("Can’t read sprite")
+            }.context(|| "Can’t read sprite")
         })
     }
 }
