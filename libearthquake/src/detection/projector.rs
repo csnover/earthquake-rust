@@ -128,7 +128,7 @@ pub enum Platform {
     Win(WinVersion),
 }
 
-pub fn detect_mac<R1, R2>(mut resource_fork: R1, data_fork: Option<R2>) -> AResult<DetectionInfo>
+pub(super) fn detect_mac<R1, R2>(mut resource_fork: R1, data_fork: Option<R2>) -> AResult<DetectionInfo>
 where
     R1: binrw::io::Read + binrw::io::Seek,
     R2: binrw::io::Read + binrw::io::Seek,
@@ -246,7 +246,7 @@ fn d3_win_movie_info<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, i: u16
 const HEADER_SIZE: u32 = 8;
 const SETTINGS_SIZE: u32 = 12;
 
-pub fn detect_win<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResult<DetectionInfo> {
+pub(super) fn detect_win<R: binrw::io::Read + binrw::io::Seek>(input: &mut R) -> AResult<DetectionInfo> {
     const MZ: u16 = 0x4d5a;
 
     if input.read_u16::<BigEndian>().context("Can’t read magic")? != MZ {
