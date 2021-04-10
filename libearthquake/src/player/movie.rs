@@ -1,6 +1,6 @@
-use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
+use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
 use binrw::derive_binread;
-use libcommon::{Unk16, Unk32, Unk8, UnkHnd, UnkPtr, bitflags};
+use libcommon::{Unk16, Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
@@ -168,9 +168,9 @@ pub struct Movie {
     /// Lingo: `the paletteMapping`
     palette_mapping: bool,
 
-    field_46: bool,
+    missing_vwfi: bool,
 
-    some_legacy_flag: bool, /* score color and flags related */
+    allow_outdated_lingo: bool,
 
     /// Lingo: `the updateMovieEnabled`
     update_movie_enabled: bool,
@@ -187,13 +187,20 @@ pub struct Movie {
 
     vwfi_flag_2000h: Unk8,
 
-    vwfi_flag_1000h: Unk8,
+    /// Whether or not the movie contains a D4 shared cast.
+    legacy_shared_cast: bool,
 
-    vwfi_entry_5: i16,
+    /// For movies with a shared cast upgraded from D4- to D5+, the cast library
+    /// number for the shared cast.
+    legacy_shared_cast_lib_num: LibNum,
 
-    vwfi_entry_6: i16,
+    /// For movies with a shared cast upgraded from D4- to D5+, the minimum cast
+    /// member number of the original shared cast.
+    legacy_shared_cast_old_min: MemberNum,
 
-    vwfi_entry_7: i16,
+    /// For movies with shared cast upgraded from D4- to D5+, the minimum cast
+    /// member number of the new shared cast.
+    legacy_shared_cast_new_min: MemberNum,
 
     /// The initial palette to use for the movie.
     #[default(Palette::SYSTEM_WIN_DIR_4)]

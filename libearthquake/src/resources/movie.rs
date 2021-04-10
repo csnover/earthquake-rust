@@ -1,9 +1,9 @@
-use binrw::{BinRead, io};
+use binrw::BinRead;
 use crate::{pvec, util::RawString};
 use derive_more::{Deref, DerefMut};
-use libcommon::{prelude::*, bitflags, restore_on_error};
+use libcommon::{bitflags, io::prelude::*, prelude::*};
 use libmactoolbox::{typed_resource, types::PString};
-use super::{PVecOffsets, StdList, cast::{MemberId, MemberNum}};
+use super::{PVecOffsets, StdList, cast::{LibNum, MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
 bitflags! {
@@ -20,24 +20,39 @@ bitflags! {
 
 bitflags! {
     struct FileInfoFlags: u32 {
-        const WINDOW_RELATED_MAYBE = 1;
-        const INIT_DEFAULT_MAYBE   = 0x20;
+        /// Pause playback when the movie window is not focused.
+        const PAUSE_WHEN_UNFOCUSED = 1;
+        /// Disable anti-aliasing of text and graphics.
+        const NO_ANTI_ALIASING     = 0x20;
+        /// Remap the palettes of cast members to the closest colours in the
+        /// active palette.
         const REMAP_PALETTES       = 0x40;
-        const DIRECTOR_4_RELATED   = 0x80;
-        const MOVIE_FIELD_47       = 0x100;
+        // The movie was upgraded from D3 to D4?
+        const UPGRADED_D3_TO_D4    = 0x80;
+        /// Allows obsolete Lingo to be used in upgraded movies.
+        const ALLOW_OUTDATED_LINGO = 0x100;
+        /// Changes to this movie should be automatically saved when a new movie
+        /// is loaded.
         const UPDATE_MOVIE_ENABLED = 0x200;
+        /// User interaction cancels cast member preloading.
         const PRELOAD_EVENT_ABORT  = 0x400;
-        const MOVIE_FIELD_4D       = 0x1000;
-        const MOVIE_FIELD_4E       = 0x2000;
+        // D4 related.
+        const FLAG_800             = 0x800;
+        /// A shared cast for this movie was upgraded from D4- to D5+.
+        const OUTDATED_SHARED_CAST = 0x1000;
+        const MOVIE_FIELD_4D       = 0x2000;
     }
 }
 
 pvec! {
     /// Information about a movie file.
     ///
+    /// Shared casts upgraded from D4- to D5+ will contain an empty VWFI chunk.
+    ///
     /// OsType: `'VWFI'`
     #[derive(Debug)]
     pub struct FileInfo {
+        #[br(assert(header_size == 16 || header_size == 20, "unexpected VWFI header size {}", header_size))]
         header_size = header_size;
 
         header {
@@ -61,16 +76,34 @@ pvec! {
             /// `'Lctx'`/`'Lscr'` chunks.
             #[br(count(offsets.entry_size(0).unwrap_or(0)))]
             0 => movie_script_text: RawString,
+
             /// The name of the user who created the file.
             1 => creator_name: PString,
+
             /// The name of the user who last modified the file.
             2 => modify_name: PString,
+
             /// The original path of the file, excluding the filename.
             3 => path: PString,
-            4 => flag_20_related: i16,
-            5 => entry_5: i16,
-            6 => entry_6: i16,
-            7 => entry_7: i16,
+
+            /// The preload strategy for the cast.
+            ///
+            /// In D5+, this is the original preload strategy for the internal
+            /// cast.
+            4 => preload: Preload,
+
+            /// For movies with a shared cast upgraded from D4- to D5+, the
+            /// cast library number for the new shared cast.
+            5 => shared_cast_lib_num: LibNum,
+
+            /// For movies with a shared cast upgraded from D4- to D5+, the
+            /// minimum cast member number of the original shared cast.
+            6 => old_shared_min_cast: MemberNum,
+
+            /// For movies with shared cast upgraded from D4- to D5+, the
+            /// minimum cast member number of the new shared cast.
+            7 => new_shared_min_cast: MemberNum,
+
             8..
         }
     }
@@ -84,11 +117,17 @@ pvec! {
     /// RE: `MovieCastList`
     #[derive(Debug)]
     pub struct CastList {
+        #[br(assert(header_size == 12, "unexpected MCsL header size {}", header_size))]
         header_size = header_size;
 
         header {
             field_4: i16,
             count: i16,
+            #[br(assert(
+                (1..=4).contains(&entries_per_cast),
+                "unexpected number of entries per cast in MCsL ({})",
+                entries_per_cast
+            ))]
             entries_per_cast: i16,
             field_a: i16,
         }
@@ -109,7 +148,7 @@ pub struct CastListMembers(Vec<Cast>);
 impl BinRead for CastListMembers {
     type Args = (i16, PVecOffsets);
 
-    fn read_options<R: io::Read + io::Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, offsets): Self::Args) -> binrw::BinResult<Self> {
+    fn read_options<R: Read + Seek>(reader: &mut R, options: &binrw::ReadOptions, (entries_per_cast, offsets): Self::Args) -> binrw::BinResult<Self> {
         if let Some(count) = options.count {
             restore_on_error(reader, |reader, _| {
                 let mut options = *options;
@@ -179,6 +218,7 @@ pub struct Cast {
     path: PString,
     /// The mode to use when preloading cast members.
     #[br(if(offsets.has_entry(2)), pad_size_to = offsets.entry_size(2).unwrap_or(0))]
+    #[br(parse_with = fix_d5_update_movies_shared_preload)]
     preload: Preload,
     /// The minimum and maximum cast member numbers in this cast.
     #[br(if(offsets.has_entry(3)))]
@@ -196,6 +236,16 @@ pub struct Cast {
     is_global_cast_locked: bool,
     #[br(default)]
     field_16: bool,
+}
+
+// Director 5 Update Movies writes garbage into the preload field of the
+// upgraded shared cast.
+fn fix_d5_update_movies_shared_preload<R: Read + Seek>(reader: &mut R, _: &binrw::ReadOptions, _: ()) -> binrw::BinResult<Preload> {
+    Preload::read(reader).or_else(|err| if matches!(err, binrw::Error::NoVariantMatch { .. }) {
+        Ok(Preload::None)
+    } else {
+        Err(err)
+    })
 }
 
 /// The list of all cast members in the movie, sorted by the order in which they

@@ -371,6 +371,7 @@ macro_rules! pvec {
         $vis:vis struct $ident:ident {
             // Required, due to macro hygiene, for the caller to be able to
             // access this fields, which is generated within the macro.
+            $(#[$header_size_meta:meta])*
             header_size = $header_size:ident;
 
             header {
@@ -389,6 +390,7 @@ macro_rules! pvec {
     ) => {
         $crate::pvec! { @entry $header_size $offsets { $($tail)* } -> {
             $(#[$meta])* $vis struct $ident;
+            $(#[$header_size_meta])*
             $header_size: u32;
             $($(#[$field_meta])* $field_ident: $field_ty;)*
             $offsets: $crate::resources::PVecOffsets;

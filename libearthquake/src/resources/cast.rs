@@ -1,17 +1,11 @@
 //! Type definitions for cast management.
-//!
-//! Two types of cast management exist in Director depending upon version.
-//!
-//! Director 3 and earlier held cast .
-//!
-//! D4+ use the `'CAS*'`
 
 use anyhow::{Result as AResult, anyhow};
 use binrw::{BinRead, NullString, io};
 use core::fmt;
 use crate::{collections::riff::{ChunkIndex, Riff}, pvec, util::RawString};
 use derive_more::{Deref, DerefMut, Display};
-use libcommon::{io::prelude::*, prelude::*, bitflags, bitflags::BitFlags, newtype_num};
+use libcommon::{io::prelude::*, prelude::*, bitflags, newtype_num};
 use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, typed_resource, types::PString};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -41,7 +35,7 @@ impl Library {
         // It is unclear what they describe as there does not seem to be
         // any discernible pattern. Even empty cast members sometimes have
         // flags.
-        for (i, (flags, properties)) in map.iter().enumerate() {
+        for (i, (more_flags, properties)) in map.iter().enumerate() {
             let resource_num = base_resource_num + i16::unwrap_from(i).into();
 
             let metadata = if source.contains(ResourceId::new(b"VWCI", resource_num)) {
@@ -64,7 +58,8 @@ impl Library {
                 load_id,
                 next_free: 0,
                 some_num_a: 0,
-                flags: MemberFlags::empty(),
+                flags: <_>::default(),
+                more_flags: *more_flags,
                 metadata,
                 properties: properties.clone(),
             });
@@ -121,7 +116,7 @@ impl BinRead for CastRegistry {
                 let mut size = u32::from(input.read_be::<u8>()
                     .context(|| "Can’t read cast registry member size")?);
                 if size == 0 {
-                    data.push((LegacyMemberFlags::empty(), MemberProperties::None));
+                    data.push((<_>::default(), MemberProperties::None));
                 } else {
                     let kind = input.read_be::<u8>()
                         .context(|| "Can’t read cast member kind")?;
@@ -136,7 +131,7 @@ impl BinRead for CastRegistry {
                         size -= 2;
                         LegacyMemberFlags::read_options(input, &options, ())?
                     } else {
-                        LegacyMemberFlags::empty()
+                        <_>::default()
                     };
 
                     data.push((flags, MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (kind, size, version))?))
@@ -278,6 +273,7 @@ pvec! {
     /// OsType: `'Cinf'` `'VWCI'`
     #[derive(Clone, Debug)]
     pub struct MemberMetadata {
+        #[br(assert(header_size == 16 || header_size == 20, "unexpected VWCI header size {}", header_size))]
         header_size = header_size;
 
         header {
@@ -348,6 +344,10 @@ pvec! {
 typed_resource!(MemberMetadata => b"Cinf" b"VWCI");
 
 bitflags! {
+    // TODO: These are probably the `moreFlags` that are stuffed into the cast
+    // member after the `kind`. That would also fit with the way that the data
+    // was originally stored in VWCR with the kind byte and then flags byte.
+    #[derive(Default)]
     struct LegacyMemberFlags: u8 {
         const FLAG_1  = 1;
         const FLAG_2  = 2;
@@ -369,6 +369,7 @@ pub struct Member {
     next_free: i16,
     some_num_a: i16,
     flags: MemberFlags,
+    more_flags: LegacyMemberFlags,
     metadata: Option<MemberMetadata>,
     properties: MemberProperties,
 }
@@ -385,14 +386,15 @@ impl BinRead for Member {
 
             let properties;
             let metadata;
+            let more_flags;
             if version < ConfigVersion::V1201 {
                 let header = MemberHeaderV4::read_options(input, &options, ())?;
                 let mut size = header.registry_size - 1;
-                let flags = if header.kind.has_extra_flags() {
+                more_flags = if header.kind.has_extra_flags() {
                     size -= 1;
                     LegacyMemberFlags::read_options(input, &options, ())?
                 } else {
-                    LegacyMemberFlags::empty()
+                    <_>::default()
                 };
                 properties = MemberProperties::read_options(&mut input.take_seek(size.into()), &options, (header.kind, size.into(), version))
                     .context(|| format!("error reading {} cast member properties", header.kind))?;
@@ -412,13 +414,15 @@ impl BinRead for Member {
                 };
                 properties = MemberProperties::read_options(&mut input.take_seek(header.properties_size.into()), &options, (header.kind, header.properties_size, version))
                     .context(|| format!("error reading {} cast member properties", header.kind))?;
+                more_flags = <_>::default();
             };
 
             Ok(Self {
                 load_id: LoadId::Riff(chunk_index),
                 next_free: 0,
                 some_num_a: 0,
-                flags: MemberFlags::empty(),
+                flags: <_>::default(),
+                more_flags,
                 metadata,
                 properties,
             })
