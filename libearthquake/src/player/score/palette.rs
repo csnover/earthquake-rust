@@ -1,5 +1,5 @@
 use binrw::{BinRead, error::Context, io::{Read, Seek}};
-use crate::resources::cast::{MemberId, MemberNum};
+use crate::resources::cast::{LibNum, MemberId, MemberNum};
 use derive_more::{Deref, DerefMut, From};
 use libcommon::{Unk8, bitflags, newtype_num, restore_on_error};
 use libmactoolbox::quickdraw::PaletteIndex;
@@ -44,6 +44,7 @@ impl From<SignedPaletteIndex> for PaletteIndex {
 pub struct Palette(PaletteV5);
 
 impl Palette {
+    pub const SYSTEM_LIB: LibNum = LibNum(-1);
     pub const SYSTEM_MAC: MemberId = MemberId::from_raw(-1, -1);
     pub const RAINBOW: MemberId = MemberId::from_raw(-1, -2);
     pub const GRAYSCALE: MemberId = MemberId::from_raw(-1, -3);

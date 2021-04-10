@@ -1,5 +1,5 @@
 use binrw::BinRead;
-use crate::player::score::Tempo;
+use crate::player::score::{Palette, Tempo};
 use libcommon::{bitflags, bitflags::BitFlags, newtype_num, io::prelude::*, prelude::*};
 use libmactoolbox::{quickdraw::{PaletteIndex, Rect}, typed_resource};
 use smart_default::SmartDefault;
@@ -236,7 +236,7 @@ fn parse_palette<R: Read + Seek>(reader: &mut R, options: &binrw::ReadOptions, (
                     message: format!("default palette {} is out of range", num)
                 }
             })?;
-            Ok(MemberId::new(-1_i16, num))
+            Ok(MemberId::new(Palette::SYSTEM_LIB, num))
         }
     })
 }

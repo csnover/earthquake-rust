@@ -11,7 +11,7 @@ mod text_editor;
 mod transition;
 
 pub use frame::Frame;
-pub(super) use palette::Palette;
+pub use palette::Palette;
 pub(super) use score_1494::Score1494;
 pub use score::Score;
 pub(super) use sprite::Sprite;
