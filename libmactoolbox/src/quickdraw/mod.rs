@@ -12,6 +12,7 @@ use std::{
     cell::{Ref, RefCell},
     rc::Rc,
 };
+use smart_default::SmartDefault;
 
 pub type PixPatHandle = UnkHnd;
 pub type PixMapHandle = UnkHnd;
@@ -102,10 +103,34 @@ impl std::fmt::Debug for Rect {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, SmartDefault)]
 pub struct Region {
-    size: i16,
-    bounding_box: Rect,
+    #[default(10)]
+    pub size: i16,
+    pub bounding_box: Rect,
+}
+
+impl Region {
+    /// `NewRgn`
+    #[must_use]
+    pub fn new() -> Self {
+        <_>::default()
+    }
+
+    /// `SetRectRgn`
+    pub fn set_rect_region(&mut self, left: impl Into<Pixels>, top: impl Into<Pixels>, right: impl Into<Pixels>, bottom: impl Into<Pixels>) {
+        self.size = 10;
+        self.bounding_box.top = top.into();
+        self.bounding_box.left = left.into();
+        self.bounding_box.right = right.into();
+        self.bounding_box.bottom = bottom.into();
+    }
+
+    /// `RectRgn`
+    pub fn rect_region(&mut self, rect: Rect) {
+        self.size = 10;
+        self.bounding_box = rect;
+    }
 }
 
 newtype_num! {

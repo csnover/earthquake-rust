@@ -1,4 +1,4 @@
-use crate::{events::Manager as EventManager, intl::ScriptCode, resources::{Error as ResourceError, Manager as ResourceManager}};
+use crate::{events::Manager as EventManager, intl::ScriptCode, resources::{Error as ResourceError, Manager as ResourceManager}, windows::Manager as WindowManager};
 use libcommon::vfs::VirtualFileSystem;
 use std::rc::Rc;
 
@@ -11,6 +11,7 @@ pub enum Error {
 pub struct System<'vfs> {
     event_manager: EventManager,
     resource_manager: ResourceManager<'vfs>,
+    window_manager: WindowManager,
 }
 
 impl <'vfs> System<'vfs> {
@@ -19,6 +20,7 @@ impl <'vfs> System<'vfs> {
             event_manager: EventManager::new(),
             resource_manager: ResourceManager::new(fs, system)
                 .map_err(Error::ResourceManagerInit)?,
+            window_manager: WindowManager::new(),
         })
     }
 
@@ -36,5 +38,13 @@ impl <'vfs> System<'vfs> {
 
     pub fn resource_manager_mut(&mut self) -> &mut ResourceManager<'vfs> {
         &mut self.resource_manager
+    }
+
+    pub fn window_manager(&self) -> &WindowManager {
+        &self.window_manager
+    }
+
+    pub fn window_manager_mut(&mut self) -> &mut WindowManager {
+        &mut self.window_manager
     }
 }

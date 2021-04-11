@@ -15,12 +15,15 @@
 
 #[macro_use]
 mod macros;
+pub mod cast;
 pub mod collections;
 pub mod detection;
+pub mod event;
 pub mod fonts;
 pub mod lingo;
 pub mod player;
 pub mod resources;
+pub mod sound;
 pub mod util;
 
 #[must_use]

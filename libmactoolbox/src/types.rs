@@ -95,6 +95,18 @@ impl MacString {
     }
 }
 
+impl Default for MacString {
+    fn default() -> Self {
+        Self::Std(<_>::default())
+    }
+}
+
+impl From<&str> for MacString {
+    fn from(s: &str) -> Self {
+        Self::Std(s.to_string())
+    }
+}
+
 impl PartialEq<&str> for MacString {
     fn eq(&self, other: &&str) -> bool {
         match self {

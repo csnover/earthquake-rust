@@ -1,4 +1,9 @@
+mod manager;
+
+pub use manager::Manager;
+
 use libcommon::newtype_num;
+use derive_more::Constructor;
 
 newtype_num! {
     /// A window definition ID.
@@ -12,7 +17,7 @@ newtype_num! {
     /// The variation codes are arbitrary according to the window definition
     /// being used and are passed as an argument to the window definition
     /// function.
-    #[derive(Debug)]
+    #[derive(Constructor, Debug)]
     pub struct Kind(i16);
 }
 
@@ -65,5 +70,5 @@ impl Kind {
     pub const ROUNDED_DOCUMENT: Self = Self(16);
 }
 /// A colour window record.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CWindowRecord;

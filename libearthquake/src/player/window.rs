@@ -1,23 +1,18 @@
-use libcommon::{Unk32, Unk8};
-use libmactoolbox::{events::EventRecord, quickdraw::{Rect, Region}, types::MacString, windows::{CWindowRecord, Kind}};
+use libmactoolbox::{quickdraw::Rect, types::MacString, windows::{CWindowRecord, Kind}};
 use std::rc::Rc;
 use super::{movie::Movie, score::Score};
 
 #[derive(Debug, Default)]
-struct LingoXObjectArg;
-#[derive(Debug, Default)]
 struct LingoWindow;
 
-type WindowProc = fn(i32, &[LingoXObjectArg], i16, &Window);
-type EventHandlerProc = fn(&Window, &EventRecord, &Region);
-
+#[derive(Debug)]
 pub struct Window {
-    proc: &'static WindowProc,
-    event_handler: &'static EventHandlerProc,
+    // Original Director allowed different window procedure and event handlers
+    // but always used the same one.
     // A pointer to the window record is normally here, but it’s not needed
     // since the window record is also owned by this object and storing the
     // pointer seems to have just been an optimisation.
-    field_c: Unk32,
+    // There was also an unreferenced 32-bit field.
     /// The OS window record for this window.
     window_record: Option<CWindowRecord>,
     /// The Lingo window object for this window.
@@ -38,36 +33,39 @@ pub struct Window {
     /// to use the plain dialogue box ID.
     window_kind: Kind,
     title_visible: bool,
-    field_47: Unk8,
+    movie_loaded: bool,
     owns_score_maybe: bool,
-    field_49: Unk8,
+    movie_started: bool,
     is_modal: bool,
     // padding byte
 }
 
-// Cannot derive due to the function pointers:
-// https://github.com/rust-lang/rust/issues/70263
-impl core::fmt::Debug for Window {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Window")
-            .field("proc", &(*self.proc as *const ()))
-            .field("event_handler", &(*self.event_handler as *const ()))
-            .field("field_c", &self.field_c)
-            .field("window_record", &self.window_record)
-            .field("lingo_window", &self.lingo_window)
-            .field("movie", &self.movie)
-            .field("score", &self.score)
-            .field("file_name", &self.file_name)
-            .field("window_title", &self.window_title)
-            .field("clip_rect_maybemaybe", &self.clip_rect_maybemaybe)
-            .field("source_rect", &self.source_rect)
-            .field("draw_rect", &self.draw_rect)
-            .field("window_kind", &self.window_kind)
-            .field("title_visible", &self.title_visible)
-            .field("field_47", &self.field_47)
-            .field("owns_score_maybe", &self.owns_score_maybe)
-            .field("field_49", &self.field_49)
-            .field("is_modal", &self.is_modal)
-            .finish()
+impl Window {
+    // RE: Window_New
+    pub fn new(title: Option<MacString>, lingo_window: LingoWindow) -> Self {
+        // OD: Hack here to return whatever window was in the global Movie
+        // object if no title, but the only caller that does that has its own
+        // guard, so it is not necessary.
+
+        // OD: After construction, if there was no title, the code would set the
+        // pointer to the window record to the global movie’s graphics port and
+        // would set the draw rect to the default stage rect.
+        Self {
+            window_record: <_>::default(),
+            lingo_window,
+            movie: None,
+            score: None,
+            file_name: <_>::default(),
+            window_title: title.unwrap_or_default(),
+            clip_rect_maybemaybe: <_>::default(),
+            source_rect: <_>::default(),
+            draw_rect: <_>::default(),
+            window_kind: Kind::new(-1),
+            title_visible: true,
+            movie_loaded: false,
+            owns_score_maybe: false,
+            movie_started: false,
+            is_modal: false,
+        }
     }
 }
