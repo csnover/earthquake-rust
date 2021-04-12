@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::{movie::Movie, score::Score};
 
 #[derive(Debug, Default)]
-struct LingoWindow;
+pub struct LingoWindow;
 
 #[derive(Debug)]
 pub struct Window {

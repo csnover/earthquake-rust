@@ -2,6 +2,7 @@ use binrw::BinRead;
 use crate::player::score::{Palette, Tempo};
 use libcommon::{bitflags, bitflags::BitFlags, newtype_num, io::prelude::*, prelude::*};
 use libmactoolbox::{quickdraw::{PaletteIndex, Rect}, typed_resource};
+use num_derive::FromPrimitive;
 use smart_default::SmartDefault;
 use super::cast::{MemberId, MemberNum};
 
@@ -10,7 +11,7 @@ newtype_num! {
     pub struct LegacyTempo(u8);
 }
 
-#[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
+#[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 #[br(big, repr(i16))]
 pub enum Platform {
     #[default]

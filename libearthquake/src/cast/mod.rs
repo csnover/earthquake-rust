@@ -1,17 +1,20 @@
-use crate::{fonts::Map as ExtendedFontMap, resources::config::Platform};
+use crate::{collections::riff::Riff, fonts::Source as ExtendedFontMap, resources::{cast::{Library, MemberNum}, config::{Platform, Version}}};
 use libcommon::prelude::*;
+use libmactoolbox::types::MacString;
+use std::{path::PathBuf, rc::Rc};
 
-struct MemberNumLookup {
+struct List51b698ItemLut {
     next_free_num: MemberNum,
-    next_free_maybe_index: usize,
-    // Index is cast member number, value is index in library.
+    next_free_maybe_index: Unk32,
+    // Index is cast member number, value is index in library. Library is
+    // 1-indexed just to make stuff extra confusing.
     lookup: Vec<usize>,
 }
 
 struct List51b698ItemC {
     // Source should probably be a dyn ResourceSource since it cannot be a Riff
     // for D3
-    source: Option<Rc<Riff>>,
+//    source: Option<Rc<Riff>>,
     list_511a5c_num: i32,
     vwcf_version: Version,
     font_map: Option<Rc<List51b698ItemCFontMap>>,
@@ -25,7 +28,7 @@ struct List51b698ItemCFontSizeMap {
 }
 
 struct List51b698ItemCFontMap {
-    fxmp: Option<Rc<FontMap>>,
+    fxmp: Option<Rc<ExtendedFontMap>>,
     fmap: UnkHnd, /* Fmap */
     font_size_maps: Vec<List51b698ItemCFontSizeMap>,
     current_platform_is_target: bool,
@@ -35,7 +38,7 @@ struct List51b698ItemCFontMap {
 
 struct List51b698Item {
     members: Library,
-    cast_num_to_index: MemberNumLookup,
+    cast_num_to_index: List51b698ItemLut,
     field_c: List51b698ItemC,
     own_path: PathBuf,
     /// Original author’s file directory.

@@ -458,7 +458,7 @@ where
 
 impl <T> Dict<T>
 where
-    T: TryFrom<i32>,
+    T: TryFrom<i32> + 'static,
     T::Error: std::error::Error + Send + Sync + 'static,
 {
     /// Gets the key used by the given index.
@@ -492,3 +492,41 @@ where
 //         None
 //     }
 // }
+
+/// A serialized [`Dict`].
+#[derive(Clone, Debug, Deref, DerefMut)]
+pub struct SerializedDict<T>(Dict<T>)
+where
+    T: TryFrom<i32> + 'static,
+    T::Error: std::error::Error + Send + Sync + 'static,
+;
+
+impl <T> BinRead for SerializedDict<T>
+where
+    T: TryFrom<i32> + 'static,
+    T::Error: std::error::Error + Send + Sync + 'static,
+{
+    type Args = ();
+
+    fn read_options<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, options: &binrw::ReadOptions, args: Self::Args) -> binrw::BinResult<Self> {
+        restore_on_error(input, |input, pos| {
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
+
+            let size = input.bytes_left()?;
+            let (dict_size, keys_size) = <(u32, u32)>::read_options(input, &options, args)?;
+            let expected_size = u64::from(dict_size + keys_size);
+            if expected_size > size {
+                return Err(binrw::Error::AssertFail {
+                    pos,
+                    message: format!("Bad Dict size at {} ({} > {})", pos, expected_size, size)
+                });
+            }
+
+            let (mut dict, keys) = <(Dict<T>, ByteVec)>::read_options(input, &options, args)?;
+            dict.keys_mut().replace(keys);
+
+            Ok(Self(dict))
+        })
+    }
+}

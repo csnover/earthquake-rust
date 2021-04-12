@@ -1,4 +1,4 @@
-use crate::{fonts::Map as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
+use crate::{fonts::Source as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
 use binrw::derive_binread;
 use libcommon::{Unk16, Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
