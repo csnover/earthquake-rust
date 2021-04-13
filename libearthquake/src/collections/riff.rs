@@ -172,8 +172,16 @@ impl<T: Reader> Riff<T> {
         self.load_chunk_args::<R>(index, R::Args::default())
     }
 
+    // OD set different error codes for when index was -1, out of range, or the
+    // invalid flag was set on a chunk, but since all values were just used as a
+    // boolean error/no error by application logic, it’s simpler to just
+    // collapse these errors into a single one.
     pub fn load_chunk_args<R: BinRead + 'static>(&self, index: ChunkIndex, args: R::Args) -> Result<Rc<R>> {
         let entry = self.memory_map.get(index).ok_or(Error::BadIndex(index))?;
+
+        if entry.flags.contains(MemoryMapFlags::INVALID) {
+            return Err(Error::BadIndex(index));
+        }
 
         if let Some(data) = entry.data.borrow().as_data().and_then(Weak::upgrade) {
             return data.downcast::<R>()
@@ -217,6 +225,10 @@ impl<T: Reader> Riff<T> {
     pub fn load_riff(&self, index: ChunkIndex) -> Result<Self> {
         let entry = self.memory_map.get(index).ok_or(Error::BadIndex(index))?;
 
+        if entry.flags.contains(MemoryMapFlags::INVALID) {
+            return Err(Error::BadIndex(index));
+        }
+
         let mut input = self.input.borrow_mut().clone();
         input.seek(SeekFrom::Start(entry.offset.into()))
             .map_err(|error| Error::SeekFailure(index, entry.offset, error))?;
@@ -229,7 +241,7 @@ impl<T: Reader> Riff<T> {
         entry.os_type = b"free".into();
         entry.size = 0;
         entry.offset = 0;
-        entry.flags = MemoryMapFlags::VALID | MemoryMapFlags::FREE;
+        entry.flags = MemoryMapFlags::INVALID | MemoryMapFlags::FREE;
         entry.field_e = 0;
         entry.data.replace(ChunkData::Free { next_free: next_free_index });
         self.memory_map.next_free_index = index;
@@ -239,7 +251,7 @@ impl<T: Reader> Riff<T> {
         let next_junk_index = self.memory_map.next_junk_index;
         let entry = &mut self.memory_map[index];
         entry.os_type = b"junk".into();
-        entry.flags = MemoryMapFlags::VALID;
+        entry.flags = MemoryMapFlags::INVALID;
         entry.field_e = 0;
         entry.data.replace(ChunkData::Free { next_free: next_junk_index });
         self.memory_map.next_junk_index = index;
@@ -391,7 +403,7 @@ impl<T: Reader> Riff<T> {
             // as well just get the offset now.
             if resource_map_offset.is_none()
                 && os_type.as_bytes() == b"KEY*"
-                && !flags.contains(MemoryMapFlags::VALID)
+                && !flags.contains(MemoryMapFlags::INVALID)
             {
                 resource_map_offset = Some(offset);
             }
@@ -558,7 +570,7 @@ impl ::core::ops::IndexMut<ChunkIndex> for MemoryMap {
 bitflags! {
     struct MemoryMapFlags: u16 {
         const DIRTY = 1;
-        const VALID = 4;
+        const INVALID = 4;
         const FREE  = 8;
         const FLAG_20 = 0x20;
         const FLAG_40 = 0x40;

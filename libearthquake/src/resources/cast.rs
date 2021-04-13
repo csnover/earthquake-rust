@@ -268,9 +268,66 @@ type StructC_4a2dc0 = Vec<u8>;
 type StructD_439630 = Vec<u8>;
 
 pvec! {
+    /// Cast metadata.
+    ///
+    /// OsType: `'Cinf'`
+    #[derive(Clone, Debug)]
+    pub struct CastMetadata {
+        #[br(assert(header_size == 4, "unexpected Cinf header size {}", header_size))]
+        header_size = header_size;
+
+        header {}
+
+        offsets = offsets;
+
+        entries {
+            // entry 1 appears to contain a struct of
+            // { i16, i16, i16, i16, i32 }, and entry 2 appears to contain a
+            // struct of { i16, i16, i16, i16 }, but neither are used for
+            // playback
+            0..=2 => _,
+            /// For an external cast, the original file path.
+            3 => file_path: PString,
+            4..
+        }
+    }
+}
+typed_resource!(CastMetadata => b"Cinf");
+
+pvec! {
+    /// ???
+    ///
+    /// OsType: `'ccl '`
+    #[derive(Clone, Debug)]
+    pub struct Ccl {
+        #[br(assert(header_size == 4, "unexpected ccl header size {}", header_size))]
+        header_size = header_size;
+
+        header {}
+
+        offsets = offsets;
+
+        entries {
+            // TODO: This will not work properly if there are multiple entries
+            // with padding bytes
+            #[br(count(offsets.len()))]
+            _ => members: Vec<CclEntry>,
+        }
+    }
+}
+typed_resource!(Ccl => b"ccl ");
+
+#[derive(BinRead, Clone, Debug)]
+struct CclEntry {
+    list_51b69c_num: i16,
+    /// A path or name of a cast or movie.
+    path: PString,
+}
+
+pvec! {
     /// Cast member metadata.
     ///
-    /// OsType: `'Cinf'` `'VWCI'`
+    /// OsType: `'VWCI'`
     #[derive(Clone, Debug)]
     pub struct MemberMetadata {
         #[br(assert(header_size == 16 || header_size == 20, "unexpected VWCI header size {}", header_size))]
@@ -341,7 +398,7 @@ pvec! {
         }
     }
 }
-typed_resource!(MemberMetadata => b"Cinf" b"VWCI");
+typed_resource!(MemberMetadata => b"VWCI");
 
 bitflags! {
     // TODO: These are probably the `moreFlags` that are stuffed into the cast

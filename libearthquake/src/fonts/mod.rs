@@ -1,3 +1,3 @@
 mod map;
 
-pub use map::{Fmap, Source};
+pub use map::{Fmap, Map, Source};

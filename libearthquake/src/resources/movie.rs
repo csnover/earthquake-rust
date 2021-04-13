@@ -136,7 +136,7 @@ pvec! {
 
         entries {
             #[br(args(entries_per_cast, offsets.clone()), count(count))]
-            _  => members: CastListMembers,
+            _ => members: CastListMembers,
         }
     }
 }
