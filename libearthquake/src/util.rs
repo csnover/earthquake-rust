@@ -48,7 +48,7 @@ pub struct WinPString(Vec<u8>);
 
 impl WinPString {
     /// The maximum possible length of a string stored in this type.
-    const MAX_SIZE: usize = 261;
+    const MAX_SIZE: usize = 260;
 }
 
 impl core::fmt::Debug for WinPString {

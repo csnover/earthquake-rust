@@ -2,6 +2,7 @@ use core::{convert::TryFrom, iter::Rev};
 use super::NUM_SPRITES;
 
 // TODO: Eventually use some crate like bit_field or bitarray
+// TODO: Should be called ChannelBitmask
 #[derive(Clone, Copy, Default)]
 pub struct SpriteBitmask([ u8; SpriteBitmask::SIZE ]);
 

@@ -10,7 +10,7 @@ use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, t
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use smart_default::SmartDefault;
-use super::{bitmap::Properties as BitmapProps, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
+use super::{PVecOffsets, bitmap::Properties as BitmapProps, config::{Config, Version as ConfigVersion}, field::Properties as FieldProps, film_loop::Properties as FilmLoopProps, script::Properties as ScriptProps, shape::Properties as ShapeProps, text::Properties as TextProps, transition::Properties as TransitionProps, video::Properties as VideoProps, xtra::Properties as XtraProps};
 
 #[derive(Clone, Copy, Debug, SmartDefault)]
 enum LoadId {
@@ -295,7 +295,12 @@ pvec! {
 typed_resource!(CastMetadata => b"Cinf");
 
 pvec! {
-    /// ???
+    /// Cross-cast links.
+    ///
+    /// If a cast member in one cast references a cast member in another
+    /// cast (e.g. a bitmap palette, a Lingo `member of castLib`), the global
+    /// cast library numbers and paths to those other casts will be given in
+    /// this resource.
     ///
     /// OsType: `'ccl '`
     #[derive(Clone, Debug)]
@@ -308,19 +313,62 @@ pvec! {
         offsets = offsets;
 
         entries {
-            // TODO: This will not work properly if there are multiple entries
-            // with padding bytes
-            #[br(count(offsets.len()))]
-            _ => members: Vec<CclEntry>,
+            #[br(args(offsets.clone()))]
+            _ => links: CclEntries,
         }
     }
 }
 typed_resource!(Ccl => b"ccl ");
 
+#[derive(Clone, Debug, Deref, DerefMut)]
+pub struct CclEntries(Vec<CclEntry>);
+
+impl BinRead for CclEntries {
+    type Args = (PVecOffsets, );
+
+    fn read_options<R: Read + Seek>(reader: &mut R, options: &binrw::ReadOptions, (offsets, ): Self::Args) -> binrw::BinResult<Self> {
+        restore_on_error(reader, |reader, _| {
+            use binrw::error::Context;
+            let mut options = *options;
+            options.endian = binrw::Endian::Big;
+
+            let count = offsets.len();
+            let mut data = Vec::with_capacity(count);
+            for index in 0..count {
+                // In OD, it is actually expected that there will never be holes
+                // in the resource data.
+                if let Some(pad_size_to) = offsets.entry_size(index) {
+                    let pad_size_to = u64::from(pad_size_to);
+                    let pos = reader.pos()?;
+                    data.push(CclEntry::read_options(reader, &options, ())
+                        .context(|| format!("bad ccl entry {}", index))?);
+                    let bytes_read = reader.pos()? - pos;
+                    if bytes_read < pad_size_to {
+                        reader.skip(pad_size_to - bytes_read)?;
+                    }
+                } else {
+                    return Err(binrw::Error::AssertFail {
+                        pos: reader.pos()?,
+                        message: format!("unexpected sparse CclEntries; index {} is empty", index)
+                    });
+                }
+            }
+            Ok(Self(data))
+        })
+    }
+}
+
 #[derive(BinRead, Clone, Debug)]
-struct CclEntry {
-    list_51b69c_num: i16,
-    /// A path or name of a cast or movie.
+pub struct CclEntry {
+    /// The library number of a linked cast. If the value is zero, the cast
+    /// is an external cast.
+    // RE: This value is conditionally negated at runtime, which is very
+    // confusing. When this happens it seems to be that the CCL list changes
+    // and then it is trying to rediscover an internal cast by an external file
+    // name?
+    global_cast_lib_num: i16,
+    /// A path or name of an externally linked cast. Populated for internal
+    /// casts, but not used in that case.
     path: PString,
 }
 

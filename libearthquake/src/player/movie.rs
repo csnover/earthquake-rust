@@ -464,7 +464,7 @@ pub struct Movie {
     #[default(Tick::now())]
     idle_handler_next_tick: Tick,
 
-    list_51b69c_num: Unk16, /* own 51b69c num? */
+    global_movie_list_num: i16,
 
     /// A counter for limiting reentry into `enterFrame` events.
     in_enter_frame_count: i16,

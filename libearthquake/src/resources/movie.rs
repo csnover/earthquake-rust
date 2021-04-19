@@ -115,7 +115,7 @@ pvec! {
     ///
     /// OsType: `'MCsL'`
     /// RE: `MovieCastList`
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct CastList {
         #[br(assert(header_size == 12, "unexpected MCsL header size {}", header_size))]
         header_size = header_size;
@@ -142,7 +142,7 @@ pvec! {
 }
 typed_resource!(CastList => b"MCsL");
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deref, DerefMut)]
 pub struct CastListMembers(Vec<Cast>);
 
 impl BinRead for CastListMembers {
@@ -193,7 +193,7 @@ pub enum Preload {
 ///
 /// `name`, `path`, `base_resource_num`, `global_cast_id`, `preload`,
 /// `min_cast_num`, `max_cast_num`, `is_external`, `is_global_cast_locked`,
-/// `field_16`, <padding byte>.
+/// `tried_to_load_via_ccl`, <padding byte>.
 ///
 /// RE: `MovieCast`
 #[derive(BinRead, Clone, Debug, Default)]
@@ -235,7 +235,7 @@ pub struct Cast {
     #[br(default)]
     is_global_cast_locked: bool,
     #[br(default)]
-    field_16: bool,
+    tried_to_load_via_ccl: bool,
 }
 
 // Director 5 Update Movies writes garbage into the preload field of the
