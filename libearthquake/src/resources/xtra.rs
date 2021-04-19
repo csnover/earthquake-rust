@@ -3,7 +3,7 @@ use crate::util::RawString;
 
 #[derive(BinRead, Clone, Debug)]
 #[br(big, import(size: u32))]
-pub struct Properties {
+pub(super) struct Properties {
     // TODO: Load function should receive the global symbol table and be
     // converted to a symbol number instead of storing the name
     #[br(assert(size >= name_size + 4, "Xtra properties symbol name too big ({} < {})", size - 4, name_size))]

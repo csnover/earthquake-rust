@@ -12,7 +12,7 @@ use super::riff::{ChunkIndex, Riff, Result as RiffResult};
 /// An index entry for a file embedded within a [`RiffContainer`].
 #[derive(BinRead, Copy, Clone, Debug, Eq, PartialEq, SmartDefault)]
 #[br(repr(u32))]
-pub enum ChunkFileKind {
+pub(crate) enum ChunkFileKind {
     #[default]
     Movie,
     Cast,
@@ -20,7 +20,7 @@ pub enum ChunkFileKind {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ChunkFile {
+pub(crate) struct ChunkFile {
     /// The index of the chunk containing the file.
     chunk_index: ChunkIndex,
     /// The kind of the file.
@@ -28,11 +28,11 @@ pub struct ChunkFile {
 }
 
 impl ChunkFile {
-    pub fn chunk_index(&mut self) -> ChunkIndex {
+    pub(crate) fn chunk_index(&mut self) -> ChunkIndex {
         self.chunk_index
     }
 
-    pub fn kind(&mut self) -> ChunkFileKind {
+    pub(crate) fn kind(&mut self) -> ChunkFileKind {
         self.kind
     }
 }
@@ -62,7 +62,7 @@ impl BinRead for ChunkFile {
 }
 
 #[derive(BinRead, Clone, Debug, Deref, DerefMut)]
-pub struct Dict(SerializedDict<usize>);
+pub(crate) struct Dict(SerializedDict<usize>);
 typed_resource!(Dict => b"Dict");
 
 /// A RIFF file used as a container for other files.
@@ -77,7 +77,7 @@ typed_resource!(Dict => b"Dict");
 /// Starting in Director 6 (TODO: maybe 7? check this), the container was
 /// extended to also include binary Xtras.
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct RiffContainer<T: Reader> {
+pub(crate) struct RiffContainer<T: Reader> {
     riff: Rc<Riff<T>>,
     #[deref] #[deref_mut]
     file_list: StdList<ChunkFile>,
@@ -85,7 +85,7 @@ pub struct RiffContainer<T: Reader> {
 }
 
 impl <T: Reader> RiffContainer<T> {
-    pub fn new(input: T) -> AResult<Self> {
+    pub(crate) fn new(input: T) -> AResult<Self> {
         let riff = Riff::new(input).context("Bad RIFF container")?;
         let file_list = riff.load_chunk::<StdList<ChunkFile>>(riff.first_of_kind(b"List")).context("Bad List chunk")?;
         let file_dict = riff.load_chunk::<Dict>(riff.first_of_kind(b"Dict")).context("Bad Dict chunk")?;
@@ -98,16 +98,16 @@ impl <T: Reader> RiffContainer<T> {
     }
 
     #[must_use]
-    pub fn filename(&self, index: usize) -> Option<&BStr> {
+    pub(crate) fn filename(&self, index: usize) -> Option<&BStr> {
         self.file_dict.0.key_by_index(index)
     }
 
     #[must_use]
-    pub fn kind(&self, index: usize) -> Option<ChunkFileKind> {
+    pub(crate) fn kind(&self, index: usize) -> Option<ChunkFileKind> {
         self.file_list.get(index).map(|i| i.kind)
     }
 
-    pub fn load_file(&self, index: usize) -> RiffResult<Riff<T>> {
+    pub(crate) fn load_file(&self, index: usize) -> RiffResult<Riff<T>> {
         self.riff.load_riff(self.file_list[index].chunk_index)
     }
 }

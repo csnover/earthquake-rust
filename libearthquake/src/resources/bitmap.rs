@@ -21,7 +21,7 @@ bitflags! {
 
 #[derive(BinRead, Clone, Copy)]
 #[br(big, import(size: u32), pre_assert(size == 22 || size == 26 || size == 28, "bad bitmap properties size ({})", size))]
-pub struct Properties {
+pub(super) struct Properties {
     #[br(assert(row_bytes & 0x7fff < 0x4000))]
     row_bytes: i16,
     bounds: Rect,
@@ -61,12 +61,12 @@ impl std::fmt::Debug for Properties {
 
 impl Properties {
     #[must_use]
-    pub fn is_pixmap(&self) -> bool {
+    pub(super) fn is_pixmap(&self) -> bool {
         self.row_bytes < 0
     }
 
     #[must_use]
-    pub fn row_bytes(&self) -> i16 {
+    pub(super) fn row_bytes(&self) -> i16 {
         self.row_bytes & 0x7fff
     }
 }

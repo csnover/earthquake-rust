@@ -6,7 +6,7 @@ use smart_default::SmartDefault;
 use super::{Tempo, Version};
 
 #[derive(Clone, Copy, Debug, SmartDefault)]
-pub enum Transition {
+pub(crate) enum Transition {
     #[default]
     None,
     Cast(MemberId),

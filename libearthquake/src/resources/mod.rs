@@ -1,18 +1,18 @@
 //! Type definitions for serialized resource data.
 
-pub mod bitmap;
-pub mod cast;
-pub mod config;
-pub mod field;
-pub mod film_loop;
-pub mod movie;
-pub mod script;
-pub mod shape;
-pub mod text;
-pub mod tile;
-pub mod transition;
-pub mod video;
-pub mod xtra;
+pub(super) mod bitmap;
+pub(super) mod cast;
+pub(super) mod config;
+pub(super) mod field;
+pub(super) mod film_loop;
+pub(super) mod movie;
+pub(super) mod script;
+pub(super) mod shape;
+pub(super) mod text;
+pub(super) mod tile;
+pub(super) mod transition;
+pub(super) mod video;
+pub(super) mod xtra;
 
 use binrw::{BinRead, derive_binread, io};
 use bstr::BStr;
@@ -29,7 +29,7 @@ use libcommon::{io::prelude::*, prelude::*};
 /// and [`dyn`] keyword for dynamic dispatch, this structure exists only for
 /// serialization.
 #[derive(Copy, Clone, Debug)]
-pub struct Rc;
+pub(super) struct Rc;
 
 impl BinRead for Rc {
     type Args = ();
@@ -63,7 +63,7 @@ impl ByteVecHeaderV5 {
 
 /// A contiguous growable byte array.
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct ByteVec(Vec<u8>);
+pub(super) struct ByteVec(Vec<u8>);
 
 impl BinRead for ByteVec {
     type Args = ();
@@ -85,7 +85,7 @@ impl BinRead for ByteVec {
     }
 }
 
-pub trait ListHeader: BinRead<Args = ()> + Clone + Copy + core::fmt::Debug {
+pub(super) trait ListHeader: BinRead<Args = ()> + Clone + Copy + core::fmt::Debug {
     const SIZE: u16;
 
     fn calc_size(&self) -> u64 {
@@ -100,7 +100,7 @@ pub trait ListHeader: BinRead<Args = ()> + Clone + Copy + core::fmt::Debug {
 }
 
 #[derive(BinRead, Clone, Copy, Debug)]
-pub struct ListHeaderV5 {
+pub(super) struct ListHeaderV5 {
     __: Rc,
     used: u32,
     capacity: u32,
@@ -126,14 +126,14 @@ impl ListHeader for ListHeaderV5 {
 
 /// A growable list of homogeneous items with a generic header.
 #[derive(Clone, Debug, Default, Deref, DerefMut)]
-pub struct List<Header: ListHeader, T: BinRead>(
+pub(super) struct List<Header: ListHeader, T: BinRead>(
     #[deref] #[deref_mut]
     Vec<T>,
     PhantomData<Header>
 );
 
 /// A standard growable list of homogenous items.
-pub type StdList<T> = List<ListHeaderV5, T>;
+pub(super) type StdList<T> = List<ListHeaderV5, T>;
 
 impl <Header: ListHeader, T: BinRead> BinRead for List<Header, T> {
     type Args = T::Args;
@@ -195,7 +195,7 @@ impl <Header: ListHeader, T: BinRead> BinRead for List<Header, T> {
 /// directly.
 #[derive_binread]
 #[derive(Clone, Debug)]
-pub struct PVecOffsets(
+pub(super) struct PVecOffsets(
     #[br(temp)]
     u16,
     #[br(count = self_0 + 1)]
@@ -205,14 +205,14 @@ pub struct PVecOffsets(
 impl PVecOffsets {
     /// Returns the offset of an entry from the beginning of the data area.
     #[must_use]
-    pub fn entry_offset(&self, index: usize) -> Option<u32> {
+    pub(super) fn entry_offset(&self, index: usize) -> Option<u32> {
         self.0.get(index).copied()
     }
 
     /// Returns the size of an entry, or None if no entry exists at the given
     /// index.
     #[must_use]
-    pub fn entry_size(&self, index: usize) -> Option<u32> {
+    pub(super) fn entry_size(&self, index: usize) -> Option<u32> {
         if index >= self.0.len() {
             None
         } else if index == self.0.len() - 1 {
@@ -226,7 +226,7 @@ impl PVecOffsets {
     ///
     /// If the range is out of bounds, it is automatically restricted.
     #[must_use]
-    pub fn entry_range_size<Range: std::ops::RangeBounds<usize>>(&self, range: Range) -> u32 {
+    pub(super) fn entry_range_size<Range: std::ops::RangeBounds<usize>>(&self, range: Range) -> u32 {
         let max = match range.end_bound() {
             std::ops::Bound::Included(value) => value + 1,
             std::ops::Bound::Excluded(value) => *value,
@@ -242,19 +242,19 @@ impl PVecOffsets {
 
     /// Returns whether or not an entry exists.
     #[must_use]
-    pub fn has_entry(&self, index: usize) -> bool {
+    pub(super) fn has_entry(&self, index: usize) -> bool {
         self.entry_size(index).unwrap_or(0) != 0
     }
 
     /// Returns `true` if there are no entries in `self`.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.0.len() == 1
     }
 
     /// Returns the number of entries.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.0.len() - 1
     }
 
@@ -264,7 +264,7 @@ impl PVecOffsets {
     /// This is a hack to work around the lack of generic associated types.
     #[allow(clippy::range_plus_one)]
     #[must_use]
-    pub fn slice(&self, at: usize, count: usize) -> Self {
+    pub(super) fn slice(&self, at: usize, count: usize) -> Self {
         // `+ 1` for the terminator entry
         Self(self.0[at..at + count + 1].to_vec())
     }
@@ -405,7 +405,7 @@ macro_rules! pvec {
 /// knowledge of the [`ByteVec`] object’s header size is needed to get the
 /// correct offset.
 #[derive(BinRead, Clone, Copy, Debug)]
-pub struct DictItem<T>
+pub(super) struct DictItem<T>
 where
     T: TryFrom<i32> + 'static,
     T::Error: std::error::Error + Send + Sync + 'static
@@ -417,7 +417,7 @@ where
 }
 
 #[derive(BinRead, Clone, Copy, Debug)]
-pub struct DictListHeaderV5(#[br(pad_after = 8)] ListHeaderV5);
+pub(super) struct DictListHeaderV5(#[br(pad_after = 8)] ListHeaderV5);
 
 impl ListHeader for DictListHeaderV5 {
     const SIZE: u16 = 0x1c;
@@ -445,7 +445,7 @@ impl ListHeader for DictListHeaderV5 {
 ///
 /// This is used by both `'Dict'` and `'Fmap'` resources.
 #[derive(BinRead, Clone, Debug, Index, IndexMut)]
-pub struct Dict<T>
+pub(super) struct Dict<T>
 where
     T: TryFrom<i32> + 'static,
     T::Error: std::error::Error + Send + Sync + 'static,
@@ -463,7 +463,7 @@ where
 {
     /// Gets the key used by the given index.
     #[must_use]
-    pub fn key_by_index(&self, index: usize) -> Option<&BStr> {
+    pub(super) fn key_by_index(&self, index: usize) -> Option<&BStr> {
         let keys = self.keys.as_ref()?;
         let offset = self.list.get(index)?.key_offset - usize::from(ByteVecHeaderV5::SIZE);
         let size = usize::unwrap_from(
@@ -472,18 +472,18 @@ where
         keys.get(offset + 4..offset + 4 + size).map(|b| b.into())
     }
 
-    pub fn keys_mut(&mut self) -> &mut Option<ByteVec> {
+    pub(super) fn keys_mut(&mut self) -> &mut Option<ByteVec> {
         &mut self.keys
     }
 }
 
 // TODO: You know, finish this
 // impl <Item: BinRead> Dict<Item> {
-//     pub fn get_by_key(&self, key: &OsString) -> Option<usize> {
+//     pub(super) fn get_by_key(&self, key: &OsString) -> Option<usize> {
 //         self.dict.get(key).copied()
 //     }
 
-//     pub fn index_of_key(&self, index: usize) -> Option<&OsString> {
+//     pub(super) fn index_of_key(&self, index: usize) -> Option<&OsString> {
 //         for (k, v) in &self.dict {
 //             if *v == index {
 //                 return Some(k)
@@ -495,7 +495,7 @@ where
 
 /// A serialized [`Dict`].
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct SerializedDict<T>(Dict<T>)
+pub(super) struct SerializedDict<T>(Dict<T>)
 where
     T: TryFrom<i32> + 'static,
     T::Error: std::error::Error + Send + Sync + 'static,

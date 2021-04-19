@@ -3,7 +3,7 @@ use libcommon::{bitflags, bitflags::BitFlags};
 use libmactoolbox::quickdraw::Rect;
 
 bitflags! {
-    pub struct Flags: u32 {
+    pub(super) struct Flags: u32 {
         /// Crop from the centre of the video instead of the top-left corner
         /// when cropping is enabled.
         const CROP_FROM_CENTER    = 0x1;
@@ -44,14 +44,14 @@ bitflags! {
 
 #[derive(BinRead, Clone, Copy)]
 #[br(big, import(size: u32), pre_assert(size == 12))]
-pub struct Properties {
+pub(super) struct Properties {
     bounds: Rect,
     flags: Flags,
 }
 
 impl Properties {
     #[must_use]
-    pub fn frame_rate(&self) -> u8 {
+    pub(super) fn frame_rate(&self) -> u8 {
         ((self.flags.bits() & Flags::FRAME_RATE.bits()) >> 24) as u8
     }
 }

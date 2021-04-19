@@ -10,16 +10,16 @@ use libcommon::UnkHnd;
 use super::vm::OpCode;
 
 #[derive(Clone, Debug)]
-pub struct List(Vec<Variant>);
+pub(super) struct List(Vec<Variant>);
 
 #[derive(Clone, Debug)]
-pub struct Point(List);
+pub(super) struct Point(List);
 
 #[derive(Clone, Debug)]
-pub struct Rect(List);
+pub(super) struct Rect(List);
 
 #[derive(Clone, Debug)]
-pub enum Variant {
+pub(super) enum Variant {
     Null,
     String(MacString),
     Void,
@@ -34,7 +34,7 @@ pub enum Variant {
     Float(f64),
 }
 
-pub enum Error {}
+pub(super) enum Error {}
 
 struct TellHandle;
 

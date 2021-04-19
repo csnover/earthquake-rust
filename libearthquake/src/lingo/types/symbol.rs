@@ -2,14 +2,14 @@ use libcommon::newtype_num;
 
 newtype_num! {
     #[derive(Debug)]
-    pub struct Symbol(i16);
+    pub(crate) struct Symbol(i16);
 }
 
 macro_rules! symbols {
     ($($name:ident = $value:literal),* $(,)?) => {
         #[allow(non_upper_case_globals)]
         impl Symbol {
-            $(pub const $name: Self = Self($value);)*
+            $(pub(crate) const $name: Self = Self($value);)*
         }
     }
 }

@@ -1,4 +1,4 @@
 mod compiler;
 mod parser;
-pub mod vm;
-pub mod types;
+pub(super) mod vm;
+pub(super) mod types;

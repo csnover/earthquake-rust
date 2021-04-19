@@ -8,7 +8,7 @@ use super::{
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 #[br(repr(u8))]
-pub enum Kind {
+pub(crate) enum Kind {
     Xtra = 0,
     WipeRight,
     WipeLeft,
@@ -65,7 +65,7 @@ pub enum Kind {
 }
 
 bitflags! {
-    pub struct Flags: u8 {
+    pub(super) struct Flags: u8 {
         /// Transition over the entire stage instead of just the changing area.
         const ENTIRE_STAGE = 1;
         /// Not an Xtra transition.
@@ -74,10 +74,10 @@ bitflags! {
 }
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct QuarterSeconds(pub u8);
+pub(crate) struct QuarterSeconds(pub(crate) u8);
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Milliseconds(pub i16);
+pub(crate) struct Milliseconds(i16);
 
 #[derive(BinRead, Clone, Debug)]
 #[br(big, import(size: u32, version: ConfigVersion))]
@@ -93,7 +93,7 @@ pub struct Milliseconds(pub i16);
 // files which would follow this code path to see what data is actually stored
 // there.
 #[br(pre_assert(size >= 6 && version >= ConfigVersion::V1214))]
-pub struct Properties {
+pub(super) struct Properties {
     legacy_duration: QuarterSeconds,
     #[br(assert(chunk_size > 0 && chunk_size <= 128))]
     chunk_size: u8,

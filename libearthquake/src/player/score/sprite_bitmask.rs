@@ -4,9 +4,9 @@ use super::NUM_SPRITES;
 // TODO: Eventually use some crate like bit_field or bitarray
 // TODO: Should be called ChannelBitmask
 #[derive(Clone, Copy, Default)]
-pub struct SpriteBitmask([ u8; SpriteBitmask::SIZE ]);
+pub(crate) struct SpriteBitmask([ u8; SpriteBitmask::SIZE ]);
 
-pub struct BitIter<'owner> {
+pub(crate) struct BitIter<'owner> {
     owner: &'owner SpriteBitmask,
     index: usize,
 }
@@ -45,68 +45,68 @@ impl <'owner> DoubleEndedIterator for BitIter<'owner> {
 }
 
 impl SpriteBitmask {
-    pub(super) const NUM_NON_SPRITE_CHANNELS: usize = 6;
-    pub(super) const MIN_SPRITE: usize = Self::NUM_NON_SPRITE_CHANNELS;
-    pub(super) const MAX_SPRITE: usize = NUM_SPRITES + Self::NUM_NON_SPRITE_CHANNELS - 1;
+    pub(crate) const NUM_NON_SPRITE_CHANNELS: usize = 6;
+    pub(crate) const MIN_SPRITE: usize = Self::NUM_NON_SPRITE_CHANNELS;
+    pub(crate) const MAX_SPRITE: usize = NUM_SPRITES + Self::NUM_NON_SPRITE_CHANNELS - 1;
     const NUM_CHANNELS: usize = NUM_SPRITES + Self::NUM_NON_SPRITE_CHANNELS;
     const SIZE: usize = (Self::NUM_CHANNELS + 7) / 8;
 
-    pub(super) const SCRIPT: usize     = 0;
-    pub(super) const TEMPO: usize      = 1;
-    pub(super) const TRANSITION: usize = 2;
-    pub(super) const SOUND_2: usize    = 3;
-    pub(super) const SOUND_1: usize    = 4;
-    pub(super) const PALETTE: usize    = 5;
+    pub(crate) const SCRIPT: usize     = 0;
+    pub(crate) const TEMPO: usize      = 1;
+    pub(crate) const TRANSITION: usize = 2;
+    pub(crate) const SOUND_2: usize    = 3;
+    pub(crate) const SOUND_1: usize    = 4;
+    pub(crate) const PALETTE: usize    = 5;
 
     #[must_use]
-    pub fn all() -> Self {
+    pub(crate) fn all() -> Self {
         let mut bits = [ 0xFF; Self::SIZE ];
         bits[Self::SIZE - 1] &= u8::try_from((1_u16 << (Self::NUM_CHANNELS % 8)) - 1).unwrap();
         SpriteBitmask(bits)
     }
 
     #[must_use]
-    pub fn bits(&self) -> [ u8; Self::SIZE ] {
+    pub(crate) fn bits(&self) -> [ u8; Self::SIZE ] {
         self.0
     }
 
     #[must_use]
-    pub fn contains(&self, bit: usize) -> bool {
+    pub(crate) fn contains(&self, bit: usize) -> bool {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] & (1 << (bit % 8)) != 0
     }
 
     #[must_use]
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         SpriteBitmask::default()
     }
 
     #[must_use]
-    pub fn iter(&self) -> BitIter<'_> {
+    pub(crate) fn iter(&self) -> BitIter<'_> {
         BitIter { owner: self, index: 0 }
     }
 
-    pub fn iter_back(&self) -> Rev<BitIter<'_>> {
+    pub(crate) fn iter_back(&self) -> Rev<BitIter<'_>> {
         BitIter { owner: self, index: Self::NUM_CHANNELS }.rev()
     }
 
     #[must_use]
-    pub fn iter_sprites(&self) -> BitIter<'_> {
+    pub(crate) fn iter_sprites(&self) -> BitIter<'_> {
         BitIter { owner: self, index: Self::MIN_SPRITE }
     }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0 == [ 0; Self::SIZE ]
     }
 
-    pub fn remove(&mut self, bit: usize) -> &mut Self {
+    pub(crate) fn remove(&mut self, bit: usize) -> &mut Self {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] &= !(1 << (bit % 8));
         self
     }
 
-    pub fn set(&mut self, bit: usize) -> &mut Self {
+    pub(crate) fn set(&mut self, bit: usize) -> &mut Self {
         assert!(bit < Self::NUM_CHANNELS);
         self.0[bit / 8] |= 1 << (bit % 8);
         self

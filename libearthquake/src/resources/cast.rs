@@ -21,10 +21,10 @@ enum LoadId {
 
 /// A cast library.
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct Library(Vec<Member>);
+pub(crate) struct Library(Vec<Member>);
 
 impl Library {
-    pub fn from_resource_source(source: &impl ResourceSource, cast_num: impl Into<ResNum>) -> AResult<Self> {
+    pub(crate) fn from_resource_source(source: &impl ResourceSource, cast_num: impl Into<ResNum>) -> AResult<Self> {
         use anyhow::Context;
         let cast_num = cast_num.into();
         let config = source.load_num::<Config>(cast_num)?;
@@ -67,7 +67,7 @@ impl Library {
         Ok(Self(data))
     }
 
-    pub fn from_riff(riff: &Riff<impl Reader>, cast_num: impl Into<ResNum>) -> AResult<Self> {
+    pub(crate) fn from_riff(riff: &Riff<impl Reader>, cast_num: impl Into<ResNum>) -> AResult<Self> {
         use anyhow::Context;
         let cast_num = cast_num.into();
         let config = riff.load_num::<Config>(cast_num)?;
@@ -145,12 +145,23 @@ impl BinRead for CastRegistry {
 
 newtype_num! {
     #[derive(BinRead, Debug)]
-    pub struct LibNum(pub i16);
+    pub struct LibNum(i16);
+}
+
+impl LibNum {
+    /// Makes a new `LibNum` from an i16.
+    ///
+    /// This is a workaround to allow a generic constructor whilst also allowing
+    /// `LibNum` to be statically constructed.
+    #[must_use]
+    pub(crate) const fn from_raw(lib_num: i16) -> Self {
+        Self(lib_num)
+    }
 }
 
 newtype_num! {
     #[derive(BinRead, Debug)]
-    pub struct MemberNum(pub i16);
+    pub struct MemberNum(i16);
 }
 
 #[derive(BinRead, Clone, Copy, Default, Display, Eq, Ord, PartialEq, PartialOrd)]
@@ -173,13 +184,13 @@ impl MemberId {
     /// This is a workaround to allow a generic constructor whilst also allowing
     /// `OsType` to be statically constructed.
     #[must_use]
-    pub const fn from_raw(lib_num: i16, member_num: i16) -> Self {
+    pub(crate) const fn from_raw(lib_num: i16, member_num: i16) -> Self {
         Self(LibNum(lib_num), MemberNum(member_num))
     }
 
     /// A parser which will parse either a `MemberNum` or `MemberId` according
     /// to the given argument.
-    pub fn parse_num<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (is_id, ): (bool, )) -> binrw::BinResult<MemberId> {
+    pub(super) fn parse_num<R: Read + Seek>(input: &mut R, options: &binrw::ReadOptions, (is_id, ): (bool, )) -> binrw::BinResult<MemberId> {
         if is_id {
             Self::read_options(input, options, ())
         } else {
@@ -188,20 +199,20 @@ impl MemberId {
     }
 
     #[must_use]
-    pub fn lib(self) -> LibNum {
+    pub(super) fn lib(self) -> LibNum {
         self.0
     }
 
-    pub fn lib_mut(&mut self) -> &mut LibNum {
+    pub(super) fn lib_mut(&mut self) -> &mut LibNum {
         &mut self.0
     }
 
     #[must_use]
-    pub fn num(self) -> MemberNum {
+    pub(super) fn num(self) -> MemberNum {
         self.1
     }
 
-    pub fn num_mut(&mut self) -> &mut MemberNum {
+    pub(super) fn num_mut(&mut self) -> &mut MemberNum {
         &mut self.1
     }
 }
@@ -223,7 +234,7 @@ impl From<MemberNum> for MemberId {
 /// OsType: `'CAS*'`
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct CastMap(Vec<ChunkIndex>);
+pub(super) struct CastMap(Vec<ChunkIndex>);
 typed_resource!(CastMap => b"CAS*");
 
 impl BinRead for CastMap {
@@ -272,7 +283,7 @@ pvec! {
     ///
     /// OsType: `'Cinf'`
     #[derive(Clone, Debug)]
-    pub struct CastMetadata {
+    pub(crate) struct CastMetadata {
         #[br(assert(header_size == 4, "unexpected Cinf header size {}", header_size))]
         header_size = header_size;
 
@@ -304,7 +315,7 @@ pvec! {
     ///
     /// OsType: `'ccl '`
     #[derive(Clone, Debug)]
-    pub struct Ccl {
+    pub(crate) struct Ccl {
         #[br(assert(header_size == 4, "unexpected ccl header size {}", header_size))]
         header_size = header_size;
 
@@ -321,7 +332,7 @@ pvec! {
 typed_resource!(Ccl => b"ccl ");
 
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct CclEntries(Vec<CclEntry>);
+pub(crate) struct CclEntries(Vec<CclEntry>);
 
 impl BinRead for CclEntries {
     type Args = (PVecOffsets, );
@@ -359,7 +370,7 @@ impl BinRead for CclEntries {
 }
 
 #[derive(BinRead, Clone, Debug)]
-pub struct CclEntry {
+pub(crate) struct CclEntry {
     /// The library number of a linked cast. If the value is zero, the cast
     /// is an external cast.
     // RE: This value is conditionally negated at runtime, which is very
@@ -377,7 +388,7 @@ pvec! {
     ///
     /// OsType: `'VWCI'`
     #[derive(Clone, Debug)]
-    pub struct MemberMetadata {
+    pub(super) struct MemberMetadata {
         #[br(assert(header_size == 16 || header_size == 20, "unexpected VWCI header size {}", header_size))]
         header_size = header_size;
 
@@ -469,7 +480,7 @@ bitflags! {
 ///
 /// OsType: `'CASt'`
 #[derive(Clone, Debug, Default)]
-pub struct Member {
+pub(crate) struct Member {
     load_id: LoadId,
     next_free: i16,
     some_num_a: i16,
@@ -560,7 +571,7 @@ struct MemberHeaderV4 {
 
 #[derive(BinRead, Copy, Clone, Debug)]
 #[br(big)]
-pub struct MemberHeaderV5 {
+pub(super) struct MemberHeaderV5 {
     #[br(try_map = |kind: u32| MemberKind::from_u32(kind).ok_or(FromPrimitiveError("cast member kind", kind)))]
     kind: MemberKind,
     metadata_size: u32,
@@ -583,7 +594,7 @@ bitflags! {
 }
 
 #[derive(Clone, Copy, Debug, Display, FromPrimitive, SmartDefault)]
-pub enum MemberKind {
+pub(crate) enum MemberKind {
     #[default]
     None = 0,
     Bitmap,
@@ -620,7 +631,7 @@ impl MemberKind {
 }
 
 #[derive(Clone, Debug, SmartDefault)]
-pub enum MemberProperties {
+pub(super) enum MemberProperties {
     #[default]
     None,
     Bitmap(BitmapProps),

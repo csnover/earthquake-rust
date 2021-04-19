@@ -1,6 +1,6 @@
 pub mod movie;
-pub mod projector;
-pub mod projector_settings;
+pub(crate) mod projector;
+mod projector_settings;
 
 use anyhow::{anyhow, Context, Result as AResult};
 use binrw::io::SeekFrom;
@@ -38,9 +38,16 @@ pub enum FileType {
 }
 
 pub struct Detection<'vfs> {
-    pub info: FileType,
-    pub data_fork: Option<Box<dyn VirtualFile + 'vfs>>,
-    pub resource_fork: Option<Box<dyn VirtualFile + 'vfs>>,
+    pub(crate) info: FileType,
+    pub(crate) data_fork: Option<Box<dyn VirtualFile + 'vfs>>,
+    pub(crate) resource_fork: Option<Box<dyn VirtualFile + 'vfs>>,
+}
+
+impl <'vfs> Detection<'vfs> {
+    #[must_use]
+    pub fn info(&self) -> &FileType {
+        &self.info
+    }
 }
 
 pub fn detect(fs: &'_ dyn VirtualFileSystem, path: impl AsRef<Path>) -> AResult<Detection<'_>> {

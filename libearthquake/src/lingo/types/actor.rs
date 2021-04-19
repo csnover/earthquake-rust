@@ -2,7 +2,7 @@ use crate::resources::Rc;
 use libcommon::{Unk16, Unk8};
 
 #[derive(Debug)]
-pub struct Actor {
+pub(crate) struct Actor {
     __: Rc,
     field_8: Unk8,
     field_a: Unk16,

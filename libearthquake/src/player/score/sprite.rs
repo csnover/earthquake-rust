@@ -9,7 +9,7 @@ use super::Version;
 
 #[derive(BinRead, Copy, Clone, Debug, Eq, PartialEq, SmartDefault)]
 #[br(repr(u8))]
-pub enum Kind {
+pub(crate) enum Kind {
     #[default]
     None = 0,
     Bitmap,
@@ -36,7 +36,7 @@ pub enum Kind {
 
 bitflags! {
     #[derive(Default)]
-    pub struct LineSize: u8 {
+    pub(super) struct LineSize: u8 {
         const LINE_SIZE = 0xf;
         const BLEND     = 0x10;
         const FLAG_20   = 0x20;
@@ -48,7 +48,7 @@ bitflags! {
 
 bitflags! {
     #[derive(Default)]
-    pub struct Ink: u8 {
+    pub(super) struct Ink: u8 {
         const INK_KIND = 0x3f;
         const TRAILS   = 0x40;
         const STRETCH  = 0x80;
@@ -57,7 +57,7 @@ bitflags! {
 
 bitflags! {
     #[derive(Default)]
-    pub struct ScoreColor: u8 {
+    pub(crate) struct ScoreColor: u8 {
         const COLOR    = 0xf;
         const FLAG_10  = 0x10;
         const FLAG_20  = 0x20;
@@ -156,7 +156,7 @@ impl From<SpriteV4> for SpriteV5 {
 
 #[derive(BinRead, Clone, Copy, Default)]
 #[br(big, import(version: Version))]
-pub struct SpriteV5 {
+pub(crate) struct SpriteV5 {
     #[br(map = |kind: Kind| if version == Version::V7 { kind } else { fix_v0_v6_sprite_kind(kind) })]
     kind: Kind,
     ink_and_flags: Ink,
@@ -175,109 +175,109 @@ pub struct SpriteV5 {
 
 #[derive(Clone, Copy, Default, Deref, DerefMut, From)]
 #[from(forward)]
-pub struct Sprite(SpriteV5);
+pub(crate) struct Sprite(SpriteV5);
 
 impl Sprite {
     pub(super) const V0_SIZE: u16 = 20;
     pub(super) const V5_SIZE: u16 = 24;
 
     #[must_use]
-    pub fn back_color_index(&self) -> u8 {
+    pub(crate) fn back_color_index(&self) -> u8 {
         self.back_color_index
     }
 
     #[must_use]
-    pub fn blend(&self) -> bool {
+    pub(crate) fn blend(&self) -> bool {
         self.line_size_and_flags.contains(LineSize::BLEND)
     }
 
     #[must_use]
-    pub fn blend_amount(&self) -> u8 {
+    pub(crate) fn blend_amount(&self) -> u8 {
         self.blend_amount
     }
 
     #[must_use]
-    pub fn editable(&self) -> bool {
+    pub(crate) fn editable(&self) -> bool {
         self.score_color_and_flags.contains(ScoreColor::EDITABLE)
     }
 
     #[must_use]
-    pub fn fore_color_index(&self) -> u8 {
+    pub(crate) fn fore_color_index(&self) -> u8 {
         self.fore_color_index
     }
 
     #[must_use]
-    pub fn height(&self) -> i16 {
+    pub(crate) fn height(&self) -> i16 {
         self.height
     }
 
     #[must_use]
-    pub fn id(&self) -> MemberId {
+    pub(crate) fn id(&self) -> MemberId {
         self.id
     }
 
     #[must_use]
-    pub fn ink(&self) -> Pen {
+    pub(crate) fn ink(&self) -> Pen {
         Pen::from_u8((self.ink_and_flags & Ink::INK_KIND).bits()).unwrap()
     }
 
     #[must_use]
-    pub fn kind(&self) -> Kind {
+    pub(crate) fn kind(&self) -> Kind {
         self.kind
     }
 
     #[must_use]
-    pub fn line_size(&self) -> u8 {
+    pub(crate) fn line_size(&self) -> u8 {
         (self.line_size_and_flags & LineSize::LINE_SIZE).bits()
     }
 
     #[must_use]
-    pub fn moveable(&self) -> bool {
+    pub(crate) fn moveable(&self) -> bool {
         self.score_color_and_flags.contains(ScoreColor::MOVEABLE)
     }
 
     #[must_use]
-    pub fn origin(&self) -> Point {
+    pub(crate) fn origin(&self) -> Point {
         self.origin
     }
 
     #[must_use]
-    pub fn score_color(&self) -> u8 {
+    pub(crate) fn score_color(&self) -> u8 {
         (self.score_color_and_flags & ScoreColor::COLOR).bits()
     }
 
     #[must_use]
-    pub fn score_color_flags(&self) -> ScoreColor {
+    pub(crate) fn score_color_flags(&self) -> ScoreColor {
         self.score_color_and_flags & !ScoreColor::COLOR
     }
 
-    pub fn set_score_color_flags(&mut self, mut flags: ScoreColor) {
+    pub(crate) fn set_score_color_flags(&mut self, mut flags: ScoreColor) {
         flags &= !ScoreColor::COLOR;
         self.score_color_and_flags.remove(!ScoreColor::COLOR);
         self.score_color_and_flags |= flags;
     }
 
     #[must_use]
-    pub fn script(&self) -> MemberId {
+    pub(crate) fn script(&self) -> MemberId {
         self.script
     }
 
-    pub fn script_mut(&mut self) -> &mut MemberId {
+    pub(crate) fn script_mut(&mut self) -> &mut MemberId {
         &mut self.script
     }
 
     #[must_use]
-    pub fn stretch(&self) -> bool {
+    pub(crate) fn stretch(&self) -> bool {
         self.ink_and_flags.contains(Ink::STRETCH)
     }
 
     #[must_use]
-    pub fn trails(&self) -> bool {
+    pub(crate) fn trails(&self) -> bool {
         self.ink_and_flags.contains(Ink::TRAILS)
     }
 
     #[must_use]
-    pub fn width(&self) -> i16 {
+    pub(crate) fn width(&self) -> i16 {
         self.width
     }
 }

@@ -3,7 +3,7 @@ use smart_default::SmartDefault;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, SmartDefault)]
-pub enum Kind {
+pub(super) enum Kind {
     #[default]
     None,
     MouseDown,
@@ -34,7 +34,7 @@ pub enum Kind {
 
 // RE: `g_event_*`
 #[derive(Debug, SmartDefault)]
-pub struct Manager {
+pub(super) struct Manager {
     command_key_down: bool,
     control_key_down: bool,
     #[default(TickDuration::from_millis(333))]
@@ -75,7 +75,7 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         <_>::default()
     }
 }

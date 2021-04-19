@@ -4,7 +4,7 @@ use libmactoolbox::quickdraw::{Pixels, Rect, RgbColor};
 use super::config::Version as ConfigVersion;
 
 #[derive(BinRead, Clone, Copy, Eq, PartialEq)]
-pub struct Rgb24(u32);
+pub(super) struct Rgb24(u32);
 
 impl std::fmt::Debug for Rgb24 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -18,7 +18,7 @@ impl std::fmt::Debug for Rgb24 {
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
 #[br(repr(u8))]
-pub enum Frame {
+pub(super) enum Frame {
     Fit = 0,
     Scroll,
     Crop,
@@ -27,7 +27,7 @@ pub enum Frame {
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(version: ConfigVersion))]
 #[br(pre_assert(version >= ConfigVersion::V1217, "TODO: text member kind for < V1217"))]
-pub struct Properties {
+pub(super) struct Properties {
     bounds: Rect,
     rect_2: Rect,
     // TODO: Fallibly assert

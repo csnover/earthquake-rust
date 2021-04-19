@@ -7,7 +7,7 @@ use super::{Fps, Version};
 
 bitflags! {
     #[derive(Default)]
-    pub struct PaletteFlags: u8 {
+    pub(super) struct PaletteFlags: u8 {
         /// The palette transition will occur during the playback of the score,
         /// instead of in between frames of the score.
         const SPAN_FRAMES = 4;
@@ -30,7 +30,7 @@ bitflags! {
 
 newtype_num! {
     #[derive(BinRead, Debug)]
-    pub struct SignedPaletteIndex(i8);
+    pub(super) struct SignedPaletteIndex(i8);
 }
 
 impl From<SignedPaletteIndex> for PaletteIndex {
@@ -41,21 +41,21 @@ impl From<SignedPaletteIndex> for PaletteIndex {
 
 #[derive(Clone, Copy, Debug, Default, Deref, DerefMut, From)]
 #[from(forward)]
-pub struct Palette(PaletteV5);
+pub(crate) struct Palette(PaletteV5);
 
 impl Palette {
-    pub const SYSTEM_LIB: LibNum = LibNum(-1);
-    pub const SYSTEM_MAC: MemberId = MemberId::from_raw(-1, -1);
-    pub const RAINBOW: MemberId = MemberId::from_raw(-1, -2);
-    pub const GRAYSCALE: MemberId = MemberId::from_raw(-1, -3);
-    pub const PASTELS: MemberId = MemberId::from_raw(-1, -4);
-    pub const VIVID: MemberId = MemberId::from_raw(-1, -5);
-    pub const NTSC: MemberId = MemberId::from_raw(-1, -6);
-    pub const METALLIC: MemberId = MemberId::from_raw(-1, -7);
-    pub const VGA: MemberId = MemberId::from_raw(-1, -8);
-    pub const SYSTEM_WIN_DIR_4: MemberId = MemberId::from_raw(-1, -101);
-    pub const SYSTEM_WIN: MemberId = MemberId::from_raw(-1, -102);
-    pub const NOTHING: MemberId = MemberId::from_raw(-1, -200);
+    pub(crate) const SYSTEM_LIB: LibNum = LibNum::from_raw(-1);
+    pub(crate) const SYSTEM_MAC: MemberId = MemberId::from_raw(-1, -1);
+    pub(crate) const RAINBOW: MemberId = MemberId::from_raw(-1, -2);
+    pub(crate) const GRAYSCALE: MemberId = MemberId::from_raw(-1, -3);
+    pub(crate) const PASTELS: MemberId = MemberId::from_raw(-1, -4);
+    pub(crate) const VIVID: MemberId = MemberId::from_raw(-1, -5);
+    pub(crate) const NTSC: MemberId = MemberId::from_raw(-1, -6);
+    pub(crate) const METALLIC: MemberId = MemberId::from_raw(-1, -7);
+    pub(crate) const VGA: MemberId = MemberId::from_raw(-1, -8);
+    pub(crate) const SYSTEM_WIN_DIR_4: MemberId = MemberId::from_raw(-1, -101);
+    pub(crate) const SYSTEM_WIN: MemberId = MemberId::from_raw(-1, -102);
+    pub(crate) const NOTHING: MemberId = MemberId::from_raw(-1, -200);
 }
 
 impl BinRead for Palette {
@@ -79,7 +79,7 @@ impl BinRead for Palette {
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big)]
-pub struct PaletteV5 {
+pub(crate) struct PaletteV5 {
     id: MemberId,
     #[br(map = |num: i8| num.into())]
     rate: Fps,

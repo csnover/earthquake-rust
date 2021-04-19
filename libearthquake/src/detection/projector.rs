@@ -43,17 +43,17 @@ impl DetectionInfo {
     }
 
     #[must_use]
-    pub fn charset(&self) -> Option<ScriptCode> {
+    pub(crate) fn charset(&self) -> Option<ScriptCode> {
         self.charset
     }
 
     #[must_use]
-    pub fn is_mac_embedded(&self) -> bool {
+    pub(crate) fn is_mac_embedded(&self) -> bool {
         matches!(self.movie, Movie::Embedded(_))
     }
 
     #[must_use]
-    pub fn movie(&self) -> &Movie {
+    pub(crate) fn movie(&self) -> &Movie {
         &self.movie
     }
 
@@ -63,7 +63,7 @@ impl DetectionInfo {
     }
 
     #[must_use]
-    pub fn system_resources(&self) -> Option<&Vec<u8>> {
+    pub(crate) fn system_resources(&self) -> Option<&Vec<u8>> {
         self.system_resources.as_ref()
     }
 
@@ -74,14 +74,26 @@ impl DetectionInfo {
 }
 
 #[derive(Clone, Debug)]
-pub struct D3WinMovie {
-    pub filename: MacString,
-    pub offset: u32,
-    pub size: u32,
+pub(crate) struct D3WinMovie {
+    filename: MacString,
+    offset: u32,
+    size: u32,
+}
+
+impl D3WinMovie {
+    #[must_use]
+    pub(crate) fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    #[must_use]
+    pub(crate) fn size(&self) -> u32 {
+        self.offset
+    }
 }
 
 #[derive(Clone, Debug)]
-pub enum Movie {
+pub(crate) enum Movie {
     /// The number of movies embedded as resources in a Director 3 Mac
     /// projector.
     Embedded(u16),

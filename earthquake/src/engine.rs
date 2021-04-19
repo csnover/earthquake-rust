@@ -1,10 +1,10 @@
 use anyhow::{Context, Result as AResult};
 use cpp_core::{NullPtr, Ptr};
-use crate::{player::Player, qt::EQApplication, qt::EventReceiver, qtr, tr};
+use crate::{qt::EQApplication, qt::EventReceiver, qtr, tr};
 use fluent_ergonomics::FluentErgo;
 use libcommon::{ReasonsExt, vfs::VirtualFileSystem};
-use libearthquake::detection::Detection;
-use libmactoolbox::{events::{EventKind, EventData}, intl::ScriptCode, quickdraw::Point};
+use libearthquake::{detection::Detection, player::Player};
+use libmactoolbox::{System, events::{EventKind, EventData}, intl::ScriptCode, quickdraw::Point};
 use std::{path::PathBuf, rc::{Weak, Rc}};
 use qt_core::{QCoreApplication, QEvent, q_event::Type as QEventType, qs};
 use qt_gui::QKeyEvent;
@@ -34,8 +34,6 @@ pub(crate) struct Engine<'vfs> {
     app: Ptr<EQApplication>,
     localizer: FluentErgo,
 
-    charset: Option<ScriptCode>,
-
     // TODO: You know, finish this file and then remove this dead_code override
     #[allow(dead_code)]
     data_dir: Option<PathBuf>,
@@ -49,6 +47,7 @@ pub(crate) struct Engine<'vfs> {
 
     // IT SHOULD NOT BE NECESSARY TO USE AN Rc HERE.
     vfs: Rc<dyn VirtualFileSystem + 'vfs>,
+    system: System<'vfs>,
 }
 
 impl <'vfs> Engine<'vfs> {
@@ -62,7 +61,7 @@ impl <'vfs> Engine<'vfs> {
     ) -> Self {
         Self {
             app,
-            charset,
+            system: System::new(vfs.clone(), charset.unwrap_or(ScriptCode::Roman), None).unwrap(),
             data_dir,
             files: files.into_iter(),
             player: None,
@@ -83,10 +82,11 @@ impl <'vfs> Engine<'vfs> {
 
     fn load_next(&mut self) -> AResult<()> {
         if let Some((path, detection)) = self.files.next() {
-            self.player = Some(Player::new(self.vfs.clone(), self.charset, detection, self.next_movie_event_kind).with_context(|| {
-                tr!(self.localizer, "engine-load_next_error", [ "file_path" => path ])
-            })?);
-            self.player.as_mut().unwrap().exec()?;
+            // TODO:
+            // self.player = Some(Player::new(self.vfs.clone(), self.charset, detection, self.next_movie_event_kind).with_context(|| {
+            //     tr!(self.localizer, "engine-load_next_error", [ "file_path" => path ])
+            // })?);
+            // self.player.as_mut().unwrap().exec()?;
         } else {
             println!("Thank you for playing Wing Commander!");
             unsafe { QCoreApplication::quit(); }
@@ -133,11 +133,12 @@ impl <'vfs> EventReceiver for Engine<'vfs> {
 
             _ if e == self.next_movie_event_kind => {
                 if let Some(player) = &mut self.player {
-                    let loaded = player.next()
-                        .unwrap_or_else(|ref e| { self.show_error(e); false });
-                    if !loaded {
-                        self.load_next().unwrap_or_else(|ref e| self.show_error(e));
-                    }
+                    // TODO:
+                    // let loaded = player.next()
+                    //     .unwrap_or_else(|ref e| { self.show_error(e); false });
+                    // if !loaded {
+                    //     self.load_next().unwrap_or_else(|ref e| self.show_error(e));
+                    // }
                     true
                 } else {
                     false

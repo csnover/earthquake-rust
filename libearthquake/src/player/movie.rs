@@ -1,6 +1,6 @@
 use crate::{fonts::Source as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
 use binrw::derive_binread;
-use libcommon::{Unk16, Unk8, UnkHnd, UnkPtr, bitflags};
+use libcommon::{Unk8, UnkHnd, UnkPtr, bitflags};
 use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
@@ -8,7 +8,7 @@ use super::{score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Palette, Score, Spri
 
 bitflags! {
     #[derive(Default)]
-    pub struct ModifiedFlags: u8 {
+    pub(crate) struct ModifiedFlags: u8 {
         /// A new cast library was added.
         const ADDED_CAST    = 1;
         /// An existing cast library was modified.
@@ -105,7 +105,7 @@ struct Labels {
 typed_resource!(Labels => b"VWLB");
 
 #[derive(Debug, SmartDefault)]
-pub struct Movie {
+pub(super) struct Movie {
     /// The list of cast libraries loaded by this movie. The first entry is
     /// always the movie’s own internal cast.
     libraries: Vec<Cast>,

@@ -16,7 +16,6 @@
 
 mod engine;
 mod loader;
-mod player;
 mod qt;
 
 use anyhow::Result as AResult;

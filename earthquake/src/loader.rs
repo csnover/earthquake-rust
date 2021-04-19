@@ -605,7 +605,7 @@ impl Loader {
         } else {
             match detect(&*self.vfs, &std_path) {
                 Ok(d) => {
-                    match &d.info {
+                    match &d.info() {
                         FileType::Projector(info) => {
                             // TODO: Use unwrap_or_else like a proper code
                             let name = info.name().map(MacString::to_str_lossy);

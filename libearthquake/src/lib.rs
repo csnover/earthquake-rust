@@ -15,16 +15,17 @@
 
 #[macro_use]
 mod macros;
-pub mod cast;
-pub mod collections;
+pub(crate) mod cast;
+pub(crate) mod collections;
+pub mod debug;
 pub mod detection;
-pub mod event;
-pub mod fonts;
-pub mod lingo;
+pub(crate) mod event;
+pub(crate) mod fonts;
+pub(crate) mod lingo;
 pub mod player;
 pub mod resources;
-pub mod sound;
-pub mod util;
+pub(crate) mod sound;
+pub(crate) mod util;
 
 #[must_use]
 pub fn name(with_version: bool) -> String {

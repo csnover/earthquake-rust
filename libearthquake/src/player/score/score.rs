@@ -8,7 +8,7 @@ use super::{Fps, Frame, FrameNum, NUM_SPRITES, Palette, Score1494, Stream, Sprit
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u16 {
+    pub(super) struct Flags: u16 {
         /// Any updates to the score during authoring should not be displayed
         /// on the stage.
         const UPDATE_LOCK              = 1;
@@ -25,7 +25,7 @@ bitflags! {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, SmartDefault)]
-pub struct Score {
+pub(crate) struct Score {
     #[default(ScoreHeaderV5::SIZE)]
     current_frame_vwsc_position: u32,
     next_frame_vwsc_position: u32,

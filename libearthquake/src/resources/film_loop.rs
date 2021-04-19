@@ -3,7 +3,7 @@ use libcommon::{Unk16, bitflags};
 use libmactoolbox::quickdraw::Rect;
 
 bitflags! {
-    pub struct Flags: u32 {
+    pub(super) struct Flags: u32 {
         /// Crop from the centre of the film loop instead of the top-left corner
         /// when cropping is enabled.
         const CROP_FROM_CENTER    = 0x1;
@@ -22,7 +22,7 @@ bitflags! {
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big, import(size: u32), pre_assert(size == 14))]
-pub struct Properties {
+pub(super) struct Properties {
     bounds: Rect,
     flags: Flags,
     field_14: Unk16,

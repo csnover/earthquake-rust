@@ -10,14 +10,14 @@ mod tempo;
 mod text_editor;
 mod transition;
 
-pub use frame::Frame;
-pub use palette::Palette;
+pub(crate) use frame::Frame;
+pub(crate) use palette::Palette;
 pub(super) use score_1494::Score1494;
-pub use score::Score;
+pub(crate) use score::Score;
 pub(super) use sprite::Sprite;
 pub(super) use sprite_bitmask::SpriteBitmask;
 pub(super) use stream::Stream;
-pub use tempo::Tempo;
+pub(crate) use tempo::Tempo;
 pub(super) use text_editor::TextEditor;
 pub(super) use transition::Transition;
 
@@ -28,22 +28,22 @@ use smart_default::SmartDefault;
 
 newtype_num! {
     #[derive(Debug)]
-    pub struct ChannelNum(pub i16);
+    pub(crate) struct ChannelNum(pub(crate) i16);
 }
 
 newtype_num! {
     #[derive(BinRead, Debug)]
-    pub struct FrameNum(pub i16);
+    pub(super) struct FrameNum(pub(super) i16);
 }
 
 newtype_num! {
     #[derive(Debug)]
-    pub struct Fps(pub i16);
+    pub(crate) struct Fps(pub(crate) i16);
 }
 
 newtype_num! {
     #[derive(Debug)]
-    pub struct Seconds(pub i16);
+    pub(crate) struct Seconds(pub(crate) i16);
 }
 
 // TODO: Different sizes for different Director versions:
@@ -56,7 +56,7 @@ pub(super) const NUM_SPRITES: usize = 150;
 
 #[derive(BinRead, Clone, Copy, Debug, Display, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
 #[br(repr(i16))]
-pub enum Version {
+pub(crate) enum Version {
     #[default]
     Unknown,
     V3 = 3,

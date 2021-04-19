@@ -5,7 +5,7 @@ use smart_default::SmartDefault;
 use super::{Frame, SpriteBitmask, Version};
 
 #[derive(Clone, Debug, SmartDefault)]
-pub struct Stream {
+pub(crate) struct Stream {
     input: Cursor<Vec<u8>>,
     data_start_pos: u32,
     data_end_pos: u32,

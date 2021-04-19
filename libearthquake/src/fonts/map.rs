@@ -34,33 +34,33 @@ use num_traits::FromPrimitive;
 ///
 /// OsType: `'FXmp'`
 #[derive(BinRead, Clone, Debug, Default)]
-pub struct Source(RawString);
+pub(crate) struct Source(RawString);
 typed_resource!(Source => b"FXmp");
 
 // RE: R_FXmpMBListChar
 // The values could be font sizes or characters. So, probably: TODO don’t be so
 // sloppy.
 #[derive(Clone, Copy, Debug)]
-pub struct Value {
+pub(crate) struct Value {
     from: u16,
     to: u16,
 }
 
 // RE: R_FXmpMBList
 #[derive(Clone, Debug, Default)]
-pub struct Map(Vec<Value>);
+pub(crate) struct Map(Vec<Value>);
 
 /// The font families used in Mac Styled Text resources in the movie.
 ///
 /// This information is used along with the `FXmp` map to convert the fonts used
 /// in Mac Styled Text resources between platforms.
 #[derive(BinRead, Clone, Debug, Deref, DerefMut)]
-pub struct Fmap(SerializedDict<FontFamily>);
+pub(crate) struct Fmap(SerializedDict<FontFamily>);
 typed_resource!(Fmap => b"Fmap");
 
 /// Identifying information about a font family.
 #[derive(Clone, Copy, Debug)]
-pub struct FontFamily {
+pub(crate) struct FontFamily {
     /// The original platform.
     platform: Platform,
     /// The resource number of the font.
@@ -68,7 +68,7 @@ pub struct FontFamily {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("bad platform '{0}' in font map")]
     BadPlatform(i16)
 }

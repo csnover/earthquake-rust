@@ -1,2 +1,2 @@
-pub mod riff;
-pub mod riff_container;
+pub(crate) mod riff;
+pub(crate) mod riff_container;

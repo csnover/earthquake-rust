@@ -15,12 +15,12 @@ pub struct DetectionInfo {
 
 impl DetectionInfo {
     #[must_use]
-    pub fn data_endianness(&self) -> Endian {
+    pub(crate) fn data_endianness(&self) -> Endian {
         self.data_endianness
     }
 
     #[must_use]
-    pub fn os_type_endianness(&self) -> Endian {
+    pub(crate) fn os_type_endianness(&self) -> Endian {
         self.os_type_endianness
     }
 
@@ -30,7 +30,7 @@ impl DetectionInfo {
     }
 
     #[must_use]
-    pub fn size(&self) -> u32 {
+    pub(crate) fn size(&self) -> u32 {
         self.size
     }
 
@@ -48,7 +48,7 @@ pub enum Kind {
     Cast,
 }
 
-pub fn detect_mac<T: binrw::io::Read + binrw::io::Seek>(reader: &mut T) -> AResult<DetectionInfo> {
+pub(super) fn detect_mac<T: binrw::io::Read + binrw::io::Seek>(reader: &mut T) -> AResult<DetectionInfo> {
     let rom = ResourceFile::new(reader)?;
 
     if rom.contains(ResourceId::new(b"EMPO", 256_i16)) {

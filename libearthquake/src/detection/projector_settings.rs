@@ -120,12 +120,12 @@ pub struct ProjectorSettings {
 
 impl ProjectorSettings {
     #[must_use]
-    pub fn has_extended_data_fork(&self) -> bool {
+    pub(super) fn has_extended_data_fork(&self) -> bool {
         self.has_extended_data_fork
     }
 
     #[must_use]
-    pub fn num_movies(&self) -> u16 {
+    pub(super) fn num_movies(&self) -> u16 {
         self.num_movies
     }
 
@@ -135,7 +135,7 @@ impl ProjectorSettings {
     }
 
     #[must_use]
-    pub fn use_external_files(&self) -> bool {
+    pub(super) fn use_external_files(&self) -> bool {
         self.use_external_files
     }
 }
@@ -177,7 +177,7 @@ impl BinRead for ProjectorSettings {
 /// into memory.
 /// TODO: The existence of this configuration option makes absolutely no sense
 /// to me. Why would you ever not want to load in chunks?
-pub enum AccelMode {
+pub(super) enum AccelMode {
     /// Play only the part of the accelerator which fits in memory.
     FillMemory,
 
@@ -189,7 +189,7 @@ pub enum AccelMode {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct D3Settings {
+pub(super) struct D3Settings {
     /// Resize the stage when a new movie plays instead of keeping the
     /// stage the same size as the first movie.
     resize_stage: bool,
@@ -307,7 +307,7 @@ impl D3Settings {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct D6Settings {
+pub(super) struct D6Settings {
     /// Resize the stage when a new movie plays instead of keeping the
     /// stage the same size as the first movie.
     resize_stage: bool,

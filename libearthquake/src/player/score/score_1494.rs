@@ -2,7 +2,7 @@ use crate::resources::cast::{MemberId, MemberKind};
 use libcommon::{Unk8, UnkHnd};
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Score1494 {
+pub(crate) struct Score1494 {
     data: UnkHnd,
     id: MemberId,
     field_8: Unk8,

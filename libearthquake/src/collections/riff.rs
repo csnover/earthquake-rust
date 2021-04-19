@@ -15,11 +15,11 @@ use libcommon::{io::prelude::*, prelude::*, newtype_num};
 use libmactoolbox::resources::{OsType, OsTypeReadExt, Error as ResourceError, ResourceId, Result as ResourceResult, Source as ResourceSource};
 use std::{collections::HashMap, rc::{Rc, Weak}};
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub(crate) type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub(crate) enum Error {
     #[error("unknown i/o error: {0}")]
     Io(#[from] io::Error),
     #[error("not a RIFF file")]
@@ -76,12 +76,12 @@ impl From<binrw::Error> for Error {
 
 newtype_num! {
     #[derive(BinRead, Constructor, Debug)]
-    pub struct ChunkIndex(i32);
+    pub(crate) struct ChunkIndex(i32);
 }
 
 #[derive(Debug, Display)]
 #[display(fmt = "{} -> chunk {}", id, chunk_index)]
-pub struct Iter<'a, T: Reader> {
+pub(crate) struct Iter<'a, T: Reader> {
     id: ResourceId,
     owner: &'a Riff<T>,
     chunk_index: ChunkIndex,
@@ -89,35 +89,35 @@ pub struct Iter<'a, T: Reader> {
 
 impl<'a, T: Reader> Iter<'a, T> {
     #[must_use]
-    pub fn id(&self) -> ResourceId {
+    pub(crate) fn id(&self) -> ResourceId {
         self.id
     }
 
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.owner.memory_map[self.chunk_index].size == 0
     }
 
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
-    pub fn len(&self) -> u32 {
+    pub(super) fn len(&self) -> u32 {
         self.owner.memory_map[self.chunk_index].size
     }
 
-    pub fn load<R: BinRead + 'static>(&self, args: R::Args) -> Result<Rc<R>> {
+    pub(super) fn load<R: BinRead + 'static>(&self, args: R::Args) -> Result<Rc<R>> {
         self.owner.load_chunk_args(self.chunk_index, args)
     }
 
     #[deprecated(note = "TODO: For debugging only")]
     #[must_use]
-    pub fn offset(&self) -> u32 {
+    pub(super) fn offset(&self) -> u32 {
         self.owner.memory_map[self.chunk_index].offset
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Riff<T: Reader> {
+pub(crate) struct Riff<T: Reader> {
     // TODO: This is needed to convert a Riff chunk back to its owner filename,
     // but not enough information is recorded currently to actually do this.
     id: Identity,
@@ -136,12 +136,12 @@ pub struct Riff<T: Reader> {
 }
 
 impl<T: Reader> Riff<T> {
-    pub fn new(input: T) -> Result<Self> {
+    pub(crate) fn new(input: T) -> Result<Self> {
         Self::with_identity(Identity::Parent, SharedStream::new(input))
     }
 
     #[must_use]
-    pub fn first_of_kind(&self, kind: impl Into<OsType>) -> ChunkIndex {
+    pub(super) fn first_of_kind(&self, kind: impl Into<OsType>) -> ChunkIndex {
         let kind = kind.into();
         for (index, item) in self.memory_map.iter().enumerate() {
             if item.os_type == kind {
@@ -151,7 +151,7 @@ impl<T: Reader> Riff<T> {
         ChunkIndex::new(-1)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Iter<'_, T>> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = Iter<'_, T>> {
         self.resource_map.iter().map(move |(k, v)| Iter {
             id: *k,
             owner: self,
@@ -160,11 +160,11 @@ impl<T: Reader> Riff<T> {
     }
 
     #[must_use]
-    pub fn kind(&self) -> MovieKind {
+    pub(super) fn kind(&self) -> MovieKind {
         self.info.kind()
     }
 
-    pub fn load_chunk<R>(&self, index: ChunkIndex) -> Result<Rc<R>>
+    pub(super) fn load_chunk<R>(&self, index: ChunkIndex) -> Result<Rc<R>>
     where
         R: BinRead + 'static,
         R::Args: Default + Sized
@@ -176,7 +176,7 @@ impl<T: Reader> Riff<T> {
     // invalid flag was set on a chunk, but since all values were just used as a
     // boolean error/no error by application logic, it’s simpler to just
     // collapse these errors into a single one.
-    pub fn load_chunk_args<R: BinRead + 'static>(&self, index: ChunkIndex, args: R::Args) -> Result<Rc<R>> {
+    pub(crate) fn load_chunk_args<R: BinRead + 'static>(&self, index: ChunkIndex, args: R::Args) -> Result<Rc<R>> {
         let entry = self.memory_map.get(index).ok_or(Error::BadIndex(index))?;
 
         if entry.flags.contains(MemoryMapFlags::INVALID) {
@@ -222,7 +222,7 @@ impl<T: Reader> Riff<T> {
             .map_err(|error| Error::ReadFailure(entry.os_type, index, entry.offset, error))
     }
 
-    pub fn load_riff(&self, index: ChunkIndex) -> Result<Self> {
+    pub(super) fn load_riff(&self, index: ChunkIndex) -> Result<Self> {
         let entry = self.memory_map.get(index).ok_or(Error::BadIndex(index))?;
 
         if entry.flags.contains(MemoryMapFlags::INVALID) {
@@ -235,7 +235,7 @@ impl<T: Reader> Riff<T> {
         Self::with_identity(Identity::Child(index), input)
     }
 
-    pub fn make_free(&mut self, index: ChunkIndex) {
+    pub(super) fn make_free(&mut self, index: ChunkIndex) {
         let next_free_index = self.memory_map.next_free_index;
         let entry = &mut self.memory_map[index];
         entry.os_type = b"free".into();
@@ -247,7 +247,7 @@ impl<T: Reader> Riff<T> {
         self.memory_map.next_free_index = index;
     }
 
-    pub fn make_junk(&mut self, index: ChunkIndex) {
+    pub(super) fn make_junk(&mut self, index: ChunkIndex) {
         let next_junk_index = self.memory_map.next_junk_index;
         let entry = &mut self.memory_map[index];
         entry.os_type = b"junk".into();
@@ -258,17 +258,17 @@ impl<T: Reader> Riff<T> {
     }
 
     // TODO: For debugging
-    pub fn metadata(&self, index: ChunkIndex) -> Option<&MemoryMapItem> {
+    pub(super) fn metadata(&self, index: ChunkIndex) -> Option<&MemoryMapItem> {
         self.memory_map.get(index)
     }
 
     #[must_use]
-    pub fn size(&self) -> u32 {
+    pub(super) fn size(&self) -> u32 {
         self.info.size()
     }
 
     #[must_use]
-    pub fn version(&self) -> Version {
+    pub(super) fn version(&self) -> Version {
         self.info.version()
     }
 
@@ -509,7 +509,7 @@ impl <T: Reader> ResourceSource for Riff<T> {
     }
 }
 
-pub fn detect<R: Read + Seek>(reader: &mut R) -> Result<DetectionInfo> {
+pub(crate) fn detect<R: Read + Seek>(reader: &mut R) -> Result<DetectionInfo> {
     let os_type = reader.read_os_type::<BigEndian>()?;
     match os_type.as_bytes() {
         b"RIFX" | b"RIFF" | b"XFIR" => detect_subtype(reader).ok_or(Error::NotDirectorRiff),
@@ -525,7 +525,7 @@ enum ChunkData {
 }
 
 impl ChunkData {
-    pub fn as_data(&self) -> Option<&Weak<dyn Any>> {
+    pub(super) fn as_data(&self) -> Option<&Weak<dyn Any>> {
         match &self {
             Self::Free { .. } => None,
             Self::Loaded(weak_ref) => Some(weak_ref)
@@ -580,7 +580,7 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-pub struct MemoryMapItem {
+pub(super) struct MemoryMapItem {
     os_type: OsType,
     size: u32,
     offset: u32,

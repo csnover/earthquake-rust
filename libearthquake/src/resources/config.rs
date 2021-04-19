@@ -8,12 +8,12 @@ use super::cast::{MemberId, MemberNum};
 
 newtype_num! {
     #[derive(BinRead, Debug)]
-    pub struct LegacyTempo(u8);
+    pub(super) struct LegacyTempo(u8);
 }
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 #[br(big, repr(i16))]
-pub enum Platform {
+pub(crate) enum Platform {
     #[default]
     Unknown = 0,
     Mac,
@@ -22,7 +22,7 @@ pub enum Platform {
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
 #[br(big, repr(i16))]
-pub enum Version {
+pub(crate) enum Version {
     #[default]
     Unknown,
 
@@ -63,7 +63,7 @@ pub enum Version {
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u32 {
+    pub(super) struct Flags: u32 {
         const MOVIE_FIELD_46       = 0x20;
         const PALETTE_MAPPING      = 0x40;
         const LEGACY_FLAG_1        = 0x80;
@@ -78,7 +78,7 @@ bitflags! {
 /// OsType: `'VWCF'` `'DRCF'`
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big)]
-pub struct Config {
+pub(crate) struct Config {
     own_size: i16,
     version: Version,
     rect: Rect,
@@ -141,15 +141,15 @@ typed_resource!(Config => b"DRCF" b"VWCF");
 
 impl Config {
     #[must_use]
-    pub fn calculate_checksum(&self) -> u32 {
+    pub(super) fn calculate_checksum(&self) -> u32 {
         ((i32::from(self.own_size) + 1)
         .wrapping_mul(self.version as i32 + 2)
         .wrapping_div(i32::from(self.rect.top) + 3)
         .wrapping_mul(i32::from(self.rect.left) + 4)
         .wrapping_div(i32::from(self.rect.bottom) + 5)
         .wrapping_mul(i32::from(self.rect.right) + 6)
-        .wrapping_sub(i32::from(self.min_cast_num.0) + 7)
-        .wrapping_mul(i32::from(self.max_cast_num.0) + 8)
+        .wrapping_sub(i32::from(self.min_cast_num) + 7)
+        .wrapping_mul(i32::from(self.max_cast_num) + 8)
         .wrapping_sub(i32::from(self.legacy_tempo.0) + 9)
         .wrapping_sub(i32::from(self.legacy_back_color_is_black) + 10)
         .wrapping_add(i32::from(self.field_12) + 11)
@@ -178,7 +178,7 @@ impl Config {
     }
 
     #[must_use]
-    pub fn generate_field_3a(flag: bool) -> i16 {
+    pub(super) fn generate_field_3a(flag: bool) -> i16 {
         let (state, a) = Self::field_3a_1(0x123_4567);
         let (_, b) = Self::field_3a_1(state);
         a % 1423 * 23 + if flag {
@@ -189,17 +189,17 @@ impl Config {
     }
 
     #[must_use]
-    pub fn min_cast_num(&self) -> MemberNum {
+    pub(crate) fn min_cast_num(&self) -> MemberNum {
         self.min_cast_num
     }
 
     #[must_use]
-    pub fn original_version(&self) -> Version {
+    pub(crate) fn original_version(&self) -> Version {
         self.original_version
     }
 
     #[must_use]
-    pub fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         if self.version < Version::V1113 {
             true
         } else {
@@ -208,7 +208,7 @@ impl Config {
     }
 
     #[must_use]
-    pub fn version(&self) -> Version {
+    pub(crate) fn version(&self) -> Version {
         if self.version == Version::V5692 {
             self.original_version
         } else {

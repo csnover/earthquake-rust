@@ -7,7 +7,7 @@ use libcommon::restore_on_error;
 ///
 /// Identical to a `Vec<u8>` except with string-like output formatting.
 #[derive(BinRead, Clone, Default, Deref, DerefMut, Eq, PartialEq)]
-pub struct RawString(Vec<u8>);
+pub(crate) struct RawString(Vec<u8>);
 
 impl core::fmt::Debug for RawString {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -44,7 +44,7 @@ impl core::fmt::Display for RawString {
 /// [redundantly](libmactoolbox::types::PString), since Mac resources never
 /// expected to need to null-terminate 255-byte-long strings.
 #[derive(Clone, Default, Deref, DerefMut, Eq, PartialEq)]
-pub struct WinPString(Vec<u8>);
+pub(crate) struct WinPString(Vec<u8>);
 
 impl WinPString {
     /// The maximum possible length of a string stored in this type.

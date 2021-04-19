@@ -6,7 +6,7 @@ use super::cast::MemberId;
 
 #[derive(BinRead, Clone, Copy, Debug, Default)]
 #[br(big, import(is_v5: bool))]
-pub struct Tile {
+pub(crate) struct Tile {
     #[br(default, pad_after = 4)]
     pix_pat: Option<PixPatHandle>,
     #[br(args(is_v5), parse_with = MemberId::parse_num)]
@@ -18,7 +18,7 @@ pub struct Tile {
 ///
 /// OsType: `'VWTL'`
 #[derive(Clone, Copy, Debug, Default, Deref, DerefMut)]
-pub struct Tiles([ Tile; 8 ]);
+pub(crate) struct Tiles([ Tile; 8 ]);
 typed_resource!(Tiles => b"VWTL");
 
 impl Tiles {

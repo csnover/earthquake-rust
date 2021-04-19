@@ -13,17 +13,14 @@ pub struct Manager<'vfs> {
 
 impl <'vfs> Manager<'vfs> {
     pub fn new(fs: Rc<dyn VirtualFileSystem + 'vfs>, system: Option<Vec<u8>>) -> ResourceResult<Self> {
-        Ok(Self {
+        let mut this = Self {
             fs,
             current_file: 0,
             files: Vec::new(),
-            system: if let Some(data) = system {
-                Some(ResourceFile::new(Cursor::new(data))
-                    .map_err(|error| ResourceError::BadSystemResource(Box::new(error)))?)
-            } else {
-                None
-            },
-        })
+            system: None
+        };
+        this.set_system_resource(system)?;
+        Ok(this)
     }
 
     /// Closes a resource fork.
@@ -187,6 +184,20 @@ impl <'vfs> Manager<'vfs> {
         let res_file = ResourceFile::new(file)?;
         self.files.push(res_file);
         self.current_file = self.files.len();
+        Ok(())
+    }
+
+    /// Sets the data for the system resource.
+    ///
+    /// This data is what would normally be in the `System Folder:System`
+    /// resource.
+    pub fn set_system_resource(&mut self, system: Option<Vec<u8>>) -> ResourceResult<()> {
+        self.system = if let Some(data) = system {
+            Some(ResourceFile::new(Cursor::new(data))
+                .map_err(|error| ResourceError::BadSystemResource(Box::new(error)))?)
+        } else {
+            None
+        };
         Ok(())
     }
 

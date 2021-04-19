@@ -1,13 +1,13 @@
 use crate::resources::{Rc, cast::{LibNum, MemberId}};
 
 #[derive(Debug)]
-pub struct Lib {
+pub(super) struct Lib {
     __: Rc,
     num: LibNum,
 }
 
 #[derive(Debug)]
-pub struct Member {
+pub(super) struct Member {
     __: Rc,
     id: MemberId,
 }

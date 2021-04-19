@@ -3,7 +3,7 @@ use libmactoolbox::quickdraw::{PaletteIndex, Pixels, Rect};
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
 #[br(big, repr(u16))]
-pub enum Kind {
+pub(super) enum Kind {
     Rect = 1,
     RoundRect,
     Oval,
@@ -12,14 +12,14 @@ pub enum Kind {
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq)]
 #[br(repr(u8))]
-pub enum LineDirection {
+pub(super) enum LineDirection {
     TopToBottom = 5,
     BottomToTop,
 }
 
 #[derive(BinRead, Clone, Copy, Debug)]
 #[br(big)]
-pub struct Properties {
+pub(super) struct Properties {
     kind: Kind,
     bounds: Rect,
     pattern: i16,

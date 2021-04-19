@@ -51,7 +51,7 @@ pvec! {
     ///
     /// OsType: `'VWFI'`
     #[derive(Debug)]
-    pub struct FileInfo {
+    pub(crate) struct FileInfo {
         #[br(assert(header_size == 16 || header_size == 20, "unexpected VWFI header size {}", header_size))]
         header_size = header_size;
 
@@ -116,7 +116,7 @@ pvec! {
     /// OsType: `'MCsL'`
     /// RE: `MovieCastList`
     #[derive(Clone, Debug)]
-    pub struct CastList {
+    pub(crate) struct CastList {
         #[br(assert(header_size == 12, "unexpected MCsL header size {}", header_size))]
         header_size = header_size;
 
@@ -143,7 +143,7 @@ pvec! {
 typed_resource!(CastList => b"MCsL");
 
 #[derive(Clone, Debug, Deref, DerefMut)]
-pub struct CastListMembers(Vec<Cast>);
+pub(super) struct CastListMembers(Vec<Cast>);
 
 impl BinRead for CastListMembers {
     type Args = (i16, PVecOffsets);
@@ -172,7 +172,7 @@ impl BinRead for CastListMembers {
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, PartialEq, SmartDefault)]
 #[br(big, repr(i16))]
-pub enum Preload {
+pub(super) enum Preload {
     #[default]
     None = 0,
     AfterFirstFrame,
@@ -198,7 +198,7 @@ pub enum Preload {
 /// RE: `MovieCast`
 #[derive(BinRead, Clone, Debug, Default)]
 #[br(big, import(index: usize, offsets: PVecOffsets))]
-pub struct Cast {
+pub(crate) struct Cast {
     /// The user-defined name of the cast.
     // TODO: In `Movie::ParseMCsL` this is mapped from Mac codepage to the
     // Windows codepage.
@@ -260,4 +260,4 @@ fn fix_d5_update_movies_shared_preload<R: Read + Seek>(reader: &mut R, _: &binrw
 /// `OsType`: `'Sord'`
 #[derive(BinRead, Clone, Debug, Deref, DerefMut)]
 #[br(big)]
-pub struct CastScoreOrder(StdList<MemberId>);
+pub(crate) struct CastScoreOrder(StdList<MemberId>);

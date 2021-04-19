@@ -7,12 +7,12 @@ use super::{NUM_SPRITES, Palette, Sprite, Tempo, Transition, Version, palette::P
 
 #[derive(Clone, Debug, Default, Deref, DerefMut, From)]
 #[from(forward)]
-pub struct Frame(FrameV5);
+pub(crate) struct Frame(FrameV5);
 
 impl Frame {
-    pub(super) const V4_CELL_COUNT: u16 = 48;
+    const V4_CELL_COUNT: u16 = 48;
     pub(super) const V0_SIZE_IN_CELLS: u16 = 50;
-    pub(super) const V5_CELL_COUNT: u16 = 48;
+    const V5_CELL_COUNT: u16 = 48;
     pub(super) const V5_SIZE_IN_CELLS: u16 = 50;
     pub(super) const V5_SIZE: u16 = Sprite::V5_SIZE * Self::V5_SIZE_IN_CELLS;
 }
@@ -147,24 +147,24 @@ impl From<FrameV4> for FrameV5 {
 
 #[derive(BinRead, Clone, Debug, SmartDefault)]
 #[br(big, import(version: Version))]
-pub struct FrameV5 {
-    pub script: MemberId,
-    pub sound_1: MemberId,
-    pub sound_2: MemberId,
+pub(crate) struct FrameV5 {
+    pub(crate) script: MemberId,
+    pub(crate) sound_1: MemberId,
+    pub(crate) sound_2: MemberId,
     #[br(args(version))]
-    pub transition: Transition,
-    pub tempo_related: Unk8,
-    pub sound_1_related: Unk8,
-    pub sound_2_related: Unk8,
-    pub script_related: Unk8,
-    pub transition_related: Unk8,
+    pub(crate) transition: Transition,
+    pub(crate) tempo_related: Unk8,
+    pub(crate) sound_1_related: Unk8,
+    pub(crate) sound_2_related: Unk8,
+    pub(crate) script_related: Unk8,
+    pub(crate) transition_related: Unk8,
     #[br(args(version, transition), parse_with = parse_tempo)]
-    pub tempo: Tempo,
+    pub(crate) tempo: Tempo,
     #[br(align_before(24))]
-    pub palette: Palette,
+    pub(crate) palette: Palette,
     #[default([ Sprite::default(); NUM_SPRITES ])]
     #[br(args(version), parse_with = parse_sprites::<Sprite, _>)]
-    pub sprites: [ Sprite; NUM_SPRITES ],
+    pub(crate) sprites: [ Sprite; NUM_SPRITES ],
 }
 
 fn parse_tempo<R>(reader: &mut R, options: &binrw::ReadOptions, args: (Version, Transition)) -> binrw::BinResult<Tempo>

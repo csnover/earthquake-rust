@@ -3,10 +3,10 @@ use std::rc::Rc;
 use super::{movie::Movie, score::Score};
 
 #[derive(Debug, Default)]
-pub struct LingoWindow;
+pub(super) struct LingoWindow;
 
 #[derive(Debug)]
-pub struct Window {
+pub(super) struct Window {
     // Original Director allowed different window procedure and event handlers
     // but always used the same one.
     // A pointer to the window record is normally here, but it’s not needed
@@ -42,7 +42,7 @@ pub struct Window {
 
 impl Window {
     // RE: Window_New
-    pub fn new(title: Option<MacString>, lingo_window: LingoWindow) -> Self {
+    pub(super) fn new(title: Option<MacString>, lingo_window: LingoWindow) -> Self {
         // OD: Hack here to return whatever window was in the global Movie
         // object if no title, but the only caller that does that has its own
         // guard, so it is not necessary.

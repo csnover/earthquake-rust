@@ -5,7 +5,7 @@ use super::{ChannelNum, Fps, Seconds};
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, SmartDefault)]
 #[br(try_map = Self::new)]
-pub enum Tempo {
+pub(crate) enum Tempo {
     #[default]
     Inherit,
     Fps(Fps),
@@ -17,7 +17,7 @@ pub enum Tempo {
 }
 
 impl Tempo {
-    pub fn new(tempo: i16) -> AResult<Self> {
+    pub(super) fn new(tempo: i16) -> AResult<Self> {
         Ok(match tempo {
             0 => Self::Inherit,
             1..=120 => Self::Fps(Fps(tempo)),
@@ -31,7 +31,7 @@ impl Tempo {
     }
 
     #[must_use]
-    pub fn to_primitive(self) -> i16 {
+    pub(crate) fn to_primitive(self) -> i16 {
         match self {
             Tempo::Inherit => 0,
             Tempo::Fps(fps) => fps.0,
