@@ -1,8 +1,8 @@
 use binrw::BinRead;
-use crate::{pvec, util::RawString};
+use crate::{cast::GlobalLibNum, pvec, util::RawString};
 use derive_more::{Deref, DerefMut};
 use libcommon::{bitflags, io::prelude::*, prelude::*};
-use libmactoolbox::{typed_resource, types::PString};
+use libmactoolbox::{resources::ResNum, typed_resource, types::PString};
 use super::{PVecOffsets, StdList, cast::{LibNum, MemberId, MemberNum}};
 use smart_default::SmartDefault;
 
@@ -215,7 +215,7 @@ pub(crate) struct Cast {
     //    user had to manually give a path to the file.
     // 4. Restore the original movie.
     #[br(if(offsets.has_entry(1) && index != 0), pad_size_to = offsets.entry_size(1).unwrap_or(0))]
-    path: PString,
+    pub(crate) path: Option<PString>,
     /// The mode to use when preloading cast members.
     #[br(if(offsets.has_entry(2)), pad_size_to = offsets.entry_size(2).unwrap_or(0))]
     #[br(parse_with = fix_d5_update_movies_shared_preload)]
@@ -225,17 +225,28 @@ pub(crate) struct Cast {
     cast_range: (MemberNum, MemberNum),
     /// The Mac resource number assigned to this cast library.
     #[br(if(offsets.has_entry(3)), pad_size_to = offsets.entry_size(3).unwrap_or(8) - 8)]
-    base_resource_num: i32,
-    /// The 1-indexed number of this library in the global cast list.
+    #[br(map = |num: i32| num.unwrap_into())]
+    pub(crate) base_resource_num: ResNum,
+    /// A reference to the possibly shared global cast object.
     #[br(default)]
-    global_cast_id: i16,
+    pub(crate) global_cast_id: GlobalLibNum,
     /// If true, this cast is loaded from an external file.
-    #[br(calc(path != ""))]
+    #[br(calc(if let Some(ref path) = path { path != "" } else { false }))]
     is_external_cast: bool,
     #[br(default)]
     is_global_cast_locked: bool,
     #[br(default)]
     tried_to_load_via_ccl: bool,
+}
+
+impl Cast {
+    pub(crate) fn new(path: Option<PString>) -> Self {
+        Self {
+            is_external_cast: if let Some(path) = &path { path != "" } else { false },
+            path,
+            ..<_>::default()
+        }
+    }
 }
 
 // Director 5 Update Movies writes garbage into the preload field of the

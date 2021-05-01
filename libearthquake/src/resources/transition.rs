@@ -76,7 +76,7 @@ bitflags! {
 #[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct QuarterSeconds(pub(crate) u8);
 
-#[derive(BinRead, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(BinRead, Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct Milliseconds(i16);
 
 #[derive(BinRead, Clone, Debug)]

@@ -5,6 +5,8 @@ pub use manager::Manager;
 use libcommon::newtype_num;
 use derive_more::Constructor;
 
+use crate::quickdraw::{CGrafPort, Pixels};
+
 newtype_num! {
     /// A window definition ID.
     ///
@@ -71,4 +73,12 @@ impl Kind {
 }
 /// A colour window record.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct CWindowRecord;
+pub struct CWindowRecord {
+    port: CGrafPort,
+}
+
+impl CWindowRecord {
+    pub fn port_size(&mut self, width: Pixels, height: Pixels) {
+        self.port.port_size(width, height)
+    }
+}

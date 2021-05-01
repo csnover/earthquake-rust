@@ -1,5 +1,6 @@
 use anyhow::{bail, Result as AResult};
 use binrw::Endian;
+use crate::resources::config::Platform;
 use derive_more::Display;
 use libmactoolbox::resources::{File as ResourceFile, ResourceId, Source as ResourceSource};
 use super::Version;
@@ -27,6 +28,16 @@ impl DetectionInfo {
     #[must_use]
     pub fn kind(&self) -> Kind {
         self.kind
+    }
+
+    // This might be a bad inference.
+    #[must_use]
+    pub(crate) fn platform(&self) -> Platform {
+        if self.data_endianness == Endian::Big && self.os_type_endianness == Endian::Big {
+            Platform::Mac
+        } else {
+            Platform::Win
+        }
     }
 
     #[must_use]

@@ -48,11 +48,6 @@ impl DetectionInfo {
     }
 
     #[must_use]
-    pub(crate) fn is_mac_embedded(&self) -> bool {
-        matches!(self.movie, Movie::Embedded(_))
-    }
-
-    #[must_use]
     pub(crate) fn movie(&self) -> &Movie {
         &self.movie
     }
@@ -138,6 +133,15 @@ pub enum Platform {
     Mac(MacCPU),
     #[display(fmt = "Windows {}", _0)]
     Win(WinVersion),
+}
+
+impl Into<crate::resources::config::Platform> for Platform {
+    fn into(self) -> crate::resources::config::Platform {
+        match self {
+            Platform::Mac(_) => crate::resources::config::Platform::Mac,
+            Platform::Win(_) => crate::resources::config::Platform::Win,
+        }
+    }
 }
 
 pub(super) fn detect_mac<R1, R2>(mut resource_fork: R1, data_fork: Option<R2>) -> AResult<DetectionInfo>
@@ -447,7 +451,6 @@ fn get_projector_rsrc<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, offse
             (rsrc_offset, size)
         },
         Version::D7 => {
-            #[allow(dead_code)]
             const DRIVERS_HEADER_SIZE: u32 = 8;
             // SETTINGS_SIZE here is actually only 8
 
@@ -457,7 +460,6 @@ fn get_projector_rsrc<R: binrw::io::Read + binrw::io::Seek>(input: &mut R, offse
             // There is no PROJECTR.RSR in D7 -- resources are now native PE
             // resources inside the embedded DLLs. So figure out how to make
             // that work, ha ha ugh.
-            #[allow(dead_code)]
             const DRIVER_ENTRY_SIZE: u32 = 0x3c;
             todo!("D7 projector system resource loading")
         },

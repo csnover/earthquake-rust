@@ -11,6 +11,7 @@ pub enum Error {
 pub struct System<'vfs> {
     event_manager: EventManager,
     resource_manager: ResourceManager<'vfs>,
+    script: ScriptCode,
     window_manager: WindowManager,
 }
 
@@ -20,6 +21,7 @@ impl <'vfs> System<'vfs> {
             event_manager: EventManager::new(),
             resource_manager: ResourceManager::new(fs, system)
                 .map_err(Error::ResourceManagerInit)?,
+            script,
             window_manager: WindowManager::new(),
         })
     }
@@ -38,6 +40,11 @@ impl <'vfs> System<'vfs> {
 
     pub fn resource_manager_mut(&mut self) -> &mut ResourceManager<'vfs> {
         &mut self.resource_manager
+    }
+
+    #[must_use]
+    pub fn script(&self) -> ScriptCode {
+        self.script
     }
 
     pub fn window_manager(&self) -> &WindowManager {

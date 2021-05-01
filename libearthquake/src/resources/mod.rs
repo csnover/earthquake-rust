@@ -203,12 +203,6 @@ pub(super) struct PVecOffsets(
 );
 
 impl PVecOffsets {
-    /// Returns the offset of an entry from the beginning of the data area.
-    #[must_use]
-    pub(super) fn entry_offset(&self, index: usize) -> Option<u32> {
-        self.0.get(index).copied()
-    }
-
     /// Returns the size of an entry, or None if no entry exists at the given
     /// index.
     #[must_use]
@@ -244,12 +238,6 @@ impl PVecOffsets {
     #[must_use]
     pub(super) fn has_entry(&self, index: usize) -> bool {
         self.entry_size(index).unwrap_or(0) != 0
-    }
-
-    /// Returns `true` if there are no entries in `self`.
-    #[must_use]
-    pub(super) fn is_empty(&self) -> bool {
-        self.0.len() == 1
     }
 
     /// Returns the number of entries.

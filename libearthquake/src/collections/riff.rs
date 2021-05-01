@@ -93,18 +93,6 @@ impl<'a, T: Reader> Iter<'a, T> {
         self.id
     }
 
-    #[deprecated(note = "TODO: For debugging only")]
-    #[must_use]
-    pub(super) fn is_empty(&self) -> bool {
-        self.owner.memory_map[self.chunk_index].size == 0
-    }
-
-    #[deprecated(note = "TODO: For debugging only")]
-    #[must_use]
-    pub(super) fn len(&self) -> u32 {
-        self.owner.memory_map[self.chunk_index].size
-    }
-
     pub(super) fn load<R: BinRead + 'static>(&self, args: R::Args) -> Result<Rc<R>> {
         self.owner.load_chunk_args(self.chunk_index, args)
     }

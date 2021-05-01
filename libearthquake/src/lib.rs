@@ -1,3 +1,6 @@
+// TODO: Finish everything
+#![allow(dead_code)]
+
 // https://github.com/rust-lang/cargo/issues/5034
 #![warn(clippy::pedantic)]
 #![allow(

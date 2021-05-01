@@ -3,7 +3,7 @@
 use anyhow::{Result as AResult, anyhow};
 use binrw::{BinRead, NullString, io};
 use core::fmt;
-use crate::{collections::riff::{ChunkIndex, Riff}, pvec, util::RawString};
+use crate::{cast::GlobalLibNum, collections::riff::{ChunkIndex, Riff}, pvec, util::RawString};
 use derive_more::{Deref, DerefMut, Display};
 use libcommon::{io::prelude::*, prelude::*, bitflags, newtype_num};
 use libmactoolbox::{resources::{ResNum, ResourceId, Source as ResourceSource}, typed_resource, types::PString};
@@ -20,7 +20,7 @@ enum LoadId {
 }
 
 /// A cast library.
-#[derive(Clone, Debug, Deref, DerefMut)]
+#[derive(Clone, Debug, Default, Deref, DerefMut)]
 pub(crate) struct Library(Vec<Member>);
 
 impl Library {
@@ -377,7 +377,7 @@ pub(crate) struct CclEntry {
     // confusing. When this happens it seems to be that the CCL list changes
     // and then it is trying to rediscover an internal cast by an external file
     // name?
-    global_cast_lib_num: i16,
+    global_cast_lib_num: GlobalLibNum,
     /// A path or name of an externally linked cast. Populated for internal
     /// casts, but not used in that case.
     path: PString,

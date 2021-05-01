@@ -8,10 +8,6 @@ use libcommon::{
     UnkHnd,
     UnkPtr,
 };
-use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
 use smart_default::SmartDefault;
 
 pub type PixPatHandle = UnkHnd;
@@ -81,6 +77,14 @@ impl Rect {
     #[must_use]
     pub fn height(self) -> Pixels {
         self.bottom - self.top
+    }
+
+    /// `InsetRect`
+    pub fn inset(&mut self, dh: Pixels, dv: Pixels) {
+        self.top -= dv;
+        self.left -= dh;
+        self.bottom -= dv;
+        self.right -= dh;
     }
 
     #[inline]
@@ -161,7 +165,7 @@ impl std::fmt::Debug for RgbColor {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CGrafPort {
     device: u16,
     port_pix_map: PixMapHandle,
@@ -196,23 +200,9 @@ pub struct CGrafPort {
     graf_procs: UnkPtr,
 }
 
-pub struct QuickDraw {
-    graf_port: Rc<RefCell<CGrafPort>>,
-}
-
-impl QuickDraw {
-    pub fn use_port(&self, f: impl Fn(Ref<'_, CGrafPort>)) {
-        let old_port = *self.graf_port.borrow();
-        f(self.graf_port.borrow());
-        self.graf_port.replace(old_port);
-    }
-
-    #[must_use]
-    pub fn port(&self) -> &Rc<RefCell<CGrafPort>> {
-        &self.graf_port
-    }
-
-    pub fn port_mut(&mut self) -> &mut Rc<RefCell<CGrafPort>> {
-        &mut self.graf_port
+impl CGrafPort {
+    pub fn port_size(&mut self, width: Pixels, height: Pixels) {
+        self.port_rect.right = self.port_rect.left + width;
+        self.port_rect.bottom = self.port_rect.top + height;
     }
 }

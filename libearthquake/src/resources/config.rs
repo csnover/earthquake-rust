@@ -13,7 +13,7 @@ newtype_num! {
 
 #[derive(BinRead, Clone, Copy, Debug, Eq, FromPrimitive, PartialEq, SmartDefault)]
 #[br(big, repr(i16))]
-pub(crate) enum Platform {
+pub enum Platform {
     #[default]
     Unknown = 0,
     Mac,

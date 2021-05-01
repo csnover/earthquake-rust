@@ -94,6 +94,15 @@ pub(crate) struct Score {
     maybe_has_moveable_sprites: bool,
 }
 
+impl Score {
+    pub(crate) fn new(palette_mapping: bool) -> Self {
+        Self {
+            palette_mapping,
+            ..<_>::default()
+        }
+    }
+}
+
 // TODO: This is just for debugging
 impl Iterator for Score {
     type Item = AResult<Frame>;

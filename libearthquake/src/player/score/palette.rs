@@ -56,6 +56,11 @@ impl Palette {
     pub(crate) const SYSTEM_WIN_DIR_4: MemberId = MemberId::from_raw(-1, -101);
     pub(crate) const SYSTEM_WIN: MemberId = MemberId::from_raw(-1, -102);
     pub(crate) const NOTHING: MemberId = MemberId::from_raw(-1, -200);
+
+    pub(crate) const fn system_default() -> MemberId {
+        // TODO: This should be SYSTEM_MAC for Macintosh
+        Self::SYSTEM_WIN_DIR_4
+    }
 }
 
 impl BinRead for Palette {

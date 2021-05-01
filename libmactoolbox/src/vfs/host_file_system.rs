@@ -1,7 +1,7 @@
 use binrw::io::{ErrorKind, prelude::*, self};
 use crate::files::{AppleDouble, MacBinary};
 use libcommon::{SharedStream, vfs::{ForkKind, Result, ResultExt, VirtualFile, VirtualFileSystem}};
-use std::{ffi::OsString, fs::{File, metadata}, path::{Path, PathBuf}};
+use std::{ffi::OsString, fs::{File, metadata}, path::{Component, Path, PathBuf}};
 
 #[derive(Default)]
 pub struct HostFileSystem;
@@ -33,7 +33,7 @@ impl HostFileSystem {
     }
 
     fn try_apple_double(path: impl AsRef<Path>, kind: ForkKind) -> io::Result<(Option<PathBuf>, Option<SharedStream<File>>)> {
-        AppleDouble::new(File::open(&path)?, open_apple_double(&path).ok())
+        AppleDouble::new(open_case_insensitive(&path)?, open_apple_double(&path).ok())
             .map(|f| (
                 f.name().map(|name| name.to_path_lossy().into()),
                 match kind {
@@ -45,7 +45,7 @@ impl HostFileSystem {
     }
 
     fn try_mac_binary(path: impl AsRef<Path>, kind: ForkKind) -> io::Result<(Option<PathBuf>, Option<SharedStream<File>>)> {
-        let file = File::open(&path)
+        let file = open_case_insensitive(&path)
             .or_else(|_| open_file_with_ext(&path, "bin"))?;
 
         MacBinary::new(file)
@@ -63,7 +63,7 @@ impl HostFileSystem {
         Ok((
             None::<PathBuf>,
             Some(SharedStream::substream_from(match kind {
-                ForkKind::Data => File::open(&path)?,
+                ForkKind::Data => open_case_insensitive(&path)?,
                 ForkKind::Resource => open_resource_fork(&path)?,
             }))
         ))
@@ -116,7 +116,42 @@ fn open_apple_double(path: impl AsRef<Path>) -> io::Result<File> {
         file_name.push(path.file_name().unwrap());
         file_name
     });
-    File::open(path)
+    open_case_insensitive(path)
+}
+
+fn open_case_insensitive(path: impl AsRef<Path>) -> io::Result<File> {
+    File::open(path.as_ref()).or_else(|err| {
+        if err.kind() != ErrorKind::NotFound {
+            return Err(err);
+        }
+
+        path.as_ref().components().try_fold(PathBuf::new(), |mut path, component| {
+            match component {
+                c @ Component::Prefix(_)
+                | c @ Component::RootDir
+                | c @ Component::CurDir
+                | c @ Component::ParentDir => {
+                    path.push(c);
+                    Ok(path)
+                },
+                Component::Normal(segment) => {
+                    for other in std::fs::read_dir(&path)? {
+                        let file_name = other?.file_name();
+                        // TODO: Use OsStr::eq_ignore_ascii_case once 1.53.0 is
+                        // stable, or unicase if more than ASCII case folding is
+                        // needed in practice
+                        let segment_str = segment.to_string_lossy();
+                        let file_name_str = file_name.to_string_lossy();
+                        if segment_str.eq_ignore_ascii_case(&file_name_str) {
+                            path.push(file_name);
+                            return Ok(path);
+                        }
+                    }
+                    Err(io::Error::from(ErrorKind::NotFound))
+                }
+            }
+        }).and_then(File::open)
+    })
 }
 
 fn open_file_with_ext(path: impl AsRef<Path>, new_ext: impl AsRef<Path>) -> io::Result<File> {
@@ -129,7 +164,7 @@ fn open_file_with_ext(path: impl AsRef<Path>, new_ext: impl AsRef<Path>) -> io::
             ext
         })
     });
-    File::open(path)
+    open_case_insensitive(path)
 }
 
 fn open_named_fork<T: AsRef<Path>>(path: T) -> io::Result<File> {
@@ -137,7 +172,7 @@ fn open_named_fork<T: AsRef<Path>>(path: T) -> io::Result<File> {
     path.push("..namedfork/rsrc");
     let metadata = metadata(&path)?;
     if metadata.len() > 0 {
-        File::open(&path)
+        open_case_insensitive(&path)
     } else {
         Err(io::ErrorKind::NotFound.into())
     }

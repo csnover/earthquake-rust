@@ -1,10 +1,41 @@
-use crate::{fonts::Source as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast, CastScoreOrder, FileInfo}, tile::Tiles}, util::RawString};
+use crate::{cast::SharedCastId, fonts::Source as FontMap, lingo::types::Actor, resources::{cast::{LibNum, MemberId, MemberNum}, movie::{Cast as MovieCast, CastScoreOrder, FileInfo}, tile::Tiles, transition::Milliseconds}, util::{Path, RawString}};
 use binrw::derive_binread;
-use libcommon::{Unk8, UnkHnd, UnkPtr, bitflags};
-use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}};
+use libcommon::{bitflags, bitflags::BitFlags, newtype_num, prelude::*};
+use libmactoolbox::{quickdraw::{Point, Rect}, resources::{RefNum, ResNum}, typed_resource, types::{Tick, TickDuration}, windows::CWindowRecord};
+use slab::Slab;
 use smart_default::SmartDefault;
 use std::{collections::BTreeSet, rc::Rc};
-use super::{score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Palette, Score, SpriteBitmask}, window::Window};
+use super::{Player, score::{ChannelNum, Fps, FrameNum, NUM_SPRITES, Palette, Score, SpriteBitmask}, window::Window};
+
+newtype_num! {
+    #[derive(Debug)]
+    pub(crate) struct MovieListNum(i16);
+}
+
+#[derive(Debug, Default)]
+pub(super) struct Manager {
+    movies: Slab<Movie>
+}
+
+impl Manager {
+    pub(super) fn new() -> Self {
+        Self {
+            movies: Slab::with_capacity(10)
+        }
+    }
+
+    pub(super) fn insert(&mut self, movie: Movie) -> MovieListNum {
+        self.movies.insert(movie).unwrap_into()
+    }
+
+    pub(super) fn get(&self, index: MovieListNum) -> Option<&Movie> {
+        self.movies.get(index.unwrap_into())
+    }
+
+    pub(super) fn get_mut(&mut self, index: MovieListNum) -> Option<&mut Movie> {
+        self.movies.get_mut(index.unwrap_into())
+    }
+}
 
 bitflags! {
     #[derive(Default)]
@@ -21,9 +52,9 @@ bitflags! {
 
 #[derive(Debug, SmartDefault)]
 enum PausedFrame {
+    NotPaused /* = -1 */,
     #[default]
-    NotPaused,
-    InExitFrame,
+    InExitFrame /* = -2 */,
     Paused(FrameNum),
 }
 
@@ -65,8 +96,35 @@ enum CheckBoxStyle {
 struct Menu;
 #[derive(Debug, Default)]
 struct MenuBar;
+
+#[derive(Debug, SmartDefault)]
+enum Movie14State {
+    DoNothingFalse = 0,
+    BeginTimingMaybe = 1,
+    TooEarlyMaybe = 2,
+    #[default]
+    DoNothingTrue = 3,
+    TimingDone = 4,
+}
+
 #[derive(Debug, Default)]
-struct Movie14;
+struct Movie14 {
+    field_0: Option<Movie14_0>,
+    duration: Milliseconds,
+    overshoot_maybe: Milliseconds,
+    state: Movie14State,
+    frame_num: FrameNum,
+    has_timecodes: bool,
+}
+
+#[derive(Debug, Default)]
+struct Movie14_0 {
+    start_time: Milliseconds,
+    duration_maybe: Milliseconds,
+    field_8: Unk8,
+    field_9: Unk8,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct SpriteCursor;
 
@@ -108,13 +166,17 @@ typed_resource!(Labels => b"VWLB");
 pub(super) struct Movie {
     /// The list of cast libraries loaded by this movie. The first entry is
     /// always the movie’s own internal cast.
-    libraries: Vec<Cast>,
+    #[default(Vec::with_capacity(1))]
+    libraries: Vec<MovieCast>,
 
-    own_lib_num_maybe: LibNum,
+    /// The library number for the movie’s own default internal cast.
+    #[default(1_i16.into())]
+    own_lib_num: LibNum,
 
     /// The number of the cast library which was most recently activated.
     ///
     /// Lingo: `the activeCastLib`
+    #[default(1_i16.into())]
     active_lib_num: LibNum,
 
     /// The resource number of the movie.
@@ -146,8 +208,8 @@ pub(super) struct Movie {
 
     /// The last generated base resource number for a cast library.
     ///
-    /// This is normally an i32.
-    #[default(1024_i16.into())]
+    /// In original Director, this is an i32, probably due to the size of `int`
+    /// changing across platforms.
     last_used_mac_res_id: ResNum,
 
     /// This value is always -1 on at least Windows because the function that
@@ -166,7 +228,7 @@ pub(super) struct Movie {
     /// Whether or not palette remapping is enabled for the movie.
     ///
     /// Lingo: `the paletteMapping`
-    palette_mapping: bool,
+    pub(crate) palette_mapping: bool,
 
     missing_vwfi: bool,
 
@@ -203,7 +265,7 @@ pub(super) struct Movie {
     legacy_shared_cast_new_min: MemberNum,
 
     /// The initial palette to use for the movie.
-    #[default(Palette::SYSTEM_WIN_DIR_4)]
+    #[default(Palette::system_default())]
     default_palette: MemberId,
 
     legacy_maybe_movie_script: MemberId,
@@ -219,7 +281,7 @@ pub(super) struct Movie {
     default_color_depth: i16,
 
     /// The score for this movie.
-    score: Option<Rc<Score>>,
+    score: Option<Box<Score>>,
 
     /// The window for this movie. Used only by sub-movies.
     window: Option<Rc<Window>>,
@@ -228,7 +290,7 @@ pub(super) struct Movie {
     default_stage_rect: Rect,
 
     /// The output graphics port for the movie.
-    graf_port: Option<UnkPtr>,
+    graf_port: Option<Box<CWindowRecord>>,
 
     /// A pointer to a previous movie object.
     ///
@@ -464,7 +526,8 @@ pub(super) struct Movie {
     #[default(Tick::now())]
     idle_handler_next_tick: Tick,
 
-    global_movie_list_num: i16,
+    /// The number of this movie in the global movie list.
+    global_movie_list_num: MovieListNum,
 
     /// A counter for limiting reentry into `enterFrame` events.
     in_enter_frame_count: i16,
@@ -503,4 +566,103 @@ enum FrameState {
     EnteredFrame,
     /// The movie state is between frames.
     ExitedFrame,
+}
+
+impl Movie {
+    // RE: `OVWD_InitGlobalMovie` + `OVWD_InitMovieVWtc` + some related junk in
+    // `OVWD_InitEngineImpl`
+    fn new_main(player: &mut Player<'_>) -> MovieListNum {
+        let mut this = Self::init_and_maybe_insert_to_active_movie_list(player);
+        // RE: `Score_GlobalNew` after the `OVWD_InitGlobalMovie` call
+        this.score = Some(Box::new(Score::new(this.palette_mapping)));
+        // RE: `OVWD_InitMovieVWtc`
+        this.vwtc_init_state = TimecodesState::Two;
+        // RE: `OVWD_InitMainStageWindow`, which is really just a bunch of
+        // unnecessary legacy crap. We will just always associate the window
+        // record directly with the movie since there is no reason to hold it
+        // in globals with the way the engine actually works.
+        let mut graf_port = Box::new(CWindowRecord::default());
+        // This is the size of the WIND,1000 resource, though it does not really
+        // matter since this is an incomplete initialisation of the movie and
+        // the port will have its size modified once the movie is actually
+        // loaded.
+        graf_port.port_size(640_i16.into(), 480_i16.into());
+        this.graf_port = Some(graf_port);
+        player.movies.insert(this)
+    }
+
+    // In OD, every call to this function had the same arguments, so they are
+    // baked in now. It also returned an error code instead of the library
+    // number (so required the caller to get the number by
+    // `self.library.len()`), which is unnecessary since it is infallible now.
+    fn add_empty_cast_lib(&mut self, player: &mut Player<'_>) -> LibNum {
+        let lib_num = self.add_movie_cast(MovieCast::new(None));
+        self.ensure_global_cast_lib_exists(player, lib_num, None);
+        self.modified_flags |= player.modified_flags();
+        // OD: Elided code in a branch that was never taken.
+        lib_num
+    }
+
+    fn add_movie_cast(&mut self, cast: MovieCast) -> LibNum {
+        let needs_res_num = cast.base_resource_num == 0_i16.into();
+        self.libraries.push(cast);
+        if needs_res_num {
+            self.assign_mac_res_ids_to_all_movie_cast();
+        }
+        self.libraries.len().unwrap_into()
+    }
+
+    fn assign_mac_res_ids_to_all_movie_cast(&mut self) {
+        for library in self.libraries.iter_mut().skip(1) {
+            if library.base_resource_num <= 0_i16.into() {
+                if self.last_used_mac_res_id == 0_i16.into() {
+                    self.last_used_mac_res_id = 1023_i16.into();
+                }
+                self.last_used_mac_res_id += 1_i16.into();
+                library.base_resource_num = self.last_used_mac_res_id;
+            }
+        }
+    }
+
+    fn ensure_global_cast_lib_exists(&mut self, player: &mut Player<'_>, lib_num: LibNum, embedded_file_index: Option<i32>) {
+        let library = &mut self.libraries[usize::unwrap_from(lib_num)];
+        if library.global_cast_id != 0_i16.into() {
+            return;
+        }
+
+        if library.path == Some("".into()) {
+            return;
+        }
+
+        let path = library.path.as_ref().map(|path| Path::new(path, player.platform()));
+
+        let id = match (path.as_ref(), embedded_file_index) {
+            (None, None) => unreachable!("ensure_global_cast_lib_exists with no path or file index should be impossible"),
+            (None, Some(index)) => SharedCastId::Index(index),
+            (Some(path), None) => SharedCastId::Path(path),
+            (Some(path), Some(index)) => SharedCastId::PathAndIndex(path, index)
+        };
+
+        library.global_cast_id = player.casts.get_or_insert_index(id);
+    }
+
+    // RE: This is mostly the same as calling
+    // `Movie::InitAndMaybeInsertToActiveMovieList` with flags 0
+    fn init_and_maybe_insert_to_active_movie_list(player: &mut Player<'_>) -> Self {
+        let mut this = Self::default();
+        // RE: `Movie::InitSomeFields` & `Movie::InitCastLibListAndResIdCounter`
+        // are handled by defaults
+        this.init_global_cast_lib(player);
+        // OD got flags indirectly from globals in `add_empty_cast_lib` and then
+        // immediately cleared them
+        this.modified_flags = ModifiedFlags::empty();
+        // OD inserted to the active list here; we will do that up in the player
+        this
+    }
+
+    fn init_global_cast_lib(&mut self, player: &mut Player<'_>) {
+        let lib_num = self.add_empty_cast_lib(player);
+        let id = self.libraries[usize::unwrap_from(lib_num)].global_cast_id;
+        player.casts.get_mut(id).unwrap().set_font_map(Some(<_>::default()));
+    }
 }

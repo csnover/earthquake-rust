@@ -32,6 +32,22 @@ pub enum MacString {
 }
 
 impl MacString {
+    pub fn as_bstr(&self) -> &bstr::BStr {
+        match self {
+            MacString::Std(s) => s.as_bytes().as_bstr(),
+            MacString::Raw(s) => s.as_bstr(),
+            MacString::RawRc(s) => s.as_bstr()
+        }
+    }
+
+    pub unsafe fn as_bstr_mut(&mut self) -> &mut bstr::BStr {
+        match self {
+            MacString::Std(s) => s.as_bytes_mut().as_bstr_mut(),
+            MacString::Raw(s) => s.as_bstr_mut(),
+            MacString::RawRc(s) => Rc::make_mut(s).as_bstr_mut()
+        }
+    }
+
     #[cfg(feature = "intl")]
     /// Decodes the string in place to UTF-8, interpreting according to the the
     /// given script code.
@@ -107,6 +123,12 @@ impl From<&str> for MacString {
     }
 }
 
+impl From<&PString> for MacString {
+    fn from(s: &PString) -> Self {
+        Self::Raw(s.clone())
+    }
+}
+
 impl PartialEq<&str> for MacString {
     fn eq(&self, other: &&str) -> bool {
         match self {
@@ -169,6 +191,12 @@ impl BinRead for PString {
                 Err(io::Error::from(io::ErrorKind::UnexpectedEof).into())
             }
         })
+    }
+}
+
+impl PartialEq<str> for PString {
+    fn eq(&self, other: &str) -> bool {
+        self.0.as_bstr() == other
     }
 }
 
